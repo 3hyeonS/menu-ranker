@@ -1,0 +1,42 @@
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { UserEntity } from './entity/user/user.entity';
+import { AuthorityEntity } from './entity/authority.entity';
+import { KakaoKeyEntity } from './entity/user/kakaoKey.entity';
+import { AppleKeyEntity } from './entity/user/appleKey.entity';
+import { SignWithEntity } from './entity/user/signWith.entity';
+import { RefreshTokenEntity } from './entity/refreshToken.entity';
+import { PassportModule } from '@nestjs/passport';
+import { JwtModule } from '@nestjs/jwt';
+import { HttpModule } from '@nestjs/axios';
+import { CommonAuthController } from './controllers/commonAuth.controller';
+import { AdminAuthController } from './controllers/adminAuth.controller';
+import { UserAuthController } from './controllers/userAuth.controller';
+import { AuthService } from './auth.service';
+import { JwtStrategy } from './jwt.startegy';
+import { AppleStrategy } from './apple.startegy';
+import { KakaoAppStrategy } from './kakao.strategy';
+import * as dotenv from 'dotenv';
+import { Module } from '@nestjs/common';
+
+// .env 파일 로드
+dotenv.config();
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([
+      UserEntity,
+      AuthorityEntity,
+      KakaoKeyEntity,
+      AppleKeyEntity,
+      SignWithEntity,
+      RefreshTokenEntity,
+    ]),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule,
+    HttpModule,
+  ],
+  controllers: [CommonAuthController, AdminAuthController, UserAuthController],
+  providers: [AuthService, JwtStrategy, AppleStrategy, KakaoAppStrategy],
+  exports: [AuthService, AuthModule, JwtModule, PassportModule],
+})
+export class AuthModule {}

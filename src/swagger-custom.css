@@ -1,0 +1,5 @@
+.renderedMarkdown p,
+.renderedMarkdown pre,
+div.prop-format {
+  white-space: pre-line !important;
+}
