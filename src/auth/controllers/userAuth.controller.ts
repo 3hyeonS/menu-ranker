@@ -102,11 +102,6 @@ export class UserAuthController {
     refreshToken: string;
     user: UserResponseDto;
   }> {
-    console.log('APPLE CALLBACK PAYLOAD KEYS:', Object.keys(payload || {}));
-    console.log('HAS code:', !!payload?.code);
-    console.log('HAS id_token:', !!payload?.id_token);
-    console.log('HAS user:', !!payload?.user);
-
     const { accessToken, refreshToken, user } =
       await this.authService.signInWithApple(payload);
 
