@@ -16,22 +16,26 @@ export class LoggingInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const { method, originalUrl, url, headers, ip } = req;
-    const userAgent = headers?.['user-agent'] ?? 'unknown';
-    const path = originalUrl || url;
-
-    console.log(`[Before] ${method} ${path} | ip=${ip} | ua=${userAgent}`);
-
+    const path = req.originalUrl || req.url;
+    const method = req.method;
+    const userAgent = String(req.headers?.['user-agent'] || '');
     const now = Date.now();
 
-    return next
-      .handle()
-      .pipe(
-        tap(() =>
-          console.log(
-            `[After] ${method} ${path} | ${Date.now() - now}ms | ip=${ip}`,
-          ),
-        ),
-      );
+    const isHealthCheck =
+      path === '/health' ||
+      path === '/api/health' ||
+      userAgent.includes('ELB-HealthChecker');
+
+    if (isHealthCheck) {
+      return next.handle();
+    }
+
+    console.log(`[Before] ${method} ${path}`);
+
+    return next.handle().pipe(
+      tap(() => {
+        console.log(`[After] ${method} ${path} ${Date.now() - now}ms`);
+      }),
+    );
   }
 }
