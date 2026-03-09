@@ -3,7 +3,7 @@ import { UserEntity } from './user.entity';
 
 export type TPlatform = 'KAKAO' | 'APPLE' | 'LOCAL';
 
-@Entity({ name: 'signWith' })
+@Entity({ name: 'sign_with' })
 export class SignWithEntity {
   @PrimaryColumn({ type: 'varchar', name: 'platform' })
   platform: TPlatform;

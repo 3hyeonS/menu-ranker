@@ -17,7 +17,13 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "db:typeorm": "typeorm-ts-node-commonjs -d src/config/typeorm.datasource.ts",
+    "db:migration:generate": "npm run db:typeorm -- migration:generate src/migrations/AutoMigration",
+    "db:migration:create": "npm run db:typeorm -- migration:create src/migrations/ManualMigration",
+    "db:migration:run": "npm run db:typeorm -- migration:run",
+    "db:migration:revert": "npm run db:typeorm -- migration:revert",
+    "db:migration:show": "npm run db:typeorm -- migration:show"
   },
   "dependencies": {
     "@arendajaelu/nestjs-passport-apple": "^2.0.5",

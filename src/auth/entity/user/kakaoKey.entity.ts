@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 import { UserEntity } from './user.entity';
 
-@Entity({ name: 'kakaoKey' })
+@Entity({ name: 'kakao_key' })
 export class KakaoKeyEntity {
   @PrimaryGeneratedColumn({ type: 'int', name: 'id' })
   id: number;

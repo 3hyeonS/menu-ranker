@@ -11,7 +11,10 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
   username: process.env.DB_USERNAME, // 데이터베이스 사용자 이름
   password: process.env.DB_PASSWORD, // 데이터베이스 비밀번호
   database: process.env.DB_NAME, // 사용할 데이터베이스 이름
-  entities: [__dirname + '/../**/*.entity.{js,ts}'], // 엔티티 파일의 위치
-  synchronize: false, // 애플리케이션 실행 시 스키마를 동기화할지 여부 (개발 중에만 true로 설정)
+  entities: [__dirname + '/**/*.entity{.ts,.js}'],
+  synchronize: false,
+  migrations: [__dirname + '/**/migrations/*{.ts,.js}}'],
+  migrationsRun: false,
+  migrationsTableName: 'migrations',
   // logging: true, // SQL 쿼리 로그를 출력할지 여부
 };
