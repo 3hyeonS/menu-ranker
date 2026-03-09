@@ -18,9 +18,9 @@ import { CustomHttpExceptionFilter } from './interceptors/custom-httpException-f
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = new DocumentBuilder()
-    .setTitle('VILLAGE API')
+    .setTitle('MELO API')
     .setDescription(
-      'Menu Ranker API 문서입니다.  \nstatusCode 500은 에러는 서버 에러 -> 에러 내용과 함께 백엔드와 공유',
+      'Melo API 문서입니다.  \nstatusCode 500은 에러는 서버 에러 -> 에러 내용과 함께 백엔드와 공유',
     )
     .setVersion('1.0')
     // .addTag('gyms')
