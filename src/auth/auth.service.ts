@@ -153,9 +153,15 @@ export class AuthService {
     payload: any,
   ): Promise<{ accessToken: string; refreshToken: string; user: UserEntity }> {
     try {
-      const { sub: appleId } = await appleSignin.verifyIdToken(
+      const appleIdTokenClaims = await appleSignin.verifyIdToken(
         payload.id_token,
+        {
+          audience: process.env.APPLE_CLIENT_ID,
+          ignoreExpiration: false,
+        },
       );
+
+      const { sub: appleId } = appleIdTokenClaims;
 
       const clientSecret = appleSignin.getClientSecret({
         clientID: process.env.APPLE_CLIENT_ID, // Apple Client ID
@@ -207,7 +213,8 @@ export class AuthService {
       // [2] 사용자 정보 반환
       return { accessToken, refreshToken, user };
     } catch (err) {
-      // Token is not verified
+      // Token is not verified'
+      console.log(err);
       throw new UnauthorizedException('ID_Token is invalid');
     }
   }
