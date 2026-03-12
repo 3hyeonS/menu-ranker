@@ -11,6 +11,10 @@ import { ErrorApiResponse } from 'src/decorators/error-api-response-decorator';
 import { UserTokenResponseDto } from '../dto/token-dto/response-dto/user-token-response-dto';
 import { ResponseMsg } from 'src/decorators/response-message-decorator';
 import { UserResponseDto } from '../dto/user-dto/response-dto/user-response-dto';
+import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-decorator';
+import { DefaltTargetCaloriesRequestDto } from '../dto/user-dto/request-dto/default-target-calories-request-dto';
+import { DefaltRatioResponseDto } from '../dto/user-dto/response-dto/default-target-ratio-response-dto';
+import { DefaltRatioRequestDto } from '../dto/user-dto/request-dto/default-target-ratio-request-dto';
 
 @ApiTags('유저 인증')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -111,5 +115,56 @@ export class UserAuthController {
       refreshToken: refreshToken, // 클라이언트 보안 저장소에 저장할 Refresh Token
       user: userResponseDto,
     };
+  }
+
+  // 추천 목표 칼로리 계산
+  @ApiOperation({
+    summary: '추천 목표 칼로리 계산',
+  })
+  @PrimitiveApiResponse({
+    status: 201,
+    description: '추천 목표 칼로리 계산 완료',
+    message: 'defalt target calories calculated successfully',
+    type: 'number',
+    example: 1487,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'height must be a number conforming to the specified constraints',
+    error: 'BadRequestException',
+  })
+  @ResponseMsg('defalt target calories calculated successfully')
+  @Post('/defaltTargetCalories')
+  async defaltTargetCalories(
+    @Body() defaltTargetCaloriesRequestDto: DefaltTargetCaloriesRequestDto,
+  ): Promise<number> {
+    return await this.authService.defaltTargetCalories(
+      defaltTargetCaloriesRequestDto,
+    );
+  }
+
+  // 추천 탄단지 비율 계산
+  @ApiOperation({
+    summary: '추천 탄단지 비율 계산',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '추천 탄단지 비율 계산 완료',
+    message: 'defalt ratio calculated successfully',
+    model: DefaltRatioResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'height must be a number conforming to the specified constraints',
+    error: 'BadRequestException',
+  })
+  @ResponseMsg('defalt target calories calculated successfully')
+  @Post('/defaltRatio')
+  async defaltRatio(
+    @Body() defaltRatioRequestDto: DefaltRatioRequestDto,
+  ): Promise<DefaltRatioResponseDto> {
+    return await this.authService.defautRatio(defaltRatioRequestDto);
   }
 }

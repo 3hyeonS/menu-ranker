@@ -17,6 +17,9 @@ import { KakaoKeyEntity } from './entity/user/kakaoKey.entity';
 import { AppleKeyEntity } from './entity/user/appleKey.entity';
 import { UserEntity } from './entity/user/user.entity';
 import { AdminSignUpRequestDto } from './dto/user-dto/request-dto/user-sign-up-request-dto';
+import { DefaltTargetCaloriesRequestDto } from './dto/user-dto/request-dto/default-target-calories-request-dto';
+import { DefaltRatioRequestDto } from './dto/user-dto/request-dto/default-target-ratio-request-dto';
+import { DefaltRatioResponseDto } from './dto/user-dto/response-dto/default-target-ratio-response-dto';
 
 @Injectable()
 export class AuthService {
@@ -446,5 +449,90 @@ export class AuthService {
       refreshToken: newRefreshToken,
       member: member,
     };
+  }
+
+  // 추천 목표 칼로리
+  async defaltTargetCalories(
+    defaltTargetRequestDto: DefaltTargetCaloriesRequestDto,
+  ): Promise<number> {
+    const [gender, birthYear, height, weight, activity, goal] = [
+      defaltTargetRequestDto.gender,
+      defaltTargetRequestDto.birthYear,
+      defaltTargetRequestDto.height,
+      defaltTargetRequestDto.weight,
+      defaltTargetRequestDto.activity,
+      defaltTargetRequestDto.goal,
+    ];
+
+    // bmr 계산
+    let bmr =
+      10 * weight +
+      6.25 * height -
+      5 * (new Date().getFullYear() - birthYear - 1) +
+      5;
+    if (gender == 1) {
+      bmr -= 166;
+    }
+
+    // 활동계수 적용
+    const activityFactor = 1.2 + 0.175 * activity;
+    const TDEE = bmr * activityFactor;
+
+    // 목표치로 TDEE 보정
+    let TDEE_goal = TDEE;
+    switch (goal) {
+      case 0:
+        TDEE_goal = TDEE - 500;
+        break;
+      case 2:
+        TDEE_goal = TDEE + 300;
+        break;
+    }
+
+    return Math.max(bmr, TDEE_goal);
+  }
+
+  // 추천 탄단지 비율
+  async defautRatio(
+    defaltRatioRequestDto: DefaltRatioRequestDto,
+  ): Promise<DefaltRatioResponseDto> {
+    const [targetCalories, weight, goal] = [
+      defaltRatioRequestDto.targetCalories,
+      defaltRatioRequestDto.weight,
+      defaltRatioRequestDto.goal,
+    ];
+
+    // 단백질 계산, 지방 기본 비율 설정
+    let protein: number;
+    let fat = 25;
+    switch (goal) {
+      case 0:
+        protein = (1.3 * weight * 4) / targetCalories;
+        break;
+      case 1:
+        protein = (0.9 * weight * 4) / targetCalories;
+        fat = 27;
+        break;
+      case 2:
+        protein = (1.6 * weight * 4) / targetCalories;
+        break;
+    }
+
+    // 단백질 상하한 적용
+    if (protein > 20) {
+      protein = 20;
+    }
+    if (protein < 10) {
+      protein = 10;
+    }
+
+    // 탄수화물 계산, 지방 비율 보정
+    let carbs = 100 - protein - fat;
+    if (carbs < 40) {
+      fat = fat - (40 - carbs);
+      carbs = 40;
+    }
+
+    return { carbs, protein, fat };
   }
 }
