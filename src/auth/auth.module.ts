@@ -17,6 +17,7 @@ import { AppleStrategy } from './apple.startegy';
 import { KakaoAppStrategy } from './kakao.strategy';
 import * as dotenv from 'dotenv';
 import { Module } from '@nestjs/common';
+import { UserInfoEntity } from './entity/user/userInfo.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -30,6 +31,7 @@ dotenv.config();
       AppleKeyEntity,
       SignWithEntity,
       RefreshTokenEntity,
+      UserInfoEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
