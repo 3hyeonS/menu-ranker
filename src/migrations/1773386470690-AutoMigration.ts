@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AutoMigration1773042993394 implements MigrationInterface {
-    name = 'AutoMigration1773042993394'
+export class AutoMigration1773386470690 implements MigrationInterface {
+    name = 'AutoMigration1773386470690'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`CREATE TABLE \`sign_with\` (\`platform\` varchar(255) NOT NULL, PRIMARY KEY (\`platform\`)) ENGINE=InnoDB`);
