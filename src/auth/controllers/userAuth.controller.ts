@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { UseInterceptors } from '@nestjs/common';
-import { ApiExtraModels, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiExtraModels, ApiOperation } from '@nestjs/swagger';
 import { ApiTags } from '@nestjs/swagger';
 import { ResponseTransformInterceptor } from 'src/interceptors/response-transform-interceptor';
 import { ResponseDto } from 'src/response-dto';
@@ -15,6 +15,12 @@ import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-deco
 import { DefaltTargetCaloriesRequestDto } from '../dto/user-dto/request-dto/default-target-calories-request-dto';
 import { DefaltRatioResponseDto } from '../dto/user-dto/response-dto/default-target-ratio-response-dto';
 import { DefaltRatioRequestDto } from '../dto/user-dto/request-dto/default-target-ratio-request-dto';
+import { UserInfoResponseDto } from '../dto/user-dto/response-dto/user-info-response-dto';
+import { Roles } from 'src/decorators/roles-decorator';
+import { RolesGuard } from '../custom-role.guard';
+import { GetUser } from 'src/decorators/get-user-decorator';
+import { UserEntity } from '../entity/user/user.entity';
+import { RegisterUserInfoRequestDto } from '../dto/user-dto/request-dto/register-user-info-request-dto';
 
 @ApiTags('유저 인증')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -166,5 +172,54 @@ export class UserAuthController {
     @Body() defaltRatioRequestDto: DefaltRatioRequestDto,
   ): Promise<DefaltRatioResponseDto> {
     return await this.authService.defautRatio(defaltRatioRequestDto);
+  }
+
+  // 유저 정보 등록
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '유저 정보 등록',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '유저 정보 등록 성공',
+    message: 'User Info registered successfully',
+    model: UserInfoResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'ratio sum must be 100',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 acccessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 403,
+    description: '유저 회원이 아님 (유저 회원만 정보 등록 가능)',
+    message: 'Not a member of the USER (only USER can call this api)',
+    error: 'ForbiddenException',
+  })
+  @ErrorApiResponse({
+    status: 409,
+    description: '이미 등록된 유저 정보가 있음',
+    message: 'Your profile already exists',
+    error: 'ConflictException',
+  })
+  @ResponseMsg('User Info registered successfully')
+  @UseGuards(AuthGuard(), RolesGuard)
+  @Roles('USER', 'ADMIN')
+  @Post('registerUserInfo')
+  async registerUserInfo(
+    @GetUser() user: UserEntity,
+    @Body() registerUserInfoRequestDto: RegisterUserInfoRequestDto,
+  ): Promise<UserInfoResponseDto> {
+    return await this.authService.registerUserInfo(
+      user,
+      registerUserInfoRequestDto,
+    );
   }
 }

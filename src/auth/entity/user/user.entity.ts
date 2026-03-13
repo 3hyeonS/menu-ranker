@@ -12,6 +12,7 @@ import { KakaoKeyEntity } from './kakaoKey.entity';
 import { AppleKeyEntity } from './appleKey.entity';
 import { AuthorityEntity } from '../authority.entity';
 import { RefreshTokenEntity } from '../refreshToken.entity';
+import { UserInfoEntity } from './userInfo.entity';
 
 @Entity({ name: 'user' })
 export class UserEntity {
@@ -66,4 +67,11 @@ export class UserEntity {
     cascade: true,
   })
   refreshTokens: RefreshTokenEntity[];
+
+  @OneToOne(() => UserInfoEntity, (userInfo) => userInfo.user, {
+    eager: true,
+    cascade: true,
+    nullable: true,
+  })
+  userInfo: UserInfoEntity;
 }

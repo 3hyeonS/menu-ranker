@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -20,6 +21,9 @@ import { AdminSignUpRequestDto } from './dto/user-dto/request-dto/user-sign-up-r
 import { DefaltTargetCaloriesRequestDto } from './dto/user-dto/request-dto/default-target-calories-request-dto';
 import { DefaltRatioRequestDto } from './dto/user-dto/request-dto/default-target-ratio-request-dto';
 import { DefaltRatioResponseDto } from './dto/user-dto/response-dto/default-target-ratio-response-dto';
+import { RegisterUserInfoRequestDto } from './dto/user-dto/request-dto/register-user-info-request-dto';
+import { UserInfoResponseDto } from './dto/user-dto/response-dto/user-info-response-dto';
+import { UserInfoEntity } from './entity/user/userInfo.entity';
 
 @Injectable()
 export class AuthService {
@@ -36,6 +40,8 @@ export class AuthService {
     private kakaoKeyRepository: Repository<KakaoKeyEntity>,
     @InjectRepository(AppleKeyEntity)
     private appleKeyRepository: Repository<AppleKeyEntity>,
+    @InjectRepository(UserInfoEntity)
+    private userInfoRepository: Repository<UserInfoEntity>,
     private jwtService: JwtService,
     private httpService: HttpService,
   ) {}
@@ -534,5 +540,41 @@ export class AuthService {
     }
 
     return { carbs, protein, fat };
+  }
+
+  // 유저 정보 입력
+  async registerUserInfo(
+    user: UserEntity,
+    registerUserInfoRequestDto: RegisterUserInfoRequestDto,
+  ): Promise<UserInfoResponseDto> {
+    const myUserInfo = await this.userInfoRepository.findOne({
+      where: {
+        user: { id: user.id }, // 명시적으로 id 사용
+      },
+    });
+    if (myUserInfo) {
+      throw new ConflictException('Your userInfo already exists');
+    }
+
+    const newUserInfo = await this.userInfoRepository.save({
+      gender: registerUserInfoRequestDto.gender,
+      birthYear: registerUserInfoRequestDto.birthYear,
+      height: registerUserInfoRequestDto.height,
+      weight: registerUserInfoRequestDto.weight,
+      activity: registerUserInfoRequestDto.activity,
+      goal: registerUserInfoRequestDto.goal,
+      target_weight: registerUserInfoRequestDto.target_weight,
+      target_calories: registerUserInfoRequestDto.target_calories,
+      target_ratio: registerUserInfoRequestDto.target_ratio,
+      user: user,
+    });
+
+    const savedUserInfo = await this.userInfoRepository.findOne({
+      where: {
+        user: { id: user.id },
+      },
+    });
+
+    return new UserInfoResponseDto(user, savedUserInfo);
   }
 }
