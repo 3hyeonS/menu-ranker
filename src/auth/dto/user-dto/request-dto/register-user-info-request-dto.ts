@@ -8,6 +8,8 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
+  IsString,
   Max,
   Min,
   Validate,
@@ -125,4 +127,13 @@ export class RegisterUserInfoRequestDto {
   @IsInt({ each: true })
   @Validate(SumTo100Constraint)
   target_ratio: number[];
+
+  @ApiProperty({
+    type: String,
+    description: '구독코드',
+    example: 'subCodeExample',
+  })
+  @IsOptional()
+  @IsString()
+  subCode?: string;
 }

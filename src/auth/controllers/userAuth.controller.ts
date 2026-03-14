@@ -222,4 +222,38 @@ export class UserAuthController {
       registerUserInfoRequestDto,
     );
   }
+
+  // 유저 정보 등록 여부 확인
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '유저 정보 등록 여부 확인',
+    description:
+      'true: 등록됨  \nfalse: 등록 되지 않음(온보딩 화면으로 리다이렉트 필요)',
+  })
+  @PrimitiveApiResponse({
+    status: 201,
+    description: '유저 정보 등록 여부 확인 성공',
+    message: 'User info registration verified successfully',
+    type: 'boolean',
+    example: true,
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 acccessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 403,
+    description: '유저 회원이 아님 (유저 회원만 공고 등록 가능)',
+    message: 'Not a member of the USER (only USER can call this api)',
+    error: 'ForbiddenException',
+  })
+  @ResponseMsg('User info registration verified successfully')
+  @UseGuards(AuthGuard(), RolesGuard)
+  @Roles('USER')
+  @Post('hasUserInfo')
+  async hasUserInfo(@GetUser() user: UserEntity): Promise<boolean> {
+    return await this.authService.hasUserInfo(user);
+  }
 }

@@ -72,6 +72,13 @@ export class UserInfoResponseDto {
   })
   target_ratio: number[];
 
+  @ApiProperty({
+    type: String,
+    description: '구독 코드',
+    example: 'subCodeExample',
+  })
+  subCode: string;
+
   constructor(user: UserEntity, userInfo: UserInfoEntity) {
     this.nickname = user.nickname;
     this.email = user.email;
@@ -84,5 +91,6 @@ export class UserInfoResponseDto {
     this.target_weight = userInfo.target_weight;
     this.target_calories = userInfo.target_calories;
     this.target_ratio = userInfo.target_ratio;
+    this.subCode = userInfo.subCode;
   }
 }

@@ -569,6 +569,7 @@ export class AuthService {
       target_weight: registerUserInfoRequestDto.target_weight,
       target_calories: registerUserInfoRequestDto.target_calories,
       target_ratio: registerUserInfoRequestDto.target_ratio,
+      subCode: registerUserInfoRequestDto.subCode,
       user: user,
     });
 
@@ -579,5 +580,18 @@ export class AuthService {
     });
 
     return new UserInfoResponseDto(user, savedUserInfo);
+  }
+
+  // 유저 정보 보유 여부
+  async hasUserInfo(user: UserEntity): Promise<boolean> {
+    const myUserInfo = await this.userInfoRepository.findOne({
+      where: {
+        user: { id: user.id }, // 명시적으로 id 사용
+      },
+    });
+    if (myUserInfo) {
+      return true;
+    }
+    return false;
   }
 }
