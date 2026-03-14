@@ -11,7 +11,7 @@ export class KakaoAppStrategy extends PassportStrategy(Strategy, 'kakao') {
   constructor() {
     super({
       clientID: process.env.KAKAO_CLIENT_ID,
-      callbackURL: process.env.KAKAO_CALLBACK_URL,
+      callbackURL: process.env.KAKAO_REDIRECT_URI,
       // clientSecret: process.env.KAKAO_CLIENT_SECRET,
     });
   }
@@ -21,7 +21,7 @@ export class KakaoWebStrategy extends PassportStrategy(Strategy, 'kakao-web') {
   constructor() {
     super({
       clientID: process.env.KAKAO_CLIENT_ID,
-      callbackURL: process.env.KAKAO_CALLBACK_URL_WEB,
+      callbackURL: process.env.KAKAO_REDIRECT_URI,
       // clientSecret: process.env.KAKAO_CLIENT_SECRET,
     });
   }

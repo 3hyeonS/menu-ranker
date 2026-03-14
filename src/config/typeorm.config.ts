@@ -11,7 +11,7 @@ export const typeOrmConfig: TypeOrmModuleOptions = {
   username: process.env.DB_USERNAME, // 데이터베이스 사용자 이름
   password: process.env.DB_PASSWORD, // 데이터베이스 비밀번호
   database: process.env.DB_NAME, // 사용할 데이터베이스 이름
-  entities: [__dirname + '/**/*.entity{.ts,.js}'],
+  entities: [__dirname + '/../**/*.entity.{js,ts}'],
   synchronize: false,
   migrations: [__dirname + '/**/migrations/*{.ts,.js}}'],
   migrationsRun: false,

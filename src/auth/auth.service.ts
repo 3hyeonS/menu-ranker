@@ -110,12 +110,15 @@ export class AuthService {
       // [2] 사용자 정보 반환
       return { accessToken, refreshToken, user };
     } catch (error) {
+      console.log(error);
       throw new UnauthorizedException('Authorization code is Invalid');
     }
   }
 
   // Kakao Authorization Code로 Kakao Access Token 요청
   async getKakaoAccessToken(code: string): Promise<string> {
+    console.log('KAKAO code:', code);
+    console.log('KAKAO redirectUri:', process.env.KAKAO_REDIRECT_URI);
     const tokenUrl = 'https://kauth.kakao.com/oauth/token';
     const payload = {
       grant_type: 'authorization_code',

@@ -5,6 +5,7 @@ import {
   ManyToOne,
   CreateDateColumn,
   OneToOne,
+  JoinColumn,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
 
@@ -45,5 +46,6 @@ export class UserInfoEntity {
     onUpdate: 'CASCADE',
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'userId' })
   user: UserEntity;
 }
