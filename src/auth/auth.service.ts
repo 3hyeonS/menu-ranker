@@ -474,11 +474,8 @@ export class AuthService {
     ];
 
     // bmr 계산
-    let bmr =
-      10 * weight +
-      6.25 * height -
-      5 * (new Date().getFullYear() - birthYear - 1) +
-      5;
+    const age = new Date().getFullYear() - birthYear - 1;
+    let bmr = 10 * weight + 6.25 * height - 5 * age + 5;
     if (gender == 1) {
       bmr -= 166;
     }

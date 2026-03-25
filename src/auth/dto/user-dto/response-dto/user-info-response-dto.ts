@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { UserEntity } from 'src/auth/entity/user/user.entity';
-import { UserInfoEntity } from 'src/auth/entity/user/userInfo.entity';
+import { UserEntity } from '../../../entity/user/user.entity';
+import { UserInfoEntity } from '../../../entity/user/userInfo.entity';
 
 export class UserInfoResponseDto {
   @ApiProperty({ example: '홍길동' })

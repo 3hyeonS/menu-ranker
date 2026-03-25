@@ -2,23 +2,23 @@ import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation } from '@nestjs/swagger';
 import { ApiTags } from '@nestjs/swagger';
-import { ResponseTransformInterceptor } from 'src/interceptors/response-transform-interceptor';
-import { ResponseDto } from 'src/response-dto';
+import { ResponseTransformInterceptor } from '../../interceptors/response-transform-interceptor';
+import { ResponseDto } from '../../response-dto';
 import { AuthService } from '../auth.service';
 import { AuthGuard } from '@nestjs/passport';
-import { GenericApiResponse } from 'src/decorators/generic-api-response-decorator';
-import { ErrorApiResponse } from 'src/decorators/error-api-response-decorator';
+import { GenericApiResponse } from '../../decorators/generic-api-response-decorator';
+import { ErrorApiResponse } from '../../decorators/error-api-response-decorator';
 import { UserTokenResponseDto } from '../dto/token-dto/response-dto/user-token-response-dto';
-import { ResponseMsg } from 'src/decorators/response-message-decorator';
+import { ResponseMsg } from '../../decorators/response-message-decorator';
 import { UserResponseDto } from '../dto/user-dto/response-dto/user-response-dto';
-import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-decorator';
+import { PrimitiveApiResponse } from '../../decorators/primitive-api-response-decorator';
 import { DefaltTargetCaloriesRequestDto } from '../dto/user-dto/request-dto/default-target-calories-request-dto';
 import { DefaltRatioResponseDto } from '../dto/user-dto/response-dto/default-target-ratio-response-dto';
 import { DefaltRatioRequestDto } from '../dto/user-dto/request-dto/default-target-ratio-request-dto';
 import { UserInfoResponseDto } from '../dto/user-dto/response-dto/user-info-response-dto';
-import { Roles } from 'src/decorators/roles-decorator';
+import { Roles } from '../../decorators/roles-decorator';
 import { RolesGuard } from '../custom-role.guard';
-import { GetUser } from 'src/decorators/get-user-decorator';
+import { GetUser } from '../../decorators/get-user-decorator';
 import { UserEntity } from '../entity/user/user.entity';
 import { RegisterUserInfoRequestDto } from '../dto/user-dto/request-dto/register-user-info-request-dto';
 
@@ -210,8 +210,7 @@ export class UserAuthController {
     error: 'ConflictException',
   })
   @ResponseMsg('User Info registered successfully')
-  @UseGuards(AuthGuard(), RolesGuard)
-  @Roles('USER', 'ADMIN')
+  @UseGuards(AuthGuard())
   @Post('registerUserInfo')
   async registerUserInfo(
     @GetUser() user: UserEntity,
@@ -250,8 +249,7 @@ export class UserAuthController {
     error: 'ForbiddenException',
   })
   @ResponseMsg('User info registration verified successfully')
-  @UseGuards(AuthGuard(), RolesGuard)
-  @Roles('USER')
+  @UseGuards(AuthGuard())
   @Post('hasUserInfo')
   async hasUserInfo(@GetUser() user: UserEntity): Promise<boolean> {
     return await this.authService.hasUserInfo(user);

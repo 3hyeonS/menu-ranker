@@ -13,6 +13,8 @@ import { AppleKeyEntity } from './appleKey.entity';
 import { AuthorityEntity } from '../authority.entity';
 import { RefreshTokenEntity } from '../refreshToken.entity';
 import { UserInfoEntity } from './userInfo.entity';
+import { MenuEntity } from '../../../home/entity/menu.entity';
+import { MealEntity } from '../../../home/entity/meal.entity';
 
 @Entity({ name: 'user' })
 export class UserEntity {
@@ -74,4 +76,16 @@ export class UserEntity {
     nullable: true,
   })
   userInfo: UserInfoEntity;
+
+  @OneToMany(() => MenuEntity, (menu) => menu.user, {
+    nullable: true,
+    cascade: true,
+  })
+  registered_menu: MenuEntity[];
+
+  @OneToMany(() => MealEntity, (meal) => meal.user, {
+    nullable: true,
+    cascade: true,
+  })
+  meal: MealEntity[];
 }

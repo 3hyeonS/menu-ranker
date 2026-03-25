@@ -1,13 +1,13 @@
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ResponseDto } from 'src/response-dto';
+import { ResponseDto } from '../../response-dto';
 import { AuthService } from '../auth.service';
 import { Body, Controller, Post, UseInterceptors } from '@nestjs/common';
-import { ResponseTransformInterceptor } from 'src/interceptors/response-transform-interceptor';
+import { ResponseTransformInterceptor } from '../../interceptors/response-transform-interceptor';
 import { ApiExtraModels } from '@nestjs/swagger';
 import { UserResponseDto } from '../dto/user-dto/response-dto/user-response-dto';
-import { ErrorApiResponse } from 'src/decorators/error-api-response-decorator';
-import { GenericApiResponse } from 'src/decorators/generic-api-response-decorator';
-import { ResponseMsg } from 'src/decorators/response-message-decorator';
+import { ErrorApiResponse } from '../../decorators/error-api-response-decorator';
+import { GenericApiResponse } from '../../decorators/generic-api-response-decorator';
+import { ResponseMsg } from '../../decorators/response-message-decorator';
 import { AdminSignUpRequestDto } from '../dto/user-dto/request-dto/user-sign-up-request-dto';
 import { UserTokenResponseDto } from '../dto/token-dto/response-dto/user-token-response-dto';
 

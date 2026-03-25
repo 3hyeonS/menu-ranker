@@ -1,6 +1,6 @@
 import { applyDecorators } from '@nestjs/common';
 import { ApiExtraModels, ApiResponse, getSchemaPath } from '@nestjs/swagger';
-import { ResponseDto } from 'src/response-dto';
+import { ResponseDto } from '../response-dto';
 
 export interface PrimitiveApiResponseOption {
   status?: number;

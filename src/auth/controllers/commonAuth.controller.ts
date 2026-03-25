@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from '../auth.service';
 import { AuthGuard } from '@nestjs/passport';
-import { GetUser } from 'src/decorators/get-user-decorator';
+import { GetUser } from '../../decorators/get-user-decorator';
 import { JwtService } from '@nestjs/jwt';
 import {
   ApiBearerAuth,
@@ -18,13 +18,13 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { ResponseTransformInterceptor } from 'src/interceptors/response-transform-interceptor';
-import { ResponseMsg } from 'src/decorators/response-message-decorator';
-import { ResponseDto } from 'src/response-dto';
-import { GenericApiResponse } from 'src/decorators/generic-api-response-decorator';
+import { ResponseTransformInterceptor } from '../../interceptors/response-transform-interceptor';
+import { ResponseMsg } from '../../decorators/response-message-decorator';
+import { ResponseDto } from '../../response-dto';
+import { GenericApiResponse } from '../../decorators/generic-api-response-decorator';
 import { RefreshTokenRequestDto } from '../dto/token-dto/request-dto/refreshToken-request-dto';
-import { NullApiResponse } from 'src/decorators/null-api-response-decorator';
-import { ErrorApiResponse } from 'src/decorators/error-api-response-decorator';
+import { NullApiResponse } from '../../decorators/null-api-response-decorator';
+import { ErrorApiResponse } from '../../decorators/error-api-response-decorator';
 import { CustomUnauthorizedExceptionFilter } from '../custom-unauthorizedException-filter';
 import { UserResponseDto } from '../dto/user-dto/response-dto/user-response-dto';
 import { UserEntity } from '../entity/user/user.entity';
