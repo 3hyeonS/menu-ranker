@@ -37,6 +37,9 @@ import { MealRecordResponseDto } from './dto/response-dto/meal-record-response-d
 import { RegisterMenuRequestDto } from './dto/request-dto/register-menu-request-dto';
 import { SearchBrandResponseDto } from './dto/response-dto/search-brand-response-dto';
 import { ModifyMenuRequestDto } from './dto/request-dto/modify-menu-request-dto';
+import { RegisterWeightRequestDto } from './dto/request-dto/register-weight-request-dto';
+import { RegisterStepsRequestDto } from './dto/request-dto/register-step-request-dto';
+import { WeightStepsResponseDto } from './dto/response-dto/weight-steps-response-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -449,5 +452,102 @@ export class HomeController {
     @Body() menuIdRequestDto: MenuIdRequestDto,
   ): Promise<void> {
     await this.menuService.deleteMenu(user, menuIdRequestDto.id);
+  }
+
+  // 오늘의 체중 등록
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '오늘의 체중 등록',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '오늘의 체중 등록 성공',
+    message: 'Weight registered successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Weight registered successfully')
+  @UseGuards(AuthGuard())
+  @Post('/weight/register')
+  async registerWeight(
+    @GetUser() user: UserEntity,
+    @Body() registerWeightRequestDto: RegisterWeightRequestDto,
+  ): Promise<void> {
+    await this.menuService.registerWeight(user, registerWeightRequestDto);
+  }
+
+  // 오늘의 걸음 수 등록
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '오늘의 걸음 수 등록',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '오늘의 걸음 수 등록 성공',
+    message: 'Steps registered successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Steps registered successfully')
+  @UseGuards(AuthGuard())
+  @Post('/steps/register')
+  async registerSteps(
+    @GetUser() user: UserEntity,
+    @Body() registerStepsRequestDto: RegisterStepsRequestDto,
+  ): Promise<void> {
+    await this.menuService.registerSteps(user, registerStepsRequestDto);
+  }
+
+  // 오늘의 체중/걸음 수 반환
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '오늘의 체중/걸음 수 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '오늘의 체중/걸음 수 조회 성공',
+    message: 'Weight and steps returned successfully',
+    model: WeightStepsResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Weight and steps returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/weightSteps')
+  async weightSteps(
+    @GetUser() user: UserEntity,
+    @Body() dateRequestDto: DateRequestDto,
+  ): Promise<WeightStepsResponseDto> {
+    return await this.menuService.weightSteps(user, dateRequestDto);
   }
 }

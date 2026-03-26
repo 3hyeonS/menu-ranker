@@ -15,6 +15,7 @@ import { RefreshTokenEntity } from '../refreshToken.entity';
 import { UserInfoEntity } from './userInfo.entity';
 import { MenuEntity } from '../../../home/entity/menu.entity';
 import { MealEntity } from '../../../home/entity/meal.entity';
+import { WeightStepsEntity } from '../../../home/entity/weight-steps.entity';
 
 @Entity({ name: 'user' })
 export class UserEntity {
@@ -88,4 +89,10 @@ export class UserEntity {
     cascade: true,
   })
   meal: MealEntity[];
+
+  @OneToMany(() => WeightStepsEntity, (weight_steps) => weight_steps.user, {
+    nullable: true,
+    cascade: true,
+  })
+  weight_steps: WeightStepsEntity[];
 }
