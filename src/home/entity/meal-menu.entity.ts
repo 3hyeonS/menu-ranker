@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { MealEntity } from './meal.entity';
 import { MenuEntity } from './menu.entity';
+import { singleDecimalTransformer } from '../../utils/number.util';
 
 @Entity('meal_menu')
 export class MealMenuEntity {
@@ -29,6 +30,11 @@ export class MealMenuEntity {
   })
   menu: MenuEntity;
 
-  @Column({ type: 'int', name: 'quantity', nullable: false })
+  @Column({
+    type: 'float',
+    name: 'quantity',
+    nullable: false,
+    transformer: singleDecimalTransformer,
+  })
   quantity: number;
 }

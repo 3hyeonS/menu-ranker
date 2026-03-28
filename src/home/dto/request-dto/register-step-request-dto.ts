@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
 export class RegisterStepsRequestDto {
   @ApiProperty({
@@ -27,6 +28,6 @@ export class RegisterStepsRequestDto {
     example: 1600,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   steps: number;
 }

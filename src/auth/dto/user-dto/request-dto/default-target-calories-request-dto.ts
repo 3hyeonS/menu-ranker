@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsNumber } from 'class-validator';
+import { oneDecimalNumberOptions } from '../../../../utils/number.util';
 
 export class DefaltTargetCaloriesRequestDto {
   @ApiProperty({
@@ -26,7 +27,7 @@ export class DefaltTargetCaloriesRequestDto {
     example: 170,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   height: number;
 
   @ApiProperty({
@@ -35,7 +36,7 @@ export class DefaltTargetCaloriesRequestDto {
     example: 65,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   weight: number;
 
   @ApiProperty({

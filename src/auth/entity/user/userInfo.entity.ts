@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
+import { singleDecimalTransformer } from '../../../utils/number.util';
 
 @Entity('user_info')
 export class UserInfoEntity {
@@ -20,10 +21,20 @@ export class UserInfoEntity {
   @Column({ type: 'int', name: 'birthYear', nullable: false })
   birthYear: number;
 
-  @Column({ type: 'float', name: 'height', nullable: false })
+  @Column({
+    type: 'float',
+    name: 'height',
+    nullable: false,
+    transformer: singleDecimalTransformer,
+  })
   height: number;
 
-  @Column({ type: 'float', name: 'weight', nullable: false })
+  @Column({
+    type: 'float',
+    name: 'weight',
+    nullable: false,
+    transformer: singleDecimalTransformer,
+  })
   weight: number;
 
   @Column({ type: 'tinyint', name: 'activity', nullable: false })
@@ -32,7 +43,12 @@ export class UserInfoEntity {
   @Column({ type: 'tinyint', name: 'goal', nullable: false })
   goal: number;
 
-  @Column({ type: 'float', name: 'target_weight', nullable: false })
+  @Column({
+    type: 'float',
+    name: 'target_weight',
+    nullable: false,
+    transformer: singleDecimalTransformer,
+  })
   target_weight: number;
 
   @Column({ type: 'int', name: 'target_calories', nullable: false })

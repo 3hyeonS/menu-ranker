@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
 export class RegisterMealRequestDto {
   @ApiProperty({
@@ -53,10 +54,10 @@ export class RegisterMealRequestDto {
   @ApiProperty({
     type: [Number],
     description: '각 메뉴의 수량',
-    example: [1, 2],
+    example: [1, 2.5],
   })
   @IsNotEmpty()
   @IsArray()
-  @IsNumber({}, { each: true }) // 배열 내 각 요소가 숫자인지 확인
+  @IsNumber(oneDecimalNumberOptions, { each: true })
   menu_quantities: number[];
 }

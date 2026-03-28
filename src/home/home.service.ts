@@ -30,6 +30,11 @@ import { RegisterWeightRequestDto } from './dto/request-dto/register-weight-requ
 import { RegisterStepsRequestDto } from './dto/request-dto/register-step-request-dto';
 import { WeightStepsEntity } from './entity/weight-steps.entity';
 import { WeightStepsResponseDto } from './dto/response-dto/weight-steps-response-dto';
+import { MenuIdResponseDto } from './dto/response-dto/menu-id-response-dto';
+import {
+  roundNullableToOneDecimal,
+  roundToOneDecimal,
+} from '../utils/number.util';
 
 @Injectable()
 export class HomeService {
@@ -174,7 +179,7 @@ export class HomeService {
     const mealMenus = menu_ids.map((menuId, index) =>
       this.mealMenuRepository.create({
         menu: menuMap.get(menuId)!,
-        quantity: menu_quantities[index],
+        quantity: roundToOneDecimal(menu_quantities[index]),
       }),
     );
 
@@ -306,7 +311,7 @@ export class HomeService {
   async registerMenu(
     user: UserEntity,
     registerMenuRequestDto: RegisterMenuRequestDto,
-  ): Promise<void> {
+  ): Promise<MenuIdResponseDto> {
     const duplicatedMenu = await this.menuRepository.findOne({
       where: {
         name: registerMenuRequestDto.name,
@@ -320,7 +325,7 @@ export class HomeService {
     }
 
     const menu = this.menuRepository.create({
-      ...registerMenuRequestDto,
+      ...this.normalizeMenuFloatValues(registerMenuRequestDto),
       data_source: 1,
       category: null,
       unit_quantity: '1인분',
@@ -328,6 +333,8 @@ export class HomeService {
     });
 
     await this.menuRepository.save(menu);
+
+    return new MenuIdResponseDto(menu);
   }
 
   // 영양성분 수정
@@ -359,7 +366,7 @@ export class HomeService {
     }
 
     Object.assign(menu, {
-      ...modifyMenuRequestDto,
+      ...this.normalizeMenuFloatValues(modifyMenuRequestDto),
       data_source: 1,
       category: null,
       unit_quantity: '1인분',
@@ -404,7 +411,7 @@ export class HomeService {
     });
 
     if (weightSteps) {
-      weightSteps.weight = weight;
+      weightSteps.weight = roundToOneDecimal(weight);
       await this.weightStepsRepository.save(weightSteps);
       return;
     }
@@ -412,7 +419,7 @@ export class HomeService {
     await this.weightStepsRepository.save(
       this.weightStepsRepository.create({
         date,
-        weight,
+        weight: roundToOneDecimal(weight),
         steps: null,
         user,
       }),
@@ -439,7 +446,7 @@ export class HomeService {
     });
 
     if (weightSteps) {
-      weightSteps.steps = steps;
+      weightSteps.steps = roundToOneDecimal(steps);
       await this.weightStepsRepository.save(weightSteps);
       return;
     }
@@ -448,10 +455,51 @@ export class HomeService {
       this.weightStepsRepository.create({
         date,
         weight: null,
-        steps,
+        steps: roundToOneDecimal(steps),
         user,
       }),
     );
+  }
+
+  private normalizeMenuFloatValues<
+    T extends {
+      weight: number;
+      calories: number;
+      carbs?: number | null;
+      sugars?: number | null;
+      sugar_alchol?: number | null;
+      dietary_fiber?: number | null;
+      protein?: number | null;
+      fat?: number | null;
+      sat_fat?: number | null;
+      trans_fat?: number | null;
+      un_sat_fat?: number | null;
+      sodium?: number | null;
+      caffeine?: number | null;
+      potassium?: number | null;
+      cholesterol?: number | null;
+      alcohol?: number | null;
+    },
+  >(value: T): T {
+    return {
+      ...value,
+      weight: roundToOneDecimal(value.weight),
+      calories: roundToOneDecimal(value.calories),
+      carbs: roundNullableToOneDecimal(value.carbs),
+      sugars: roundNullableToOneDecimal(value.sugars),
+      sugar_alchol: roundNullableToOneDecimal(value.sugar_alchol),
+      dietary_fiber: roundNullableToOneDecimal(value.dietary_fiber),
+      protein: roundNullableToOneDecimal(value.protein),
+      fat: roundNullableToOneDecimal(value.fat),
+      sat_fat: roundNullableToOneDecimal(value.sat_fat),
+      trans_fat: roundNullableToOneDecimal(value.trans_fat),
+      un_sat_fat: roundNullableToOneDecimal(value.un_sat_fat),
+      sodium: roundNullableToOneDecimal(value.sodium),
+      caffeine: roundNullableToOneDecimal(value.caffeine),
+      potassium: roundNullableToOneDecimal(value.potassium),
+      cholesterol: roundNullableToOneDecimal(value.cholesterol),
+      alcohol: roundNullableToOneDecimal(value.alcohol),
+    };
   }
 
   // 오늘의 체중/걸음 수 반환

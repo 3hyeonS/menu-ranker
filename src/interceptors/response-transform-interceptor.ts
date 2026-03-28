@@ -12,20 +12,20 @@ import { ResponseMsg } from '../decorators/response-message-decorator';
 export interface Response<T> {
   message: string;
   statusCode: number;
-  data: T;
+  data: T | null;
 }
 
 @Injectable()
 export class ResponseTransformInterceptor<T> implements NestInterceptor<
   T,
-  Response<T>
+  Response<T | null>
 > {
   constructor(private reflector: Reflector) {}
 
   intercept(
     context: ExecutionContext,
     next: CallHandler,
-  ): Observable<Response<T>> {
+  ): Observable<Response<T | null>> {
     const currentStatusCode = context.switchToHttp().getResponse().statusCode;
 
     const messageFromDecorator = this.reflector.get<string>(
@@ -37,7 +37,7 @@ export class ResponseTransformInterceptor<T> implements NestInterceptor<
       map((data) => ({
         message: messageFromDecorator,
         statusCode: currentStatusCode,
-        data: data,
+        data: data ?? null,
       })),
     );
   }

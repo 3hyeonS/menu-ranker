@@ -17,6 +17,7 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
+import { oneDecimalNumberOptions } from '../../../../utils/number.util';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -59,7 +60,7 @@ export class RegisterUserInfoRequestDto {
     example: 170,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   @Min(1)
   @Max(250)
   height: number;
@@ -70,7 +71,7 @@ export class RegisterUserInfoRequestDto {
     example: 65,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   @Min(1)
   @Max(200)
   weight: number;
@@ -99,7 +100,7 @@ export class RegisterUserInfoRequestDto {
     example: 65,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   @Min(1)
   @Max(200)
   target_weight: number;

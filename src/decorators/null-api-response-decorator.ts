@@ -2,13 +2,13 @@ import { applyDecorators } from '@nestjs/common';
 import { ApiExtraModels, ApiResponse, getSchemaPath } from '@nestjs/swagger';
 import { ResponseDto } from '../response-dto';
 
-export interface PrimitiveApiResponseOption {
+export interface NullApiResponseOption {
   status?: number;
   description?: string;
   message?: string;
 }
 
-export const NullApiResponse = (option: PrimitiveApiResponseOption) => {
+export const NullApiResponse = (option: NullApiResponseOption) => {
   return applyDecorators(
     ApiExtraModels(ResponseDto),
     ApiResponse({
@@ -26,6 +26,10 @@ export const NullApiResponse = (option: PrimitiveApiResponseOption) => {
               statusCode: {
                 type: 'number',
                 example: option.status,
+              },
+              data: {
+                nullable: true,
+                example: null,
               },
             },
           },

@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
 export class RegisterWeightRequestDto {
   @ApiProperty({
@@ -27,6 +28,6 @@ export class RegisterWeightRequestDto {
     example: 57.6,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   weight: number;
 }

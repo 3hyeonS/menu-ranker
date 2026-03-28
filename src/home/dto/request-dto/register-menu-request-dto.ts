@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 import { MenuEntity } from '../../entity/menu.entity';
+import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
 export class RegisterMenuRequestDto {
   @ApiProperty({
@@ -36,7 +37,7 @@ export class RegisterMenuRequestDto {
     example: 230,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   weight: number;
 
   @ApiProperty({
@@ -45,7 +46,7 @@ export class RegisterMenuRequestDto {
     example: 594,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   calories: number;
 
   @ApiProperty({
@@ -54,7 +55,7 @@ export class RegisterMenuRequestDto {
     example: 48,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   carbs: number = null;
 
   @ApiProperty({
@@ -63,7 +64,7 @@ export class RegisterMenuRequestDto {
     example: 7,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   sugars: number = null;
 
   @ApiProperty({
@@ -72,7 +73,7 @@ export class RegisterMenuRequestDto {
     example: 0,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   sugar_alchol: number = null;
 
   @ApiProperty({
@@ -81,7 +82,7 @@ export class RegisterMenuRequestDto {
     example: 3,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   dietary_fiber: number = null;
 
   @ApiProperty({
@@ -90,7 +91,7 @@ export class RegisterMenuRequestDto {
     example: 28,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   protein: number = null;
 
   @ApiProperty({
@@ -99,7 +100,7 @@ export class RegisterMenuRequestDto {
     example: 28,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   fat: number = null;
 
   @ApiProperty({
@@ -108,7 +109,7 @@ export class RegisterMenuRequestDto {
     example: 8,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   sat_fat: number = null;
 
   @ApiProperty({
@@ -117,7 +118,7 @@ export class RegisterMenuRequestDto {
     example: 0.5,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   trans_fat: number = null;
 
   @ApiProperty({
@@ -126,7 +127,7 @@ export class RegisterMenuRequestDto {
     example: 19.5,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   un_sat_fat: number = null;
 
   @ApiProperty({
@@ -135,7 +136,7 @@ export class RegisterMenuRequestDto {
     example: 950,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   sodium: number = null;
 
   @ApiProperty({
@@ -144,7 +145,7 @@ export class RegisterMenuRequestDto {
     example: 0,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   caffeine: number = null;
 
   @ApiProperty({
@@ -153,7 +154,7 @@ export class RegisterMenuRequestDto {
     example: 320,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   potassium: number = null;
 
   @ApiProperty({
@@ -162,7 +163,7 @@ export class RegisterMenuRequestDto {
     example: 55,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   cholesterol: number = null;
 
   @ApiProperty({
@@ -171,6 +172,6 @@ export class RegisterMenuRequestDto {
     example: 0,
   })
   @IsOptional()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   alcohol: number = null;
 }

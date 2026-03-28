@@ -29,7 +29,7 @@ export class MealResponseDto {
   @ApiProperty({
     type: [Number],
     description: '각 메뉴의 수량',
-    example: [1, 2],
+    example: [1, 2.5],
   })
   menu_quantities: number[];
 

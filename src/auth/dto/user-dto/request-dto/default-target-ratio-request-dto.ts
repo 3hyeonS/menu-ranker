@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsNumber } from 'class-validator';
+import { oneDecimalNumberOptions } from '../../../../utils/number.util';
 
 export class DefaltRatioRequestDto {
   @ApiProperty({
@@ -17,7 +18,7 @@ export class DefaltRatioRequestDto {
     example: 65,
   })
   @IsNotEmpty()
-  @IsNumber()
+  @IsNumber(oneDecimalNumberOptions)
   weight: number;
 
   @ApiProperty({

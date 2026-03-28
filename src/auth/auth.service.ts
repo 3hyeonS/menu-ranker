@@ -23,6 +23,7 @@ import { DefaltRatioRequestDto } from './dto/user-dto/request-dto/default-target
 import { DefaltRatioResponseDto } from './dto/user-dto/response-dto/default-target-ratio-response-dto';
 import { RegisterUserInfoRequestDto } from './dto/user-dto/request-dto/register-user-info-request-dto';
 import { UserInfoResponseDto } from './dto/user-dto/response-dto/user-info-response-dto';
+import { roundToOneDecimal } from '../utils/number.util';
 import { UserInfoEntity } from './entity/user/userInfo.entity';
 
 @Injectable()
@@ -495,7 +496,7 @@ export class AuthService {
         break;
     }
 
-    return Math.max(bmr, TDEE_goal);
+    return roundToOneDecimal(Math.max(bmr, TDEE_goal));
   }
 
   // 추천 탄단지 비율
@@ -539,7 +540,11 @@ export class AuthService {
       carbs = 40;
     }
 
-    return { carbs, protein, fat };
+    return {
+      carbs: roundToOneDecimal(carbs),
+      protein: roundToOneDecimal(protein),
+      fat: roundToOneDecimal(fat),
+    };
   }
 
   // 유저 정보 입력
@@ -559,11 +564,11 @@ export class AuthService {
     const newUserInfo = await this.userInfoRepository.save({
       gender: registerUserInfoRequestDto.gender,
       birthYear: registerUserInfoRequestDto.birthYear,
-      height: registerUserInfoRequestDto.height,
-      weight: registerUserInfoRequestDto.weight,
+      height: roundToOneDecimal(registerUserInfoRequestDto.height),
+      weight: roundToOneDecimal(registerUserInfoRequestDto.weight),
       activity: registerUserInfoRequestDto.activity,
       goal: registerUserInfoRequestDto.goal,
-      target_weight: registerUserInfoRequestDto.target_weight,
+      target_weight: roundToOneDecimal(registerUserInfoRequestDto.target_weight),
       target_calories: registerUserInfoRequestDto.target_calories,
       target_ratio: registerUserInfoRequestDto.target_ratio,
       subCode: registerUserInfoRequestDto.subCode,

@@ -40,6 +40,8 @@ import { ModifyMenuRequestDto } from './dto/request-dto/modify-menu-request-dto'
 import { RegisterWeightRequestDto } from './dto/request-dto/register-weight-request-dto';
 import { RegisterStepsRequestDto } from './dto/request-dto/register-step-request-dto';
 import { WeightStepsResponseDto } from './dto/response-dto/weight-steps-response-dto';
+import { MenuIdResponseDto } from './dto/response-dto/menu-id-response-dto';
+import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-decorator';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -339,10 +341,11 @@ export class HomeController {
   @ApiOperation({
     summary: '영양성분 등록',
   })
-  @NullApiResponse({
+  @GenericApiResponse({
     status: 201,
     description: '영양성분 등록 성공',
     message: 'Menu registered successfully',
+    model: MenuIdResponseDto,
   })
   @ErrorApiResponse({
     status: 400,
@@ -368,8 +371,8 @@ export class HomeController {
   async registerMenu(
     @GetUser() user: UserEntity,
     @Body() registerMenuRequestDto: RegisterMenuRequestDto,
-  ): Promise<void> {
-    await this.menuService.registerMenu(user, registerMenuRequestDto);
+  ): Promise<MenuIdResponseDto> {
+    return await this.menuService.registerMenu(user, registerMenuRequestDto);
   }
 
   // 영양성분 수정
