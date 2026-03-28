@@ -65,6 +65,27 @@ export class MenuSimpleResponseDto {
   })
   calories: number = null;
 
+  @ApiProperty({
+    type: Number,
+    description: '탄수화물(g)',
+    example: 48,
+  })
+  carbs: number = null;
+
+  @ApiProperty({
+    type: Number,
+    description: '단백질(g)',
+    example: 28,
+  })
+  protein: number = null;
+
+  @ApiProperty({
+    type: Number,
+    description: '지방(g)',
+    example: 28,
+  })
+  fat: number = null;
+
   constructor(menu: MenuEntity) {
     this.id = menu.id;
     this.data_source = menu.data_source;
@@ -75,5 +96,8 @@ export class MenuSimpleResponseDto {
     this.weight = menu.weight;
     this.unit_quantity = menu.unit_quantity;
     this.calories = menu.calories;
+    this.carbs = menu.carbs;
+    this.protein = menu.protein;
+    this.fat = menu.fat;
   }
 }
