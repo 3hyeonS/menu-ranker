@@ -1,11 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString } from 'class-validator';
 
-export class SearchRequestDto {
+export class SearchBrandRequestDto {
   @ApiProperty({
     type: String,
     description: '입력값',
-    example: '싸이버거',
+    example: '맘스터치',
   })
   @IsNotEmpty()
   @IsString()

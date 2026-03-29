@@ -35,6 +35,7 @@ import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
 } from '../utils/number.util';
+import { BrandAddEntity } from './entity/brand-add.entity';
 
 @Injectable()
 export class HomeService {
@@ -51,6 +52,8 @@ export class HomeService {
     private mealMenuRepository: Repository<MealMenuEntity>,
     @InjectRepository(WeightStepsEntity)
     private weightStepsRepository: Repository<WeightStepsEntity>,
+    @InjectRepository(BrandAddEntity)
+    private brandAddRepository: Repository<BrandAddEntity>,
     private jwtService: JwtService,
     private httpService: HttpService,
   ) {}
@@ -305,6 +308,43 @@ export class HomeService {
     const brand_list: string[] = searchedBrandRows.map((row) => row.brand);
 
     return new SearchBrandResponseDto(brand_list);
+  }
+
+  // 브랜드 추가 요청
+  async brandAddRequet(user: UserEntity, input: string): Promise<void> {
+    const brand = input?.trim();
+
+    if (!brand) {
+      throw new BadRequestException('brand must not be empty');
+    }
+
+    const existingBrand = await this.menuRepository
+      .createQueryBuilder('menu')
+      .select('menu.brand', 'brand')
+      .where('menu.brand = :brand', { brand })
+      .getRawOne<{ brand: string }>();
+
+    if (existingBrand) {
+      throw new ConflictException('Your brand already exists');
+    }
+
+    const duplicatedBrandRequest = await this.brandAddRepository.findOne({
+      where: {
+        brand,
+        user: { id: user.id },
+      },
+    });
+
+    if (duplicatedBrandRequest) {
+      throw new ConflictException('Your brand request already exists');
+    }
+
+    const newBrand = this.brandAddRepository.create({
+      brand,
+      user,
+    });
+
+    await this.brandAddRepository.save(newBrand);
   }
 
   // 영양성분 등록

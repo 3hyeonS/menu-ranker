@@ -16,6 +16,7 @@ import { JwtStrategy } from '../auth/jwt.startegy';
 import { MealEntity } from './entity/meal.entity';
 import { MealMenuEntity } from './entity/meal-menu.entity';
 import { WeightStepsEntity } from './entity/weight-steps.entity';
+import { BrandAddEntity } from './entity/brand-add.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -31,6 +32,7 @@ dotenv.config();
       MealEntity,
       MealMenuEntity,
       WeightStepsEntity,
+      BrandAddEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,

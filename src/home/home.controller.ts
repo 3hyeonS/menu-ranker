@@ -24,7 +24,7 @@ import { NullApiResponse } from '../decorators/null-api-response-decorator';
 import { ErrorApiResponse } from '../decorators/error-api-response-decorator';
 import { SearchResponseDto } from './dto/response-dto/search-response-dto';
 import { UserEntity } from '../auth/entity/user/user.entity';
-import { SearchRequestDto } from './dto/request-dto/search-request-dto';
+import { SearchMenuRequestDto } from './dto/request-dto/search-menu-request-dto';
 import { HomeService } from './home.service';
 import { MenuResponseDto } from './dto/response-dto/menu-response-dto';
 import { MenuIdRequestDto } from './dto/request-dto/menu-id-request-dto';
@@ -42,6 +42,7 @@ import { RegisterStepsRequestDto } from './dto/request-dto/register-step-request
 import { WeightStepsResponseDto } from './dto/response-dto/weight-steps-response-dto';
 import { MenuIdResponseDto } from './dto/response-dto/menu-id-response-dto';
 import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-decorator';
+import { SearchBrandRequestDto } from './dto/request-dto/search-brand-request-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -87,48 +88,9 @@ export class HomeController {
   @Post('/search')
   async signout(
     @GetUser() user: UserEntity,
-    @Body() searchRequestDto: SearchRequestDto,
+    @Body() searchMenuRequestDto: SearchMenuRequestDto,
   ): Promise<SearchResponseDto> {
-    return await this.menuService.search(searchRequestDto.input, user);
-  }
-
-  // 메뉴 검색
-  @ApiBearerAuth('accessToken')
-  @ApiOperation({
-    summary: '메뉴 검색',
-  })
-  @GenericApiResponse({
-    status: 201,
-    description: '메뉴 검색 성공',
-    message: 'Menu searched successfully',
-    model: SearchResponseDto,
-  })
-  @ErrorApiResponse({
-    status: 400,
-    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
-    message: 'input must be a string',
-    error: 'BadRequestException',
-  })
-  @ErrorApiResponse({
-    status: 401,
-    description: '유효하지 않거나 기간이 만료된 accessToken',
-    message: 'Invalid or expired accessToken',
-    error: 'UnauthorizedException',
-  })
-  @ErrorApiResponse({
-    status: 401,
-    description: '유효하지 않거나 기간이 만료된 refreshToken',
-    message: 'Invalid or expired refreshToken',
-    error: 'UnauthorizedException',
-  })
-  @ResponseMsg('Menu searched successfully')
-  @UseGuards(AuthGuard())
-  @Post('/search')
-  async search(
-    @GetUser() user: UserEntity,
-    @Body() searchRequestDto: SearchRequestDto,
-  ): Promise<SearchResponseDto> {
-    return await this.menuService.search(searchRequestDto.input, user);
+    return await this.menuService.search(searchMenuRequestDto.input, user);
   }
 
   // 브랜드 검색
@@ -158,9 +120,47 @@ export class HomeController {
   @UseGuards(AuthGuard())
   @Post('/searchBrand')
   async searchBrand(
-    @Body() searchRequestDto: SearchRequestDto,
+    @Body() searchBrandRequestDto: SearchBrandRequestDto,
   ): Promise<SearchBrandResponseDto> {
-    return await this.menuService.searchBrand(searchRequestDto.input);
+    return await this.menuService.searchBrand(searchBrandRequestDto.input);
+  }
+
+  // 브랜드 추가 요청
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '브랜드 추가 요청',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '브랜드 추가 요청 성공',
+    message: 'Brand request registered successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'input must be a string',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 409,
+    description: '이미 존재하는 브랜드 또는 이미 요청한 브랜드',
+    message: 'Your brand already exists',
+    error: 'ConflictException',
+  })
+  @ResponseMsg('Brand request registered successfully')
+  @UseGuards(AuthGuard())
+  @Post('/brandAddRequest')
+  async brandAddRequest(
+    @GetUser() user: UserEntity,
+    @Body() searchBrandRequestDto: SearchBrandRequestDto,
+  ): Promise<void> {
+    await this.menuService.brandAddRequet(user, searchBrandRequestDto.input);
   }
 
   // 메뉴 영양성분 상세 조회
@@ -257,7 +257,7 @@ export class HomeController {
   })
   @ResponseMsg('Meal registered successfully')
   @UseGuards(AuthGuard())
-  @Post('/meal/register')
+  @Post('/registerMeal')
   async registerMeal(
     @GetUser() user: UserEntity,
     @Body() registerMealRequestDto: RegisterMealRequestDto,
@@ -295,7 +295,7 @@ export class HomeController {
   })
   @ResponseMsg('Meal deleted successfully')
   @UseGuards(AuthGuard())
-  @Post('/meal/delete')
+  @Post('/deleteMeal')
   async deleteMeal(
     @GetUser() user: UserEntity,
     @Body() deleteMealRequestDto: DeleteMealRequestDto,
@@ -328,7 +328,7 @@ export class HomeController {
   })
   @ResponseMsg('Meal record returned successfully')
   @UseGuards(AuthGuard())
-  @Post('/meal/record')
+  @Post('/getMealRecord')
   async getMealRecord(
     @GetUser() user: UserEntity,
     @Body() dateRequestDto: DateRequestDto,
@@ -367,7 +367,7 @@ export class HomeController {
   })
   @ResponseMsg('Menu registered successfully')
   @UseGuards(AuthGuard())
-  @Post('/menu/register')
+  @Post('/registerMenu')
   async registerMenu(
     @GetUser() user: UserEntity,
     @Body() registerMenuRequestDto: RegisterMenuRequestDto,
@@ -411,7 +411,7 @@ export class HomeController {
   })
   @ResponseMsg('Menu modified successfully')
   @UseGuards(AuthGuard())
-  @Post('/menu/modify')
+  @Post('/modifyMenu')
   async modifyMenu(
     @GetUser() user: UserEntity,
     @Body() modifyMenuRequestDto: ModifyMenuRequestDto,
@@ -449,7 +449,7 @@ export class HomeController {
   })
   @ResponseMsg('Menu deleted successfully')
   @UseGuards(AuthGuard())
-  @Post('/menu/delete')
+  @Post('/deleteMenu')
   async deleteMenu(
     @GetUser() user: UserEntity,
     @Body() menuIdRequestDto: MenuIdRequestDto,
@@ -481,7 +481,7 @@ export class HomeController {
   })
   @ResponseMsg('Weight registered successfully')
   @UseGuards(AuthGuard())
-  @Post('/weight/register')
+  @Post('/registerWeight')
   async registerWeight(
     @GetUser() user: UserEntity,
     @Body() registerWeightRequestDto: RegisterWeightRequestDto,
@@ -513,7 +513,7 @@ export class HomeController {
   })
   @ResponseMsg('Steps registered successfully')
   @UseGuards(AuthGuard())
-  @Post('/steps/register')
+  @Post('/registerSteps')
   async registerSteps(
     @GetUser() user: UserEntity,
     @Body() registerStepsRequestDto: RegisterStepsRequestDto,

@@ -16,6 +16,7 @@ import { UserInfoEntity } from './userInfo.entity';
 import { MenuEntity } from '../../../home/entity/menu.entity';
 import { MealEntity } from '../../../home/entity/meal.entity';
 import { WeightStepsEntity } from '../../../home/entity/weight-steps.entity';
+import { BrandAddEntity } from '../../../home/entity/brand-add.entity';
 
 @Entity({ name: 'user' })
 export class UserEntity {
@@ -89,6 +90,12 @@ export class UserEntity {
     cascade: true,
   })
   meal: MealEntity[];
+
+  @OneToMany(() => BrandAddEntity, (brand_add) => brand_add.user, {
+    nullable: true,
+    cascade: true,
+  })
+  brand_add: BrandAddEntity[];
 
   @OneToMany(() => WeightStepsEntity, (weight_steps) => weight_steps.user, {
     nullable: true,
