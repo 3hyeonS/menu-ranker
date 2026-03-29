@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -133,6 +134,11 @@ export class RegisterUserInfoRequestDto {
     type: String,
     description: '구독코드',
     example: 'subCodeExample',
+  })
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    const trimmedValue = value.trim();
+    return trimmedValue === '' ? undefined : trimmedValue;
   })
   @IsOptional()
   @IsString()

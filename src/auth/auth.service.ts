@@ -552,6 +552,9 @@ export class AuthService {
     user: UserEntity,
     registerUserInfoRequestDto: RegisterUserInfoRequestDto,
   ): Promise<UserInfoResponseDto> {
+    const normalizedSubCode =
+      registerUserInfoRequestDto.subCode?.trim() || null;
+
     const myUserInfo = await this.userInfoRepository.findOne({
       where: {
         user: { id: user.id }, // 명시적으로 id 사용
@@ -561,6 +564,18 @@ export class AuthService {
       throw new ConflictException('Your userInfo already exists');
     }
 
+    if (normalizedSubCode) {
+      const duplicatedSubCodeUserInfo = await this.userInfoRepository.findOne({
+        where: {
+          subCode: normalizedSubCode,
+        },
+      });
+
+      if (duplicatedSubCodeUserInfo) {
+        throw new ConflictException('Your subCode already exists');
+      }
+    }
+
     const newUserInfo = await this.userInfoRepository.save({
       gender: registerUserInfoRequestDto.gender,
       birthYear: registerUserInfoRequestDto.birthYear,
@@ -568,10 +583,12 @@ export class AuthService {
       weight: roundToOneDecimal(registerUserInfoRequestDto.weight),
       activity: registerUserInfoRequestDto.activity,
       goal: registerUserInfoRequestDto.goal,
-      target_weight: roundToOneDecimal(registerUserInfoRequestDto.target_weight),
+      target_weight: roundToOneDecimal(
+        registerUserInfoRequestDto.target_weight,
+      ),
       target_calories: registerUserInfoRequestDto.target_calories,
       target_ratio: registerUserInfoRequestDto.target_ratio,
-      subCode: registerUserInfoRequestDto.subCode,
+      subCode: normalizedSubCode,
       user: user,
     });
 
