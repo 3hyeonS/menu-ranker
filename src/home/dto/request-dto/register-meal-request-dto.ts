@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayNotEmpty,
   IsArray,
   IsDate,
   IsIn,
@@ -48,6 +49,7 @@ export class RegisterMealRequestDto {
   })
   @IsNotEmpty()
   @IsArray()
+  @ArrayNotEmpty()
   @IsNumber({}, { each: true }) // 배열 내 각 요소가 숫자인지 확인
   menu_ids: number[];
 
@@ -58,6 +60,7 @@ export class RegisterMealRequestDto {
   })
   @IsNotEmpty()
   @IsArray()
+  @ArrayNotEmpty()
   @IsNumber(oneDecimalNumberOptions, { each: true })
   menu_quantities: number[];
 }

@@ -173,18 +173,49 @@ export class HomeService {
     const { date, time, image, menu_ids, menu_quantities } =
       registerMealRequestDto;
 
+    if (menu_ids.length !== menu_quantities.length) {
+      throw new BadRequestException(
+        'menu_ids and menu_quantities must have the same length',
+      );
+    }
+
     const menus = await this.menuRepository.find({
       where: { id: In(menu_ids) },
     });
+
+    if (menus.length !== menu_ids.length) {
+      throw new BadRequestException('Some menu_ids do not exist');
+    }
 
     const menuMap = new Map(menus.map((menu) => [menu.id, menu]));
 
     const mealMenus = menu_ids.map((menuId, index) =>
       this.mealMenuRepository.create({
-        menu: menuMap.get(menuId)!,
+        menu: menuMap.get(menuId),
         quantity: roundToOneDecimal(menu_quantities[index]),
       }),
     );
+
+    const existingMeal = await this.mealRepository.findOne({
+      where: {
+        date,
+        time,
+        user: { id: user.id },
+      },
+      relations: {
+        mealMenus: true,
+      },
+    });
+
+    if (existingMeal) {
+      await this.mealMenuRepository.remove(existingMeal.mealMenus);
+
+      existingMeal.image = image ?? null;
+      existingMeal.mealMenus = mealMenus;
+
+      await this.mealRepository.save(existingMeal);
+      return;
+    }
 
     const meal = this.mealRepository.create({
       date,
