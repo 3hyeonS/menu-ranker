@@ -399,7 +399,7 @@ export class HomeService {
       ...this.normalizeMenuFloatValues(registerMenuRequestDto),
       data_source: 1,
       category: null,
-      unit_quantity: '1인분',
+      unit_quantity: '인분',
       user,
     });
 
@@ -440,7 +440,7 @@ export class HomeService {
       ...this.normalizeMenuFloatValues(modifyMenuRequestDto),
       data_source: 1,
       category: null,
-      unit_quantity: '1인분',
+      unit_quantity: '인분',
     });
 
     await this.menuRepository.save(menu);

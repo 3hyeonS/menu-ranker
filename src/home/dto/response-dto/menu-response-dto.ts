@@ -54,7 +54,7 @@ export class MenuResponseDto {
   @ApiProperty({
     type: String,
     description: '단위량',
-    example: '1인분',
+    example: '인분',
   })
   unit_quantity: string;
 
