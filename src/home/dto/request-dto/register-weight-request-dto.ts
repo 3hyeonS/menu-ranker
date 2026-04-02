@@ -8,6 +8,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
+  Min,
 } from 'class-validator';
 import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
@@ -29,5 +31,7 @@ export class RegisterWeightRequestDto {
   })
   @IsNotEmpty()
   @IsNumber(oneDecimalNumberOptions)
+  @Min(1)
+  @Max(200)
   weight: number;
 }
