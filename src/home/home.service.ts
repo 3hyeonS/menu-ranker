@@ -60,7 +60,7 @@ export class HomeService {
 
   // 문자 출력
   getHello(): string {
-    return 'Welcome menu';
+    return 'Welcome home';
   }
 
   // menu controller

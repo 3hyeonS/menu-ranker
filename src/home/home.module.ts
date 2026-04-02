@@ -40,6 +40,6 @@ dotenv.config();
   ],
   controllers: [HomeController],
   providers: [HomeService, JwtStrategy],
-  exports: [HomeService, HomeModule, JwtModule, PassportModule],
+  exports: [HomeService, JwtModule, PassportModule],
 })
 export class HomeModule {}

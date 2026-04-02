@@ -50,7 +50,7 @@ import { SearchBrandRequestDto } from './dto/request-dto/search-brand-request-dt
 @Controller('/home')
 export class HomeController {
   constructor(
-    private menuService: HomeService,
+    private homeService: HomeService,
     private readonly jwtService: JwtService, // JwtService 주입
   ) {}
 
@@ -90,7 +90,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() searchMenuRequestDto: SearchMenuRequestDto,
   ): Promise<SearchResponseDto> {
-    return await this.menuService.search(searchMenuRequestDto.input, user);
+    return await this.homeService.search(searchMenuRequestDto.input, user);
   }
 
   // 브랜드 검색
@@ -122,7 +122,7 @@ export class HomeController {
   async searchBrand(
     @Body() searchBrandRequestDto: SearchBrandRequestDto,
   ): Promise<SearchBrandResponseDto> {
-    return await this.menuService.searchBrand(searchBrandRequestDto.input);
+    return await this.homeService.searchBrand(searchBrandRequestDto.input);
   }
 
   // 브랜드 추가 요청
@@ -160,7 +160,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() searchBrandRequestDto: SearchBrandRequestDto,
   ): Promise<void> {
-    await this.menuService.brandAddRequet(user, searchBrandRequestDto.input);
+    await this.homeService.brandAddRequet(user, searchBrandRequestDto.input);
   }
 
   // 메뉴 영양성분 상세 조회
@@ -185,7 +185,7 @@ export class HomeController {
   async menuDetail(
     @Body() menuIdRequestDto: MenuIdRequestDto,
   ): Promise<MenuResponseDto> {
-    return await this.menuService.menuDetail(menuIdRequestDto.id);
+    return await this.homeService.menuDetail(menuIdRequestDto.id);
   }
 
   // 브랜드 내 메뉴 검색
@@ -226,7 +226,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() searchInBrandRequestDto: SearchInBrandRequestDto,
   ): Promise<MenuSimpleResponseDto[]> {
-    return await this.menuService.searchInBrand(
+    return await this.homeService.searchInBrand(
       searchInBrandRequestDto.brand,
       searchInBrandRequestDto.input,
       user,
@@ -262,7 +262,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() registerMealRequestDto: RegisterMealRequestDto,
   ): Promise<void> {
-    await this.menuService.registerMeal(user, registerMealRequestDto);
+    await this.homeService.registerMeal(user, registerMealRequestDto);
   }
 
   // 오늘의 식사 삭제
@@ -300,7 +300,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() deleteMealRequestDto: DeleteMealRequestDto,
   ): Promise<void> {
-    await this.menuService.deleteMeal(user, deleteMealRequestDto);
+    await this.homeService.deleteMeal(user, deleteMealRequestDto);
   }
 
   // 오늘의 식사 조회
@@ -333,7 +333,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() dateRequestDto: DateRequestDto,
   ): Promise<MealRecordResponseDto> {
-    return await this.menuService.getMealRecord(user, dateRequestDto);
+    return await this.homeService.getMealRecord(user, dateRequestDto);
   }
 
   // 영양성분 등록
@@ -372,7 +372,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() registerMenuRequestDto: RegisterMenuRequestDto,
   ): Promise<MenuIdResponseDto> {
-    return await this.menuService.registerMenu(user, registerMenuRequestDto);
+    return await this.homeService.registerMenu(user, registerMenuRequestDto);
   }
 
   // 영양성분 수정
@@ -416,7 +416,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() modifyMenuRequestDto: ModifyMenuRequestDto,
   ): Promise<void> {
-    await this.menuService.modifyMenu(user, modifyMenuRequestDto);
+    await this.homeService.modifyMenu(user, modifyMenuRequestDto);
   }
 
   // 영양성분 삭제
@@ -454,7 +454,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() menuIdRequestDto: MenuIdRequestDto,
   ): Promise<void> {
-    await this.menuService.deleteMenu(user, menuIdRequestDto.id);
+    await this.homeService.deleteMenu(user, menuIdRequestDto.id);
   }
 
   // 오늘의 체중 등록
@@ -486,7 +486,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() registerWeightRequestDto: RegisterWeightRequestDto,
   ): Promise<void> {
-    await this.menuService.registerWeight(user, registerWeightRequestDto);
+    await this.homeService.registerWeight(user, registerWeightRequestDto);
   }
 
   // 오늘의 걸음 수 등록
@@ -518,7 +518,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() registerStepsRequestDto: RegisterStepsRequestDto,
   ): Promise<void> {
-    await this.menuService.registerSteps(user, registerStepsRequestDto);
+    await this.homeService.registerSteps(user, registerStepsRequestDto);
   }
 
   // 오늘의 체중/걸음 수 반환
@@ -551,6 +551,6 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() dateRequestDto: DateRequestDto,
   ): Promise<WeightStepsResponseDto> {
-    return await this.menuService.weightSteps(user, dateRequestDto);
+    return await this.homeService.weightSteps(user, dateRequestDto);
   }
 }

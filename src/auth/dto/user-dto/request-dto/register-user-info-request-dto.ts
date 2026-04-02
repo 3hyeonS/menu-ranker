@@ -68,7 +68,7 @@ export class RegisterUserInfoRequestDto {
 
   @ApiProperty({
     type: Number,
-    description: '체중',
+    description: '현재 체중',
     example: 65,
   })
   @IsNotEmpty()

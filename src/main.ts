@@ -15,7 +15,16 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerTheme, SwaggerThemeNameEnum } from 'swagger-themes';
 import { CustomHttpExceptionFilter } from './interceptors/custom-httpException-filter';
 
+const maskSecret = (value?: string): string =>
+  value ? `${value.slice(0, 8)}...(${value.length})` : 'NOT_SET';
+
 async function bootstrap() {
+  console.log('[BOOT] ENV CHECK', {
+    GEMINI_API_KEY: maskSecret(process.env.GEMINI_API_KEY),
+    GEMINI_MODEL: process.env.GEMINI_MODEL ?? 'NOT_SET',
+    NODE_ENV: process.env.NODE_ENV ?? 'NOT_SET',
+  });
+
   const app = await NestFactory.create(AppModule);
   const config = new DocumentBuilder()
     .setTitle('MELO API')
