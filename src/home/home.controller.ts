@@ -3,6 +3,7 @@ import {
   Controller,
   Post,
   UnauthorizedException,
+  UploadedFile,
   UseFilters,
   UseGuards,
   UseInterceptors,
@@ -12,6 +13,8 @@ import { GetUser } from '../decorators/get-user-decorator';
 import { JwtService } from '@nestjs/jwt';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiExtraModels,
   ApiOperation,
   ApiTags,
@@ -43,6 +46,8 @@ import { WeightStepsResponseDto } from './dto/response-dto/weight-steps-response
 import { MenuIdResponseDto } from './dto/response-dto/menu-id-response-dto';
 import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-decorator';
 import { SearchBrandRequestDto } from './dto/request-dto/search-brand-request-dto';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-request-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -230,6 +235,60 @@ export class HomeController {
       searchInBrandRequestDto.brand,
       searchInBrandRequestDto.input,
       user,
+    );
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '식사 사진 업로드',
+  })
+  @PrimitiveApiResponse({
+    status: 201,
+    description: '식사 사진 업로드 성공',
+    message: 'Meal image uploaded successfully',
+    type: 'string',
+    isArray: true,
+    example: 'urlexample',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 acccessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '이미지 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: '이미지 파일',
+        },
+      },
+    },
+  })
+  @UseGuards(AuthGuard())
+  @UseInterceptors(FileInterceptor('image'))
+  @ResponseMsg('Meal image uploaded successfully')
+  @Post('uploadMealImage')
+  async uploadMealImage(
+    @GetUser() user: UserEntity,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() mealImageUploadRequestDto: MealImageUploadRequestDto,
+  ): Promise<string> {
+    return await this.homeService.uploadMealImage(
+      user,
+      file,
+      mealImageUploadRequestDto,
     );
   }
 

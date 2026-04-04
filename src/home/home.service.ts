@@ -36,9 +36,18 @@ import {
   roundToOneDecimal,
 } from '../utils/number.util';
 import { BrandAddEntity } from './entity/brand-add.entity';
+import {
+  DeleteObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-request-dto';
 
 @Injectable()
 export class HomeService {
+  private s3: S3Client;
+  private bucketName: string;
+
   constructor(
     @InjectRepository(UserEntity)
     private userRepository: Repository<UserEntity>,
@@ -56,7 +65,17 @@ export class HomeService {
     private brandAddRepository: Repository<BrandAddEntity>,
     private jwtService: JwtService,
     private httpService: HttpService,
-  ) {}
+  ) {
+    this.s3 = new S3Client({
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+    });
+
+    this.bucketName = process.env.S3_BUCKET_NAME;
+  }
 
   // 문자 출력
   getHello(): string {
@@ -163,6 +182,49 @@ export class HomeService {
       .getMany();
 
     return menuList.map((menu) => new MenuSimpleResponseDto(menu));
+  }
+
+  // 식사 사진 S3 업로드
+  async uploadMealImage(
+    user: UserEntity,
+    file: Express.Multer.File,
+    mealImageUploadRequestDto: MealImageUploadRequestDto,
+  ): Promise<string> {
+    const { date, time } = mealImageUploadRequestDto;
+
+    const existingMeal = await this.mealRepository.findOne({
+      where: {
+        date,
+        time,
+        user: { id: user.id },
+      },
+      relations: {
+        mealMenus: true,
+      },
+    });
+
+    // 해당 식사의 사진이 이미 있으면 삭제
+    if (existingMeal.image) {
+      const fileKey = existingMeal.image.split('com/')[1];
+      const params = {
+        Bucket: this.bucketName,
+        Key: fileKey,
+      };
+      await this.s3.send(new DeleteObjectCommand(params));
+    }
+    const randomString = Math.random().toString(36).substring(2, 12);
+    const newFileKey = `meal/${user.id}/${date}/${time}/${randomString}`;
+
+    // 업로드
+    const params = {
+      Bucket: this.bucketName,
+      Key: newFileKey,
+      Body: file.buffer,
+      ContentType: file.mimetype,
+    };
+
+    await this.s3.send(new PutObjectCommand(params));
+    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${newFileKey}`;
   }
 
   // 오늘의 식사 등록
