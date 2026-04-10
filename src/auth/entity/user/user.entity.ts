@@ -18,6 +18,7 @@ import { MealEntity } from '../../../home/entity/meal.entity';
 import { WeightStepsEntity } from '../../../home/entity/weight-steps.entity';
 import { BrandAddEntity } from '../../../home/entity/brand-add.entity';
 import { ChatHistoryEntity } from '../../../chat/entity/chat-history.entity';
+import { UserGoalEntity } from './userGoal.entity';
 
 @Entity({ name: 'user' })
 export class UserEntity {
@@ -79,6 +80,12 @@ export class UserEntity {
     nullable: true,
   })
   userInfo: UserInfoEntity;
+
+  @OneToMany(() => UserGoalEntity, (userGoal) => userGoal.user, {
+    nullable: true,
+    cascade: true,
+  })
+  userGoals: UserGoalEntity[];
 
   @OneToMany(() => MenuEntity, (menu) => menu.user, {
     nullable: true,

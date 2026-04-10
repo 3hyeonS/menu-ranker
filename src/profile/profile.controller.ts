@@ -35,6 +35,8 @@ import { UpdateTargetCaloriesRequestDto } from './dto/request-dto/update-target-
 import { UpdateTargetRatioRequestDto } from './dto/request-dto/update-target-ratio-request-dto';
 import { RegisterSubCodeRequestDto } from './dto/request-dto/register-subCode-request-dto';
 import { CreateInquiryRequestDto } from './dto/request-dto/create-inquiry-request-dto';
+import { GetUserGoalSnapshotRequestDto } from './dto/request-dto/get-user-goal-snapshot-request-dto';
+import { UserGoalSnapshotResponseDto } from './dto/response-dto/user-goal-snapshot-response-dto';
 
 @ApiTags('프로필')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -74,6 +76,51 @@ export class ProfileController {
   @Get('/getProfile')
   async getProfile(@GetUser() user: UserEntity): Promise<ProfileResponseDto> {
     return await this.profileService.getProfile(user);
+  }
+
+  @ApiOperation({
+    summary: '특정 날짜 기준 목표 스냅샷 조회',
+    description:
+      '요청 날짜 이전 또는 당일에 생성된 스냅샷 중 가장 최근 값을 반환합니다. 그런 스냅샷이 없으면 전체 이력 중 가장 최근 스냅샷을 반환합니다.',
+  })
+  @GenericApiResponse({
+    status: 200,
+    description: '목표 스냅샷 조회 성공',
+    message: 'User goal snapshot returned successfully',
+    model: UserGoalSnapshotResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'date must be a Date instance',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 refreshToken',
+    message: 'Invalid or expired refreshToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '목표 스냅샷 이력이 없음',
+    message: 'User goal snapshot not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('User goal snapshot returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/getUserGoalSnapshot')
+  async getUserGoalSnapshot(
+    @GetUser() user: UserEntity,
+    @Body() dto: GetUserGoalSnapshotRequestDto,
+  ): Promise<UserGoalSnapshotResponseDto> {
+    return await this.profileService.getUserGoalSnapshot(user, dto);
   }
 
   @ApiOperation({ summary: '닉네임 수정' })

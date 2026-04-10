@@ -25,6 +25,7 @@ import { RegisterUserInfoRequestDto } from './dto/user-dto/request-dto/register-
 import { UserInfoResponseDto } from './dto/user-dto/response-dto/user-info-response-dto';
 import { roundToOneDecimal } from '../utils/number.util';
 import { UserInfoEntity } from './entity/user/userInfo.entity';
+import { UserGoalEntity } from './entity/user/userGoal.entity';
 
 @Injectable()
 export class AuthService {
@@ -43,6 +44,8 @@ export class AuthService {
     private appleKeyRepository: Repository<AppleKeyEntity>,
     @InjectRepository(UserInfoEntity)
     private userInfoRepository: Repository<UserInfoEntity>,
+    @InjectRepository(UserGoalEntity)
+    private userGoalRepository: Repository<UserGoalEntity>,
     private jwtService: JwtService,
     private httpService: HttpService,
   ) {}
@@ -592,13 +595,18 @@ export class AuthService {
       user: user,
     });
 
-    const savedUserInfo = await this.userInfoRepository.findOne({
-      where: {
-        user: { id: user.id },
-      },
+    const newUserGoal = this.userGoalRepository.create({
+      activity: newUserInfo.activity,
+      goal: newUserInfo.goal,
+      target_calories: newUserInfo.target_calories,
+      target_ratio: newUserInfo.target_ratio,
+      target_weight: newUserInfo.target_weight,
+      user: user,
     });
 
-    return new UserInfoResponseDto(user, savedUserInfo);
+    await this.userGoalRepository.save(newUserGoal);
+
+    return new UserInfoResponseDto(user, newUserInfo);
   }
 
   // 유저 정보 보유 여부
