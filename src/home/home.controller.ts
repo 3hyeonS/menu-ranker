@@ -48,6 +48,8 @@ import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-deco
 import { SearchBrandRequestDto } from './dto/request-dto/search-brand-request-dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-request-dto';
+import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutrition-label-recognition-response-dto';
+import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -290,6 +292,113 @@ export class HomeController {
       file,
       mealImageUploadRequestDto,
     );
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '영양성분표 사진 인식',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '영양성분표 사진 인식 성공',
+    message: 'Nutrition label recognized successfully',
+    model: NutritionLabelRecognitionResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nimage 파일 누락 또는 잘못된 형식',
+    message: 'image file is required',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패 또는 응답 파싱 실패',
+    message: 'Nutrition label recognition is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '영양성분표 이미지 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: '영양성분표 이미지 파일',
+        },
+      },
+      required: ['image'],
+    },
+  })
+  @UseGuards(AuthGuard())
+  @UseInterceptors(FileInterceptor('image'))
+  @ResponseMsg('Nutrition label recognized successfully')
+  @Post('recognizeNutritionLabel')
+  async recognizeNutritionLabel(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<NutritionLabelRecognitionResponseDto> {
+    return await this.homeService.recognizeNutritionLabel(file);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '음식 사진 인식',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '음식 사진 인식 성공',
+    message: 'Food image recognized successfully',
+    model: FoodImageRecognitionResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nimage 파일 누락 또는 잘못된 형식',
+    message: 'image file is required',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패 또는 응답 파싱 실패',
+    message: 'Food image recognition is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '음식 이미지 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: '음식 사진 파일',
+        },
+      },
+      required: ['image'],
+    },
+  })
+  @UseGuards(AuthGuard())
+  @UseInterceptors(FileInterceptor('image'))
+  @ResponseMsg('Food image recognized successfully')
+  @Post('recognizeFoodImage')
+  async recognizeFoodImage(
+    @GetUser() user: UserEntity,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<FoodImageRecognitionResponseDto> {
+    return await this.homeService.recognizeFoodImage(user, file);
   }
 
   // 오늘의 식사 등록
