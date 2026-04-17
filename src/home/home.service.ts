@@ -230,6 +230,7 @@ export class HomeService {
     return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${newFileKey}`;
   }
 
+  // 음식 사진 인식
   async recognizeFoodImage(
     user: UserEntity,
     file: Express.Multer.File,
@@ -303,6 +304,7 @@ ${JSON.stringify(menus)}
     });
   }
 
+  // 영양성분표 사진 인식
   async recognizeNutritionLabel(
     file: Express.Multer.File,
   ): Promise<NutritionLabelRecognitionResponseDto> {
@@ -724,6 +726,7 @@ ${JSON.stringify(menus)}
     );
   }
 
+  // 메뉴 영양성분 소수점 값 정규화
   private normalizeMenuFloatValues<
     T extends {
       weight: number;
@@ -765,6 +768,7 @@ ${JSON.stringify(menus)}
     };
   }
 
+  // 영양성분표 인식 결과 정규화
   private normalizeNutritionLabelRecognition(
     value: any,
   ): NutritionLabelRecognition {
@@ -794,6 +798,7 @@ ${JSON.stringify(menus)}
     return normalized;
   }
 
+  // 음식 사진 인식 결과 정규화
   private normalizeFoodImageRecognition(
     value: any,
     menus: Array<{ id: number }>,
@@ -839,6 +844,7 @@ ${JSON.stringify(menus)}
     };
   }
 
+  // Gemini 이미지 JSON 응답 호출
   private async callGeminiJsonWithImage(
     prompt: string,
     file: Express.Multer.File,
@@ -903,6 +909,7 @@ ${JSON.stringify(menus)}
     }
   }
 
+  // 인식용 음식 사진 S3 업로드
   private async uploadRecognizedFoodImage(
     user: UserEntity,
     file: Express.Multer.File,
@@ -924,6 +931,7 @@ ${JSON.stringify(menus)}
     return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
   }
 
+  // 응답 문자열의 코드 펜스 제거
   private stripCodeFence(value: string): string {
     return value
       .replace(/^```json\s*/i, '')
@@ -932,12 +940,14 @@ ${JSON.stringify(menus)}
       .trim();
   }
 
+  // 빈 문자열을 null로 변환
   private asNullableString(value: unknown): string | null {
     return typeof value === 'string' && value.trim().length > 0
       ? value.trim()
       : null;
   }
 
+  // 단위 값을 g 또는 ml 기준으로 변환
   private asUnit(value: unknown, ...hints: Array<unknown>): number {
     if (value === 0 || value === '0') {
       return 0;
@@ -960,10 +970,11 @@ ${JSON.stringify(menus)}
     }
 
     throw new ServiceUnavailableException(
-      'Nutrition label recognition returned invalid unit',
+        'Nutrition label recognition returned invalid unit',
     );
   }
 
+  // 필수 숫자 필드 검증 및 변환
   private asRequiredNumber(value: unknown, fieldName: string): number {
     const parsed = this.asNullableNumber(value);
 
@@ -976,6 +987,7 @@ ${JSON.stringify(menus)}
     return parsed;
   }
 
+  // 선택 숫자 필드 변환
   private asNullableNumber(value: unknown): number | null {
     if (value === null || value === undefined || value === '') {
       return null;
@@ -986,6 +998,7 @@ ${JSON.stringify(menus)}
     return Number.isFinite(numericValue) ? numericValue : null;
   }
 
+  // 문자열에서 숫자 값 추출
   private extractNumericValue(value: unknown): number {
     if (typeof value === 'number') {
       return value;
@@ -1011,6 +1024,7 @@ ${JSON.stringify(menus)}
     return Number(matchedNumber[0]);
   }
 
+  // MIME 타입에 맞는 이미지 확장자 반환
   private getImageExtension(mimeType?: string): string {
     switch (mimeType) {
       case 'image/jpeg':
