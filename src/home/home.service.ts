@@ -970,7 +970,7 @@ ${JSON.stringify(menus)}
     }
 
     throw new ServiceUnavailableException(
-        'Nutrition label recognition returned invalid unit',
+      'Nutrition label recognition returned invalid unit',
     );
   }
 
