@@ -199,7 +199,6 @@ export class ChatService {
     });
 
     response.intro_message = `메뉴판에서 인식된 후보 메뉴를 기준으로 ${this.mealTimeLabelMap[mealTime]} 추천을 정리해드렸어요!`;
-    response.parsed_request.original_input = '메뉴판 사진';
 
     return response;
   }
@@ -260,12 +259,6 @@ export class ChatService {
 
     const response = new ChatRecommendResponseDto();
     response.intro_message = this.buildIntroMessage(intent, userInfo);
-    response.parsed_request = this.toParsedRequestResponse(input, intent);
-    response.recommendation_basis = this.toRecommendationBasisResponse(
-      userInfo,
-      dailyNutrition,
-      rankingBasis,
-    );
     response.recommendations = rankedMenus.map(({ menu, score }, index) => {
       const item = new ChatRecommendItemResponseDto();
       const generated = descriptionMap.get(menu.id);
