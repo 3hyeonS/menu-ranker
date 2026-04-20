@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ChatParsedRequestResponseDto } from './chat-parsed-request-response-dto';
 import { ChatRecommendationBasisResponseDto } from './chat-recommendation-basis-response-dto';
 import { ChatRecommendItemResponseDto } from './chat-recommend-item-response-dto';
+import { ChatRecognizedCandidateResponseDto } from './chat-recognized-candidate-response-dto';
 
 export class ChatRecommendResponseDto {
   @ApiProperty({
@@ -29,4 +30,11 @@ export class ChatRecommendResponseDto {
     description: '상위 10개 추천 메뉴',
   })
   recommendations: ChatRecommendItemResponseDto[];
+
+  @ApiProperty({
+    type: [ChatRecognizedCandidateResponseDto],
+    description: '메뉴판/이미지 인식으로 좁혀진 후보 메뉴',
+    required: false,
+  })
+  recognized_candidates?: ChatRecognizedCandidateResponseDto[];
 }

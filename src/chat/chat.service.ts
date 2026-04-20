@@ -21,6 +21,7 @@ import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-resp
 import { ChatParsedRequestResponseDto } from './dto/response-dto/chat-parsed-request-response-dto';
 import { ChatRecommendationBasisResponseDto } from './dto/response-dto/chat-recommendation-basis-response-dto';
 import { ChatRecommendItemResponseDto } from './dto/response-dto/chat-recommend-item-response-dto';
+import { ChatRecognizedCandidateResponseDto } from './dto/response-dto/chat-recognized-candidate-response-dto';
 import { ChatHistoryEntity } from './entity/chat-history.entity';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
 import { ChatHistoryItemResponseDto } from './dto/response-dto/chat-history-item-response-dto';
@@ -58,6 +59,13 @@ type RankedMenu = {
   score: ScoreBreakdown;
 };
 
+type MenuRecognitionCandidate = {
+  id: number;
+  name: string;
+  brand: string | null;
+  category: string | null;
+};
+
 type GeminiDescription = {
   menu_id: number;
   one_line_summary: string;
@@ -93,71 +101,152 @@ export class ChatService {
     user: UserEntity,
     chatRecommendRequestDto: ChatRecommendRequestDto,
   ): Promise<ChatRecommendResponseDto> {
-    // 채팅 입력은 자연어 한 줄만 받기 때문에, 먼저 빈 문자열 여부를 막아둡니다.
     const input = chatRecommendRequestDto.input?.trim();
 
     if (!input) {
       throw new BadRequestException('input must not be empty');
     }
 
-    // 추천 알고리즘은 목표 칼로리/목표 비율이 필요하므로 사용자 프로필이 필수입니다.
-    const userInfo = await this.userInfoRepository.findOne({
-      where: { user: { id: user.id } },
-      relations: { user: true },
-    });
-
-    if (!userInfo) {
-      throw new BadRequestException(
-        'User profile is required for recommendation',
-      );
-    }
-
-    // 날짜는 별도 입력을 받지 않고 "현재 날짜"로 고정합니다.
-    const targetDate = this.resolveTargetDate();
-    const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
-
-    // 1차 Gemini 호출: 자연어를 알고리즘이 이해할 수 있는 구조화 스키마로 변환합니다.
+    const userInfo = await this.getRequiredUserInfo(user.id);
     const parsedIntent = await this.parseIntentWithGemini(input, userInfo);
-
-    // 시간대는 "텍스트에 명시된 경우"를 우선하고, 없으면 현재 시각으로 보정합니다.
     const mealTime =
       parsedIntent.meal_time ?? this.inferMealTimeFromClock(new Date());
-
     const finalizedIntent: ParsedChatIntent = {
       ...parsedIntent,
       meal_time: mealTime,
     };
 
-    // 남은 칼로리/남은 탄단지와 현재 끼니 예산을 계산해 랭킹 기준을 만듭니다.
-    const rankingBasis = this.buildRecommendationBasis(
-      userInfo,
-      dailyNutrition,
-      mealTime,
-      finalizedIntent.amount_preference,
-    );
-
-    // 브랜드 조건이 있으면 우선 필터링하고, 없으면 전체 메뉴 풀을 후보로 사용합니다.
     const candidateMenus = await this.getCandidateMenus(
       user.id,
       finalizedIntent,
     );
+
+    return await this.recommendWithPreparedContext({
+      user,
+      userInfo,
+      input,
+      intent: finalizedIntent,
+      candidateMenus,
+    });
+  }
+
+  async recommendFromMenuBoard(
+    user: UserEntity,
+    file: Express.Multer.File,
+  ): Promise<ChatRecommendResponseDto> {
+    if (!file) {
+      throw new BadRequestException('image file is required');
+    }
+
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('image file must be an image');
+    }
+
+    const userInfo = await this.getRequiredUserInfo(user.id);
+    const availableMenus = await this.getAvailableMenuRecognitionCandidates(
+      user.id,
+    );
+
+    if (availableMenus.length === 0) {
+      throw new BadRequestException('No menus available for recommendation');
+    }
+
+    const recognizedCandidates =
+      await this.recognizeMenuBoardCandidatesWithGemini(file, availableMenus);
+    const candidateIds = recognizedCandidates.map((candidate) => candidate.id);
+
+    if (candidateIds.length === 0) {
+      throw new BadRequestException(
+        'No recognized menus matched the available menu list',
+      );
+    }
+
+    const candidateMenus = await this.menuRepository.find({
+      where: candidateIds.map((id) => ({ id })),
+      relations: { user: true },
+    });
+    const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
+    const orderedCandidateMenus = candidateIds
+      .map((id) => menuMap.get(id))
+      .filter((menu): menu is MenuEntity => !!menu);
+
+    const inferredBrand = this.inferDominantValue(
+      recognizedCandidates.map((candidate) => candidate.brand),
+    );
+    const inferredCategory = this.inferDominantValue(
+      recognizedCandidates.map((candidate) => candidate.category),
+    );
+
+    const now = new Date();
+    const mealTime = this.inferMealTimeFromClock(now);
+    const intent: ParsedChatIntent = {
+      normalized_request: '메뉴판 사진에 있는 메뉴 후보 기반 추천',
+      meal_time: mealTime,
+      desired_brand: inferredBrand,
+      desired_category: inferredCategory,
+      nutrition_focus: [],
+      amount_preference: 'regular',
+      keywords: this.buildKeywordsFromCandidates(recognizedCandidates),
+    };
+
+    const response = await this.recommendWithPreparedContext({
+      user,
+      userInfo,
+      input: '메뉴판 사진 기반 추천',
+      intent,
+      candidateMenus: orderedCandidateMenus,
+      recognizedCandidates,
+    });
+
+    response.intro_message = `메뉴판에서 인식된 후보 메뉴를 기준으로 ${this.mealTimeLabelMap[mealTime]} 추천을 정리해드렸어요!`;
+    response.parsed_request.original_input = '메뉴판 사진';
+
+    return response;
+  }
+
+  private async recommendWithPreparedContext(params: {
+    user: UserEntity;
+    userInfo: UserInfoEntity;
+    input: string;
+    intent: ParsedChatIntent;
+    candidateMenus: MenuEntity[];
+    recognizedCandidates?: MenuRecognitionCandidate[];
+  }): Promise<ChatRecommendResponseDto> {
+    const {
+      user,
+      userInfo,
+      input,
+      intent,
+      candidateMenus,
+      recognizedCandidates,
+    } = params;
+
+    const targetDate = this.resolveTargetDate();
+    const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
+    const mealTime =
+      intent.meal_time ?? this.inferMealTimeFromClock(new Date());
+    const rankingBasis = this.buildRecommendationBasis(
+      userInfo,
+      dailyNutrition,
+      mealTime,
+      intent.amount_preference,
+    );
+
     if (candidateMenus.length === 0) {
       throw new BadRequestException('No menus available for recommendation');
     }
 
-    // 각 메뉴를 점수화한 뒤 최종 상위 10개만 남깁니다.
     const rankedMenus = candidateMenus
       .map((menu) => ({
         menu,
-        score: this.scoreMenu(menu, finalizedIntent, userInfo, rankingBasis),
+        score: this.scoreMenu(menu, intent, userInfo, rankingBasis),
       }))
       .sort((a, b) => b.score.finalScore - a.score.finalScore)
       .slice(0, 10);
 
-    // 2차 Gemini 호출: 랭킹 결과를 사용자 친화적인 한 줄 설명/상세 사유로 변환합니다.
     const generatedDescriptions = await this.generateDescriptionsWithGemini(
       input,
-      finalizedIntent,
+      intent,
       rankingBasis,
       rankedMenus,
     );
@@ -169,13 +258,9 @@ export class ChatService {
       ]),
     );
 
-    // Gemini 응답이 일부 비어 있어도 서비스가 깨지지 않도록 내부 fallback 문구를 사용합니다.
     const response = new ChatRecommendResponseDto();
-    response.intro_message = this.buildIntroMessage(finalizedIntent, userInfo);
-    response.parsed_request = this.toParsedRequestResponse(
-      input,
-      finalizedIntent,
-    );
+    response.intro_message = this.buildIntroMessage(intent, userInfo);
+    response.parsed_request = this.toParsedRequestResponse(input, intent);
     response.recommendation_basis = this.toRecommendationBasisResponse(
       userInfo,
       dailyNutrition,
@@ -202,6 +287,10 @@ export class ChatService {
 
       return item;
     });
+    response.recognized_candidates =
+      recognizedCandidates?.map((candidate) =>
+        this.toRecognizedCandidateResponse(candidate),
+      ) ?? [];
 
     await this.chatHistoryRepository.save(
       this.chatHistoryRepository.create({
@@ -212,6 +301,21 @@ export class ChatService {
     );
 
     return response;
+  }
+
+  private async getRequiredUserInfo(userId: number): Promise<UserInfoEntity> {
+    const userInfo = await this.userInfoRepository.findOne({
+      where: { user: { id: userId } },
+      relations: { user: true },
+    });
+
+    if (!userInfo) {
+      throw new BadRequestException(
+        'User profile is required for recommendation',
+      );
+    }
+
+    return userInfo;
   }
 
   async getChatHistory(user: UserEntity): Promise<ChatHistoryResponseDto> {
@@ -244,7 +348,9 @@ export class ChatService {
         : userInfo.goal === 2
           ? '벌크업 식단 관점에서'
           : '균형 잡힌 식단 기준으로';
-    const brandPart = intent.desired_brand ? `${intent.desired_brand}에서 ` : '';
+    const brandPart = intent.desired_brand
+      ? `${intent.desired_brand}에서 `
+      : '';
     const categoryPart = intent.desired_category
       ? `${intent.desired_category} 중심으로 `
       : '';
@@ -315,6 +421,83 @@ export class ChatService {
       },
       { calories: 0, carbs: 0, protein: 0, fat: 0 },
     );
+  }
+
+  private async getAvailableMenuRecognitionCandidates(
+    userId: number,
+  ): Promise<MenuRecognitionCandidate[]> {
+    return await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select([
+        'menu.id AS id',
+        'menu.name AS name',
+        'menu.brand AS brand',
+        'menu.category AS category',
+      ])
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .orderBy('menu.id', 'ASC')
+      .getRawMany<MenuRecognitionCandidate>();
+  }
+
+  private async recognizeMenuBoardCandidatesWithGemini(
+    file: Express.Multer.File,
+    menus: MenuRecognitionCandidate[],
+  ): Promise<MenuRecognitionCandidate[]> {
+    const prompt = `
+메뉴판 사진을 보고, 아래 메뉴 entity 후보 중 사진 속 메뉴와 가장 일치하는 값들만 골라 JSON object만 반환해.
+
+규칙:
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- 사진 속 실제 메뉴명과 매칭되는 후보만 선택해
+- 후보 목록에 없는 메뉴는 절대 추가하지 마
+- OCR로 읽힌 문구와 후보 매칭에 자신 있는 항목만 남겨
+- 최대 30개까지만 반환해
+- candidate_menu_ids에는 중복을 넣지 마
+- 메뉴판의 브랜드나 카테고리가 보이면 inferred_brand, inferred_category에 넣고 불명확하면 null
+
+후보 메뉴:
+${JSON.stringify(menus)}
+
+반환 shape:
+{
+  "recognized_texts": ["싸이버거", "치즈버거"],
+  "inferred_brand": "맘스터치",
+  "inferred_category": "버거",
+  "candidate_menu_ids": [1, 2, 3]
+}
+`.trim();
+
+    const data = await this.callGeminiJsonWithImage(prompt, file);
+    const candidateIds: unknown[] = Array.isArray(data?.candidate_menu_ids)
+      ? data.candidate_menu_ids
+      : [];
+    const menuMap = new Map(menus.map((menu) => [Number(menu.id), menu]));
+    const uniqueIds = Array.from(
+      new Set<number>(
+        candidateIds
+          .map((value) => Number(value))
+          .filter(
+            (id): id is number => Number.isInteger(id) && menuMap.has(id),
+          ),
+      ),
+    ).slice(0, 30);
+
+    const inferredBrand = this.asNonEmptyString(data?.inferred_brand);
+    const inferredCategory = this.asNonEmptyString(data?.inferred_category);
+
+    return uniqueIds.map((id) => {
+      const matched = menuMap.get(id)!;
+      return {
+        ...matched,
+        brand: matched.brand ?? inferredBrand ?? null,
+        category: matched.category ?? inferredCategory ?? null,
+      };
+    });
   }
 
   private async getCandidateMenus(
@@ -676,6 +859,55 @@ export class ChatService {
       return '현재 식사 슬롯 칼로리 예산에 잘 맞는 메뉴입니다.';
     }
     return `${menu.name}은(는) 전체 균형 점수가 높아 상위권에 선정되었습니다.`;
+  }
+
+  private buildKeywordsFromCandidates(
+    candidates: MenuRecognitionCandidate[],
+  ): string[] {
+    return Array.from(
+      new Set(
+        candidates
+          .flatMap((candidate) => [
+            candidate.name,
+            candidate.brand ?? '',
+            candidate.category ?? '',
+          ])
+          .map((value) => value.trim())
+          .filter((value) => value.length >= 2),
+      ),
+    ).slice(0, 8);
+  }
+
+  private inferDominantValue(
+    values: Array<string | null | undefined>,
+  ): string | null {
+    const counts = new Map<string, number>();
+
+    values
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' && value.trim().length > 0,
+      )
+      .forEach((value) => {
+        const normalized = value.trim();
+        counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+      });
+
+    const [bestMatch] = Array.from(counts.entries()).sort(
+      (a, b) => b[1] - a[1],
+    );
+    return bestMatch?.[0] ?? null;
+  }
+
+  private toRecognizedCandidateResponse(
+    candidate: MenuRecognitionCandidate,
+  ): ChatRecognizedCandidateResponseDto {
+    const response = new ChatRecognizedCandidateResponseDto();
+    response.menu_id = candidate.id;
+    response.menu = candidate.name;
+    response.brand = candidate.brand;
+    response.category = candidate.category;
+    return response;
   }
 
   private async parseIntentWithGemini(
@@ -1062,6 +1294,74 @@ ${JSON.stringify(menusPayload)}
               'Content-Type': 'application/json',
             },
             timeout: 20000,
+          },
+        ),
+      );
+
+      const text = response.data?.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text ?? '')
+        .join('')
+        ?.trim();
+
+      if (!text) {
+        throw new Error('Gemini returned empty content');
+      }
+
+      return JSON.parse(this.stripCodeFence(text));
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        'Gemini recommendation pipeline is unavailable',
+      );
+    }
+  }
+
+  private async callGeminiJsonWithImage(
+    prompt: string,
+    file: Express.Multer.File,
+  ): Promise<any> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+    const baseUrl =
+      process.env.GEMINI_BASE_URL ??
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+    if (!apiKey) {
+      console.log('[CHAT] GEMINI ENV CHECK', {
+        GEMINI_API_KEY: this.maskSecret(process.env.GEMINI_API_KEY),
+        GEMINI_MODEL: model,
+      });
+      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
+    }
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${baseUrl}?key=${apiKey}`,
+          {
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: prompt },
+                  {
+                    inline_data: {
+                      mime_type: file.mimetype,
+                      data: file.buffer.toString('base64'),
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: 'application/json',
+            },
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            timeout: 30000,
           },
         ),
       );

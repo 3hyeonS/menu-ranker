@@ -3,16 +3,20 @@ import {
   Controller,
   Get,
   Post,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiExtraModels,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { GetUser } from '../decorators/get-user-decorator';
 import { ResponseTransformInterceptor } from '../interceptors/response-transform-interceptor';
 import { ResponseMsg } from '../decorators/response-message-decorator';
@@ -70,6 +74,60 @@ export class ChatController {
     @Body() chatRecommendRequestDto: ChatRecommendRequestDto,
   ): Promise<ChatRecommendResponseDto> {
     return await this.chatService.recommend(user, chatRecommendRequestDto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '메뉴판 사진 기반 메뉴 추천',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '메뉴판 사진 기반 메뉴 추천 성공',
+    message: 'Menu board recommendations generated successfully',
+    model: ChatRecommendResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nimage 파일 누락 또는 잘못된 형식',
+    message: 'image file is required',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패 또는 응답 파싱 실패',
+    message: 'Gemini recommendation pipeline is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '메뉴판 이미지 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: '메뉴판 사진 파일',
+        },
+      },
+      required: ['image'],
+    },
+  })
+  @ResponseMsg('Menu board recommendations generated successfully')
+  @UseGuards(AuthGuard())
+  @UseInterceptors(FileInterceptor('image'))
+  @Post('/menu-board')
+  async recommendMenusFromMenuBoard(
+    @GetUser() user: UserEntity,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<ChatRecommendResponseDto> {
+    return await this.chatService.recommendFromMenuBoard(user, file);
   }
 
   @ApiBearerAuth('accessToken')
