@@ -162,7 +162,7 @@ export class ChatService {
     }
 
     const candidateMenus = await this.menuRepository.find({
-      where: candidateIds.map((id) => ({ id })),
+      where: candidateIds.map((id) => ({ id, is_deleted: 0 })),
       relations: { user: true },
     });
     const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
@@ -266,6 +266,7 @@ export class ChatService {
       item.rank = index + 1;
       item.menu_id = menu.id;
       item.menu = menu.name;
+      item.data_source = menu.data_source;
       item.brand = menu.brand ?? null;
       item.amount = this.formatAmount(menu);
       item.calories = roundNullableToOneDecimal(menu.calories) ?? 0;
@@ -433,6 +434,7 @@ export class ChatService {
           qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
         }),
       )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .orderBy('menu.id', 'ASC')
       .getRawMany<MenuRecognitionCandidate>();
   }
@@ -506,6 +508,7 @@ ${JSON.stringify(menus)}
           qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
         }),
       );
+    builder.andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 });
 
     // 브랜드가 지정된 경우 우선 브랜드 필터를 걸어 관련 메뉴만 남깁니다.
     if (intent.desired_brand) {
@@ -528,6 +531,7 @@ ${JSON.stringify(menus)}
           qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
         }),
       )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .getMany();
   }
 

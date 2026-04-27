@@ -23,6 +23,13 @@ export class ChatRecommendItemResponseDto {
   menu: string;
 
   @ApiProperty({
+    type: Number,
+    description: '메뉴 데이터 출처  \n0: 기본 데이터  \n1: 사용자 등록',
+    example: 0,
+  })
+  data_source: number;
+
+  @ApiProperty({
     type: String,
     nullable: true,
     description: '브랜드',

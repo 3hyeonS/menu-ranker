@@ -106,9 +106,16 @@ export class HomeService {
           });
         }),
       )
-      .andWhere('menu.name LIKE :keyword', {
-        keyword: keywordPattern,
-      })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('menu.name LIKE :keyword', {
+            keyword: keywordPattern,
+          }).orWhere('menu.brand = :brandKeyword', {
+            brandKeyword: keyword,
+          });
+        }),
+      )
       .getMany();
 
     const menu_list: MenuSimpleResponseDto[] = menuList.map(
@@ -119,6 +126,7 @@ export class HomeService {
       .createQueryBuilder('menu')
       .select('menu.brand', 'brand')
       .where('menu.brand LIKE :keyword', { keyword: keywordPattern })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .groupBy('menu.brand')
       .orderBy('menu.brand', 'ASC')
       .getRawMany<{ brand: string }>();
@@ -136,9 +144,16 @@ export class HomeService {
 
   // 메뉴 영양성분 상세 조회
   async menuDetail(menuId: number): Promise<MenuResponseDto> {
-    return new MenuResponseDto(
-      await this.menuRepository.findOneBy({ id: menuId }),
-    );
+    const menu = await this.menuRepository.findOneBy({
+      id: menuId,
+      is_deleted: 0,
+    });
+
+    if (!menu) {
+      throw new NotFoundException('Menu not found');
+    }
+
+    return new MenuResponseDto(menu);
   }
 
   // 브랜드 내 메뉴 검색
@@ -160,6 +175,7 @@ export class HomeService {
             });
           }),
         )
+        .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
         .andWhere('menu.brand = :brand', { brand })
         .getMany();
 
@@ -178,6 +194,7 @@ export class HomeService {
           });
         }),
       )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .andWhere('menu.brand = :brand', { brand })
       .andWhere('menu.name LIKE :keyword', {
         keyword: keywordPattern,
@@ -259,6 +276,7 @@ export class HomeService {
           });
         }),
       )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .orderBy('menu.id', 'ASC')
       .getRawMany<{
         id: number;
@@ -364,17 +382,23 @@ ${JSON.stringify(menus)}
     user: UserEntity,
     registerMealRequestDto: RegisterMealRequestDto,
   ): Promise<void> {
-    const { date, time, image, menu_ids, menu_quantities } =
+    const { date, time, image, menu_ids, menu_quantities, menu_input_modes } =
       registerMealRequestDto;
 
-    if (menu_ids.length !== menu_quantities.length) {
+    if (
+      menu_ids.length !== menu_quantities.length ||
+      menu_ids.length !== menu_input_modes.length
+    ) {
       throw new BadRequestException(
-        'menu_ids and menu_quantities must have the same length',
+        'menu_ids, menu_quantities and menu_input_modes must have the same length',
       );
     }
 
     const menus = await this.menuRepository.find({
-      where: { id: In(menu_ids) },
+      where: {
+        id: In(menu_ids),
+        is_deleted: 0,
+      },
     });
 
     if (menus.length !== menu_ids.length) {
@@ -387,6 +411,7 @@ ${JSON.stringify(menus)}
       this.mealMenuRepository.create({
         menu: menuMap.get(menuId),
         quantity: roundToOneDecimal(menu_quantities[index]),
+        menu_input_mode: menu_input_modes[index],
       }),
     );
 
@@ -507,6 +532,7 @@ ${JSON.stringify(menus)}
               (mealMenu) => new MenuSimpleResponseDto(mealMenu.menu),
             ),
             meal.mealMenus.map((mealMenu) => mealMenu.quantity),
+            meal.mealMenus.map((mealMenu) => mealMenu.menu_input_mode),
           ),
       ),
     );
@@ -526,6 +552,7 @@ ${JSON.stringify(menus)}
       .createQueryBuilder('menu')
       .select('menu.brand', 'brand')
       .where('menu.brand LIKE :keyword', { keyword: keywordPattern })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .groupBy('menu.brand')
       .orderBy('menu.brand', 'ASC')
       .getRawMany<{ brand: string }>();
@@ -547,6 +574,7 @@ ${JSON.stringify(menus)}
       .createQueryBuilder('menu')
       .select('menu.brand', 'brand')
       .where('menu.brand = :brand', { brand })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .getRawOne<{ brand: string }>();
 
     if (existingBrand) {
@@ -581,6 +609,7 @@ ${JSON.stringify(menus)}
       where: {
         name: registerMenuRequestDto.name,
         brand: registerMenuRequestDto.brand,
+        is_deleted: 0,
         user: { id: user.id },
       },
     });
@@ -592,6 +621,7 @@ ${JSON.stringify(menus)}
     const menu = this.menuRepository.create({
       ...this.normalizeMenuFloatValues(registerMenuRequestDto),
       data_source: 1,
+      is_deleted: 0,
       category: null,
       unit_quantity: '인분',
       user,
@@ -610,6 +640,7 @@ ${JSON.stringify(menus)}
     const menu = await this.menuRepository.findOne({
       where: {
         id: modifyMenuRequestDto.id,
+        is_deleted: 0,
         user: { id: user.id },
       },
     });
@@ -622,6 +653,7 @@ ${JSON.stringify(menus)}
       where: {
         name: modifyMenuRequestDto.name,
         brand: modifyMenuRequestDto.brand,
+        is_deleted: 0,
         user: { id: user.id },
       },
     });
@@ -645,6 +677,7 @@ ${JSON.stringify(menus)}
     const menu = await this.menuRepository.findOne({
       where: {
         id: menuId,
+        is_deleted: 0,
         user: { id: user.id },
       },
     });
@@ -653,7 +686,8 @@ ${JSON.stringify(menus)}
       throw new NotFoundException('Menu not found');
     }
 
-    await this.menuRepository.remove(menu);
+    menu.is_deleted = 1;
+    await this.menuRepository.save(menu);
   }
 
   // 오늘의 체중 등록

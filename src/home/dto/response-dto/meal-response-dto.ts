@@ -33,15 +33,24 @@ export class MealResponseDto {
   })
   menu_quantities: number[];
 
+  @ApiProperty({
+    type: [Number],
+    description: '각 메뉴의 입력 방식  \n0: 단위 탭  \n1: 중량 탭',
+    example: [0, 1],
+  })
+  menu_input_modes: number[];
+
   constructor(
     time: number,
     image: string,
     menuList: MenuSimpleResponseDto[],
     menuQunatities: number[],
+    menuInputModes: number[],
   ) {
     this.time = time;
     this.image = image;
     this.menu_list = menuList;
     this.menu_quantities = menuQunatities;
+    this.menu_input_modes = menuInputModes;
   }
 }

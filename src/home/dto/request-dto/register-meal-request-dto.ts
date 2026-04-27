@@ -55,12 +55,27 @@ export class RegisterMealRequestDto {
 
   @ApiProperty({
     type: [Number],
-    description: '각 메뉴의 수량',
-    example: [1, 2.5],
+    description: '각 메뉴의 중량',
+    example: [330, 250],
   })
   @IsNotEmpty()
   @IsArray()
   @ArrayNotEmpty()
   @IsNumber(oneDecimalNumberOptions, { each: true })
   menu_quantities: number[];
+
+  @ApiProperty({
+    type: [Number],
+    description: '각 메뉴의 입력 방식  \n0: 단위 탭  \n1: 중량 탭',
+    example: [0, 1],
+  })
+  @IsNotEmpty()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsNumber({}, { each: true })
+  @IsIn([0, 1], {
+    each: true,
+    message: 'each value in menu_input_modes must be 0 or 1',
+  })
+  menu_input_modes: number[];
 }

@@ -37,4 +37,12 @@ export class MealMenuEntity {
     transformer: singleDecimalTransformer,
   })
   quantity: number;
+
+  @Column({
+    type: 'tinyint',
+    name: 'menu_input_mode',
+    nullable: false,
+    default: 0,
+  })
+  menu_input_mode: number;
 }

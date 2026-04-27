@@ -17,6 +17,14 @@ export class MenuEntity {
   @Column({ type: 'tinyint', name: 'data_source', nullable: false })
   data_source: number;
 
+  @Column({
+    type: 'tinyint',
+    name: 'is_deleted',
+    nullable: false,
+    default: 0,
+  })
+  is_deleted: number;
+
   @Column({ type: 'varchar', name: 'name', nullable: false })
   name: string;
 
