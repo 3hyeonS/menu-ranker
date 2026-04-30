@@ -468,13 +468,14 @@ export class AuthService {
   async defaltTargetCalories(
     defaltTargetRequestDto: DefaltTargetCaloriesRequestDto,
   ): Promise<number> {
-    const [gender, birthYear, height, weight, activity, goal] = [
+    const [gender, birthYear, height, weight, activity, goal, target_weight] = [
       defaltTargetRequestDto.gender,
       defaltTargetRequestDto.birthYear,
       defaltTargetRequestDto.height,
       defaltTargetRequestDto.weight,
       defaltTargetRequestDto.activity,
       defaltTargetRequestDto.goal,
+      defaltTargetRequestDto.target_weight,
     ];
 
     // bmr 계산
@@ -492,9 +493,17 @@ export class AuthService {
     let TDEE_goal = TDEE;
     switch (goal) {
       case 0:
+        if (target_weight > weight) {
+          TDEE_goal = TDEE + 200;
+          break;
+        }
         TDEE_goal = TDEE - 500;
         break;
       case 2:
+        if (target_weight < weight) {
+          TDEE_goal = TDEE - 300;
+          break;
+        }
         TDEE_goal = TDEE + 300;
         break;
     }
@@ -506,10 +515,11 @@ export class AuthService {
   async defautRatio(
     defaltRatioRequestDto: DefaltRatioRequestDto,
   ): Promise<DefaltRatioResponseDto> {
-    const [targetCalories, weight, goal] = [
-      defaltRatioRequestDto.targetCalories,
+    const [target_calories, weight, goal, target_weight] = [
+      defaltRatioRequestDto.target_calories,
       defaltRatioRequestDto.weight,
       defaltRatioRequestDto.goal,
+      defaltRatioRequestDto.target_weight,
     ];
 
     // 단백질 계산, 지방 기본 비율 설정
@@ -517,14 +527,22 @@ export class AuthService {
     let fat = 25;
     switch (goal) {
       case 0:
-        protein = (1.3 * weight * 4) / targetCalories;
+        if (target_weight > weight) {
+          protein = (1.5 * weight * 4) / target_calories;
+          break;
+        }
+        protein = (1.3 * weight * 4) / target_calories;
         break;
       case 1:
-        protein = (0.9 * weight * 4) / targetCalories;
+        protein = (0.9 * weight * 4) / target_calories;
         fat = 27;
         break;
       case 2:
-        protein = (1.6 * weight * 4) / targetCalories;
+        if (target_weight < weight) {
+          protein = (2 * weight * 4) / target_calories;
+          break;
+        }
+        protein = (1.6 * weight * 4) / target_calories;
         break;
     }
 

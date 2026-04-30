@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
@@ -9,6 +9,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  ValidateIf,
 } from 'class-validator';
 import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
@@ -42,34 +43,35 @@ export class RegisterMealRequestDto {
   @IsString()
   image?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [Number],
-    description: '메뉴 id',
+    description: '메뉴 id. 안 먹었어요 등록 시 생략',
     example: [1, 2],
   })
-  @IsNotEmpty()
+  @ValidateIf((_, value) => value !== undefined)
   @IsArray()
   @ArrayNotEmpty()
   @IsNumber({}, { each: true }) // 배열 내 각 요소가 숫자인지 확인
-  menu_ids: number[];
+  menu_ids?: number[];
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [Number],
-    description: '각 메뉴의 중량',
+    description: '각 메뉴의 중량. 안 먹었어요 등록 시 생략',
     example: [330, 250],
   })
-  @IsNotEmpty()
+  @ValidateIf((_, value) => value !== undefined)
   @IsArray()
   @ArrayNotEmpty()
   @IsNumber(oneDecimalNumberOptions, { each: true })
-  menu_quantities: number[];
+  menu_quantities?: number[];
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [Number],
-    description: '각 메뉴의 입력 방식  \n0: 단위 탭  \n1: 중량 탭',
+    description:
+      '각 메뉴의 입력 방식  \n0: 단위 탭  \n1: 중량 탭  \n안 먹었어요 등록 시 생략',
     example: [0, 1],
   })
-  @IsNotEmpty()
+  @ValidateIf((_, value) => value !== undefined)
   @IsArray()
   @ArrayNotEmpty()
   @IsNumber({}, { each: true })
@@ -77,5 +79,5 @@ export class RegisterMealRequestDto {
     each: true,
     message: 'each value in menu_input_modes must be 0 or 1',
   })
-  menu_input_modes: number[];
+  menu_input_modes?: number[];
 }

@@ -1,13 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  IsArray,
   IsDate,
   IsIn,
   IsNotEmpty,
   IsNumber,
-  IsOptional,
-  IsString,
+  ValidateIf,
 } from 'class-validator';
 
 export class DeleteMealRequestDto {
@@ -31,12 +29,12 @@ export class DeleteMealRequestDto {
   @IsIn([0, 1, 2, 3, 4], { message: 'current must be 0, 1, 2, 3 or 4' })
   time: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: Number,
-    description: '메뉴 id',
+    description: '메뉴 id. 안 먹었어요 삭제 시 생략',
     example: 1,
   })
-  @IsNotEmpty()
+  @ValidateIf((_, value) => value !== undefined)
   @IsNumber()
-  menu_id: number;
+  menu_id?: number;
 }

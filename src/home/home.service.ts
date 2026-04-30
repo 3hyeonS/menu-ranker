@@ -385,6 +385,55 @@ ${JSON.stringify(menus)}
     const { date, time, image, menu_ids, menu_quantities, menu_input_modes } =
       registerMealRequestDto;
 
+    const hasAnyMenuField =
+      menu_ids !== undefined ||
+      menu_quantities !== undefined ||
+      menu_input_modes !== undefined;
+    const hasAllMenuFields =
+      menu_ids !== undefined &&
+      menu_quantities !== undefined &&
+      menu_input_modes !== undefined;
+
+    if (hasAnyMenuField && !hasAllMenuFields) {
+      throw new BadRequestException(
+        'menu_ids, menu_quantities and menu_input_modes must be provided together',
+      );
+    }
+
+    const existingMeal = await this.mealRepository.findOne({
+      where: {
+        date,
+        time,
+        user: { id: user.id },
+      },
+      relations: {
+        mealMenus: true,
+      },
+    });
+
+    if (!hasAnyMenuField) {
+      if (existingMeal) {
+        await this.mealMenuRepository.remove(existingMeal.mealMenus);
+
+        existingMeal.image = null;
+        existingMeal.mealMenus = [];
+
+        await this.mealRepository.save(existingMeal);
+        return;
+      }
+
+      const meal = this.mealRepository.create({
+        date,
+        time,
+        image: null,
+        mealMenus: [],
+        user,
+      });
+
+      await this.mealRepository.save(meal);
+      return;
+    }
+
     if (
       menu_ids.length !== menu_quantities.length ||
       menu_ids.length !== menu_input_modes.length
@@ -414,17 +463,6 @@ ${JSON.stringify(menus)}
         menu_input_mode: menu_input_modes[index],
       }),
     );
-
-    const existingMeal = await this.mealRepository.findOne({
-      where: {
-        date,
-        time,
-        user: { id: user.id },
-      },
-      relations: {
-        mealMenus: true,
-      },
-    });
 
     if (existingMeal) {
       await this.mealMenuRepository.remove(existingMeal.mealMenus);
@@ -469,6 +507,17 @@ ${JSON.stringify(menus)}
 
     if (!meal) {
       throw new NotFoundException('Meal not found');
+    }
+
+    if (menu_id === undefined) {
+      if (meal.mealMenus.length > 0) {
+        throw new BadRequestException(
+          'menu_id is required to delete a menu from the meal',
+        );
+      }
+
+      await this.mealRepository.remove(meal);
+      return;
     }
 
     const mealMenuToDelete = meal.mealMenus.find(

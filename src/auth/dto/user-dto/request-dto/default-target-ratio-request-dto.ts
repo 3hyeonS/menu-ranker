@@ -10,7 +10,7 @@ export class DefaltRatioRequestDto {
   })
   @IsNotEmpty()
   @IsNumber()
-  targetCalories: number;
+  target_calories: number;
 
   @ApiProperty({
     type: Number,
@@ -29,4 +29,13 @@ export class DefaltRatioRequestDto {
   @IsNotEmpty()
   @IsNumber()
   goal: number;
+
+  @ApiProperty({
+    type: Number,
+    description: '목표 체중',
+    example: 65,
+  })
+  @IsNotEmpty()
+  @IsNumber(oneDecimalNumberOptions)
+  target_weight: number;
 }
