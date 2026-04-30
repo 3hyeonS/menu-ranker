@@ -491,21 +491,23 @@ export class AuthService {
 
     // 목표치로 TDEE 보정
     let TDEE_goal = TDEE;
-    switch (goal) {
-      case 0:
-        if (target_weight > weight) {
-          TDEE_goal = TDEE + 200;
+    if (target_weight !== weight) {
+      switch (goal) {
+        case 0:
+          if (target_weight > weight) {
+            TDEE_goal = TDEE + 200;
+            break;
+          }
+          TDEE_goal = TDEE - 500;
           break;
-        }
-        TDEE_goal = TDEE - 500;
-        break;
-      case 2:
-        if (target_weight < weight) {
-          TDEE_goal = TDEE - 300;
+        case 2:
+          if (target_weight < weight) {
+            TDEE_goal = TDEE - 300;
+            break;
+          }
+          TDEE_goal = TDEE + 300;
           break;
-        }
-        TDEE_goal = TDEE + 300;
-        break;
+      }
     }
 
     return roundToOneDecimal(Math.max(bmr, TDEE_goal));
@@ -531,6 +533,11 @@ export class AuthService {
           protein = (1.5 * weight * 4) / target_calories;
           break;
         }
+        if (target_weight === weight) {
+          protein = (1.4 * weight * 4) / target_calories;
+          fat = 27;
+          break;
+        }
         protein = (1.3 * weight * 4) / target_calories;
         break;
       case 1:
@@ -543,6 +550,9 @@ export class AuthService {
           break;
         }
         protein = (1.6 * weight * 4) / target_calories;
+        if (target_weight === weight) {
+          fat = 27;
+        }
         break;
     }
 
