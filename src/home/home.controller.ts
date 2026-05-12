@@ -50,6 +50,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-request-dto';
 import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutrition-label-recognition-response-dto';
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
+import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -541,6 +542,54 @@ export class HomeController {
     @Body() registerMenuRequestDto: RegisterMenuRequestDto,
   ): Promise<MenuIdResponseDto> {
     return await this.homeService.registerMenu(user, registerMenuRequestDto);
+  }
+
+  // CSV 메뉴 등록
+  // @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: 'CSV 메뉴 등록',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: 'CSV 메뉴 등록 성공',
+    message: 'Menus imported successfully',
+    model: MenuCsvImportResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \ncsv 파일 누락 또는 CSV 형식 오류',
+    message: 'csv file is required',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '메뉴 CSV 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        csv: {
+          type: 'string',
+          format: 'binary',
+          description: '메뉴 CSV 파일',
+        },
+      },
+      required: ['csv'],
+    },
+  })
+  // @UseGuards(AuthGuard())
+  @UseInterceptors(FileInterceptor('csv'))
+  @ResponseMsg('Menus imported successfully')
+  @Post('/importMenusCsv')
+  async importMenusCsv(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<MenuCsvImportResponseDto> {
+    return await this.homeService.importMenusCsv(file);
   }
 
   // 영양성분 수정

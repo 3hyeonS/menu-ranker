@@ -46,6 +46,7 @@ import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-r
 import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutrition-label-recognition-response-dto';
 import { NutritionLabelRecognition } from './types/nutrition-label-recognition.type';
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
+import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
 
 @Injectable()
 export class HomeService {
@@ -681,6 +682,33 @@ ${JSON.stringify(menus)}
     return new MenuIdResponseDto(menu);
   }
 
+  // CSV 메뉴 등록
+  async importMenusCsv(
+    file: Express.Multer.File,
+  ): Promise<MenuCsvImportResponseDto> {
+    if (!file) {
+      throw new BadRequestException('csv file is required');
+    }
+
+    const csvText = this.decodeCsvBuffer(file.buffer);
+    const rows = this.parseCsv(csvText);
+
+    if (rows.length < 2) {
+      throw new BadRequestException('csv must include header and data rows');
+    }
+
+    const headers = rows[0].map((header) => header.trim());
+    const menus = rows
+      .slice(1)
+      .filter((row) => row.some((value) => value.trim().length > 0))
+      .map((row) => this.toMenuFromCsvRow(headers, row))
+      .filter((menu): menu is MenuEntity => menu !== null);
+
+    const savedMenus = await this.menuRepository.save(menus);
+
+    return new MenuCsvImportResponseDto(savedMenus.length);
+  }
+
   // 영양성분 수정
   async modifyMenu(
     user: UserEntity,
@@ -807,6 +835,210 @@ ${JSON.stringify(menus)}
         user,
       }),
     );
+  }
+
+  // CSV 버퍼 디코딩
+  private decodeCsvBuffer(buffer: Buffer): string {
+    const utf8Text = new TextDecoder('utf-8').decode(buffer);
+
+    if (!utf8Text.includes('�')) {
+      return utf8Text;
+    }
+
+    try {
+      return new TextDecoder('euc-kr').decode(buffer);
+    } catch (error) {
+      return utf8Text;
+    }
+  }
+
+  // CSV 텍스트 파싱
+  private parseCsv(csvText: string): string[][] {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let value = '';
+    let inQuotes = false;
+
+    for (let index = 0; index < csvText.length; index += 1) {
+      const char = csvText[index];
+      const nextChar = csvText[index + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          value += '"';
+          index += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+
+      if (char === ',' && !inQuotes) {
+        row.push(value);
+        value = '';
+        continue;
+      }
+
+      if ((char === '\n' || char === '\r') && !inQuotes) {
+        if (char === '\r' && nextChar === '\n') {
+          index += 1;
+        }
+        row.push(value);
+        rows.push(row);
+        row = [];
+        value = '';
+        continue;
+      }
+
+      value += char;
+    }
+
+    if (value.length > 0 || row.length > 0) {
+      row.push(value);
+      rows.push(row);
+    }
+
+    if (inQuotes) {
+      throw new BadRequestException('csv has an unclosed quoted value');
+    }
+
+    return rows;
+  }
+
+  // CSV 행을 메뉴 엔티티로 변환
+  private toMenuFromCsvRow(
+    headers: string[],
+    row: string[],
+  ): MenuEntity | null {
+    const valueByField = this.mapCsvRow(headers, row);
+    const name = this.asNullableString(valueByField.name);
+
+    if (!name) {
+      return null;
+    }
+
+    const weight = this.asNullableNumber(valueByField.weight) ?? 0;
+    const calories = this.asNullableNumber(valueByField.calories) ?? 0;
+
+    return this.menuRepository.create({
+      ...this.normalizeMenuFloatValues({
+        name,
+        brand: this.asNullableString(valueByField.brand),
+        category: this.asNullableString(valueByField.category),
+        unit: this.asCsvUnit(
+          valueByField.unit,
+          valueByField.unit_quantity,
+          valueByField.weight,
+        ),
+        weight,
+        unit_quantity: this.asCsvUnitQuantity(
+          valueByField.unit_quantity,
+          valueByField.unit,
+        ),
+        calories,
+        carbs: this.asNullableNumber(valueByField.carbs),
+        sugars: this.asNullableNumber(valueByField.sugars),
+        sugar_alchol: null,
+        dietary_fiber: this.asNullableNumber(valueByField.dietary_fiber),
+        protein: this.asNullableNumber(valueByField.protein),
+        fat: this.asNullableNumber(valueByField.fat),
+        sat_fat: null,
+        trans_fat: null,
+        un_sat_fat: null,
+        sodium: this.asNullableNumber(valueByField.sodium),
+        caffeine: this.asNullableNumber(valueByField.caffeine),
+        potassium: null,
+        cholesterol: null,
+        alcohol: null,
+      }),
+      data_source: 0,
+      is_deleted: 0,
+      user: null,
+    });
+  }
+
+  // CSV 헤더를 엔티티 필드명에 매칭
+  private mapCsvRow(
+    headers: string[],
+    row: string[],
+  ): Record<string, string | undefined> {
+    const valueByField: Record<string, string | undefined> = {};
+    const mappings: Array<{ field: string; keywords: string[] }> = [
+      { field: 'unit_quantity', keywords: ['중량 단위'] },
+      { field: 'unit', keywords: ['단위량'] },
+      { field: 'dietary_fiber', keywords: ['포화지방'] },
+      { field: 'protein', keywords: ['단백질'] },
+      { field: 'calories', keywords: ['칼로리'] },
+      { field: 'sodium', keywords: ['나트륨'] },
+      { field: 'caffeine', keywords: ['카페인'] },
+      { field: 'sugars', keywords: ['당류'] },
+      { field: 'carbs', keywords: ['탄수화물'] },
+      { field: 'weight', keywords: ['중량'] },
+      { field: 'category', keywords: ['카테고리'] },
+      { field: 'brand', keywords: ['브랜드'] },
+      { field: 'name', keywords: ['메뉴'] },
+      { field: 'fat', keywords: ['지방'] },
+    ];
+
+    headers.forEach((header, index) => {
+      const normalizedHeader = header.replace(/\s/g, '');
+      const matched = mappings.find((mapping) =>
+        mapping.keywords.some((keyword) =>
+          normalizedHeader.includes(keyword.replace(/\s/g, '')),
+        ),
+      );
+
+      if (matched) {
+        valueByField[matched.field] = row[index];
+      }
+    });
+
+    return valueByField;
+  }
+
+  // CSV 중량 단위 변환
+  private asCsvUnit(
+    value: unknown,
+    fallback: unknown,
+    weight: unknown,
+  ): number {
+    const parsed = this.asNullableNumber(value);
+
+    if (parsed === 0 || parsed === 1) {
+      return parsed;
+    }
+
+    const fallbackParsed = this.asNullableNumber(fallback);
+
+    if (fallbackParsed === 0 || fallbackParsed === 1) {
+      return fallbackParsed;
+    }
+
+    try {
+      return this.asUnit(value, fallback, weight);
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  // CSV 단위량 변환
+  private asCsvUnitQuantity(value: unknown, fallback: unknown): string {
+    const text = this.asNullableString(value);
+
+    if (text && !Number.isFinite(this.extractNumericValue(text))) {
+      return text;
+    }
+
+    const fallbackText = this.asNullableString(fallback);
+
+    if (
+      fallbackText &&
+      !Number.isFinite(this.extractNumericValue(fallbackText))
+    ) {
+      return fallbackText;
+    }
+
+    return '인분';
   }
 
   // 메뉴 영양성분 소수점 값 정규화

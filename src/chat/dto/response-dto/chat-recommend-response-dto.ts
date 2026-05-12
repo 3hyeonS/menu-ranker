@@ -1,8 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatRecommendItemResponseDto } from './chat-recommend-item-response-dto';
-import { ChatRecognizedCandidateResponseDto } from './chat-recognized-candidate-response-dto';
+import { ChatFeedbackResponseDto } from './chat-feedback-response-dto';
 
 export class ChatRecommendResponseDto {
+  @ApiProperty({
+    type: String,
+    description: '채팅 분류  \nfeedback: 피드백  \nrecommendation: 추천',
+    example: 'recommendation',
+  })
+  chat_category: 'feedback' | 'recommendation';
+
   @ApiProperty({
     type: String,
     description: '추천 결과 전체를 소개하는 도입 문구',
@@ -14,13 +21,14 @@ export class ChatRecommendResponseDto {
   @ApiProperty({
     type: [ChatRecommendItemResponseDto],
     description: '상위 10개 추천 메뉴',
-  })
-  recommendations: ChatRecommendItemResponseDto[];
-
-  @ApiProperty({
-    type: [ChatRecognizedCandidateResponseDto],
-    description: '메뉴판/이미지 인식으로 좁혀진 후보 메뉴',
     required: false,
   })
-  recognized_candidates?: ChatRecognizedCandidateResponseDto[];
+  recommendations?: ChatRecommendItemResponseDto[];
+
+  @ApiProperty({
+    type: ChatFeedbackResponseDto,
+    description: '피드백으로 분류된 경우 메뉴 조합 판단 결과',
+    required: false,
+  })
+  feedback?: ChatFeedbackResponseDto;
 }

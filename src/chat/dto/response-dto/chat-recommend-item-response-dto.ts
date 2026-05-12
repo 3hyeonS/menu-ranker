@@ -3,13 +3,6 @@ import { ApiProperty } from '@nestjs/swagger';
 export class ChatRecommendItemResponseDto {
   @ApiProperty({
     type: Number,
-    description: '순위',
-    example: 1,
-  })
-  rank: number;
-
-  @ApiProperty({
-    type: Number,
     description: '메뉴 id',
     example: 512,
   })
@@ -20,29 +13,28 @@ export class ChatRecommendItemResponseDto {
     description: '메뉴명',
     example: '그릴드 치킨 버거',
   })
-  menu: string;
+  menu_name: string;
 
   @ApiProperty({
     type: Number,
-    description: '메뉴 데이터 출처  \n0: 기본 데이터  \n1: 사용자 등록',
+    description: '중량 단위  \n0: g  \n1: ml',
     example: 0,
   })
-  data_source: number;
+  unit: number;
+
+  @ApiProperty({
+    type: Number,
+    description: '중량',
+    example: 230,
+  })
+  weight: number;
 
   @ApiProperty({
     type: String,
-    nullable: true,
-    description: '브랜드',
-    example: '맘스터치',
+    description: '중량 단위량',
+    example: '인분',
   })
-  brand: string;
-
-  @ApiProperty({
-    type: String,
-    description: '음식 양',
-    example: '1인분 (230g)',
-  })
-  amount: string;
+  unit_quantity: string;
 
   @ApiProperty({
     type: Number,
@@ -53,24 +45,10 @@ export class ChatRecommendItemResponseDto {
 
   @ApiProperty({
     type: Number,
-    description: '탄수화물(g)',
-    example: 31.2,
+    description: '메뉴 데이터 출처  \n0: 기본 데이터  \n1: 사용자 등록',
+    example: 0,
   })
-  carbs: number;
-
-  @ApiProperty({
-    type: Number,
-    description: '단백질(g)',
-    example: 28.1,
-  })
-  protein: number;
-
-  @ApiProperty({
-    type: Number,
-    description: '지방(g)',
-    example: 18.2,
-  })
-  fat: number;
+  data_source: number;
 
   @ApiProperty({
     type: Number,
@@ -78,6 +56,13 @@ export class ChatRecommendItemResponseDto {
     example: 84.6,
   })
   score: number;
+
+  @ApiProperty({
+    type: Number,
+    description: '순위',
+    example: 1,
+  })
+  rank: number;
 
   @ApiProperty({
     type: String,
@@ -89,7 +74,8 @@ export class ChatRecommendItemResponseDto {
   @ApiProperty({
     type: String,
     description: '상세 추천 이유',
-    example: '목표 단백질 비중을 맞추는 데 유리하고, 당 밀도와 칼로리 밀도가 과도하지 않아 점심 한 끼로 안정적입니다.',
+    example:
+      '목표 단백질 비중을 맞추는 데 유리하고, 당 밀도와 칼로리 밀도가 과도하지 않아 점심 한 끼로 안정적입니다.',
   })
   recommendation_reason: string;
 }

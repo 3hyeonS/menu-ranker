@@ -14,7 +14,9 @@ import {
   ApiConsumes,
   ApiExtraModels,
   ApiOperation,
+  ApiResponse,
   ApiTags,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { GetUser } from '../decorators/get-user-decorator';
@@ -28,6 +30,7 @@ import { ChatService } from './chat.service';
 import { ChatRecommendRequestDto } from './dto/request-dto/chat-recommend-request-dto';
 import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-response-dto';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
+import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
 
 @ApiTags('채팅')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -38,15 +41,112 @@ export class ChatController {
 
   @ApiBearerAuth('accessToken')
   @ApiOperation({
-    summary: '채팅형 메뉴 추천',
+    summary: '채팅형 메뉴 피드백/추천',
     description:
-      '자연어 요청을 Gemini로 구조화한 뒤 내부 영양 알고리즘으로 상위 10개 메뉴를 산출하고, 다시 Gemini로 설명을 생성합니다. 날짜는 서버의 현재 날짜를 사용하고, 시간대는 텍스트에 있으면 그 값을 우선합니다.',
+      '입력값을 Gemini로 피드백/추천으로 분류. 피드백은 입력 메뉴를 DB 메뉴와 매핑한 뒤 현재 유저 목표와 식사기록 기준으로 판단하고, 추천은 기존 메뉴 추천 로직을 사용',
   })
-  @GenericApiResponse({
+  @ApiExtraModels(ResponseDto, ChatRecommendResponseDto)
+  @ApiResponse({
     status: 201,
     description: '채팅형 메뉴 추천 성공',
-    message: 'Menu recommendations generated successfully',
-    model: ChatRecommendResponseDto,
+    content: {
+      'application/json': {
+        schema: {
+          allOf: [
+            { $ref: getSchemaPath(ResponseDto) },
+            {
+              properties: {
+                message: {
+                  type: 'string',
+                  example: 'Menu recommendations generated successfully',
+                },
+                statusCode: {
+                  type: 'number',
+                  example: 201,
+                },
+                data: {
+                  $ref: getSchemaPath(ChatRecommendResponseDto),
+                },
+              },
+            },
+          ],
+        },
+        examples: {
+          recommendation: {
+            summary: '추천으로 분류된 경우',
+            value: {
+              message: 'Menu recommendations generated successfully',
+              statusCode: 201,
+              data: {
+                chat_category: 'recommendation',
+                intro_message:
+                  '단백질을 채우기 좋게 다이어트식으로 맘스터치에서 추천하는 메뉴를 정리해드렸어요!',
+                recommendations: [
+                  {
+                    menu_id: 512,
+                    menu_name: '그릴드 치킨 버거',
+                    unit: 0,
+                    weight: 230,
+                    unit_quantity: '인분',
+                    calories: 412.5,
+                    data_source: 0,
+                    score: 84.6,
+                    rank: 1,
+                    one_line_summary:
+                      '단백질 밀도가 높고 점심 칼로리 예산에 잘 맞는 선택입니다.',
+                    recommendation_reason:
+                      '목표 단백질 비중을 맞추는 데 유리하고, 당 밀도와 칼로리 밀도가 과도하지 않아 점심 한 끼로 안정적입니다.',
+                  },
+                ],
+              },
+            },
+          },
+          feedback: {
+            summary: '피드백으로 분류된 경우',
+            value: {
+              message: 'Menu recommendations generated successfully',
+              statusCode: 201,
+              data: {
+                chat_category: 'feedback',
+                intro_message:
+                  '감량 목표와 오늘 식사 기록을 기준으로 입력한 메뉴를 확인했어요.',
+                feedback: {
+                  menus: [
+                    {
+                      input_menu_name: '싸이버거',
+                      menu_id: 1,
+                      menu_name: '싸이버거',
+                      unit: 0,
+                      weight: 230,
+                      unit_quantity: '인분',
+                      calories: 594,
+                      data_source: 0,
+                    },
+                    {
+                      input_menu_name: '콜라',
+                      menu_id: 42,
+                      menu_name: '콜라',
+                      unit: 1,
+                      weight: 355,
+                      unit_quantity: '잔',
+                      calories: 150,
+                      data_source: 0,
+                    },
+                  ],
+                  total_calories: 744,
+                  score: 63.2,
+                  is_appropriate: false,
+                  feedback_summary:
+                    '먹을 수는 있지만 현재 목표 기준으로는 조금 아쉬운 조합입니다.',
+                  feedback_reason:
+                    '싸이버거, 콜라 조합은 감량 목표 기준 점수 63.2점입니다. 총 744kcal 조합입니다. 현재 끼니 목표 칼로리와는 차이가 있는 편입니다.',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 400,
@@ -84,7 +184,7 @@ export class ChatController {
     status: 201,
     description: '메뉴판 사진 기반 메뉴 추천 성공',
     message: 'Menu board recommendations generated successfully',
-    model: ChatRecommendResponseDto,
+    model: ChatMenuBoardRecommendResponseDto,
   })
   @ErrorApiResponse({
     status: 400,
@@ -126,7 +226,7 @@ export class ChatController {
   async recommendMenusFromMenuBoard(
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
-  ): Promise<ChatRecommendResponseDto> {
+  ): Promise<ChatMenuBoardRecommendResponseDto> {
     return await this.chatService.recommendFromMenuBoard(user, file);
   }
 

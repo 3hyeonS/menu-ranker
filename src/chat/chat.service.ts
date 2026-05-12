@@ -25,6 +25,16 @@ import { ChatRecognizedCandidateResponseDto } from './dto/response-dto/chat-reco
 import { ChatHistoryEntity } from './entity/chat-history.entity';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
 import { ChatHistoryItemResponseDto } from './dto/response-dto/chat-history-item-response-dto';
+import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
+import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
+import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
+
+type ChatCategory = 'feedback' | 'recommendation';
+
+type ChatClassification = {
+  chat_category: ChatCategory;
+  menu_names: string[];
+};
 
 type ParsedChatIntent = {
   normalized_request: string;
@@ -34,6 +44,27 @@ type ParsedChatIntent = {
   nutrition_focus: string[];
   amount_preference: 'light' | 'regular' | 'hearty' | null;
   keywords: string[];
+  include: IntentConditionGroup;
+  exclude: IntentConditionGroup;
+  nutrition_constraints: NutritionConstraints;
+};
+
+type IntentConditionGroup = {
+  brands: string[];
+  categories: string[];
+  menu_names: string[];
+  keywords: string[];
+};
+
+type NutritionConstraints = {
+  max_calories: number | null;
+  min_calories: number | null;
+  min_protein: number | null;
+  max_carbs: number | null;
+  max_sugars: number | null;
+  max_fat: number | null;
+  max_sodium: number | null;
+  caffeine_allowed: boolean | null;
 };
 
 type DailyNutrition = {
@@ -41,6 +72,13 @@ type DailyNutrition = {
   carbs: number;
   protein: number;
   fat: number;
+};
+
+type FeedbackNutrition = DailyNutrition & {
+  sugars: number;
+  sodium: number;
+  caffeine: number;
+  weight: number;
 };
 
 type ScoreBreakdown = {
@@ -108,6 +146,12 @@ export class ChatService {
     }
 
     const userInfo = await this.getRequiredUserInfo(user.id);
+    const classification = await this.classifyChatWithGemini(input);
+
+    if (classification.chat_category === 'feedback') {
+      return await this.feedback(user, userInfo, input, classification);
+    }
+
     const parsedIntent = await this.parseIntentWithGemini(input, userInfo);
     const mealTime =
       parsedIntent.meal_time ?? this.inferMealTimeFromClock(new Date());
@@ -133,7 +177,7 @@ export class ChatService {
   async recommendFromMenuBoard(
     user: UserEntity,
     file: Express.Multer.File,
-  ): Promise<ChatRecommendResponseDto> {
+  ): Promise<ChatMenuBoardRecommendResponseDto> {
     if (!file) {
       throw new BadRequestException('image file is required');
     }
@@ -187,16 +231,19 @@ export class ChatService {
       nutrition_focus: [],
       amount_preference: 'regular',
       keywords: this.buildKeywordsFromCandidates(recognizedCandidates),
+      include: this.emptyIntentConditionGroup(),
+      exclude: this.emptyIntentConditionGroup(),
+      nutrition_constraints: this.emptyNutritionConstraints(),
     };
 
-    const response = await this.recommendWithPreparedContext({
+    const response = (await this.recommendWithPreparedContext({
       user,
       userInfo,
       input: '메뉴판 사진 기반 추천',
       intent,
       candidateMenus: orderedCandidateMenus,
       recognizedCandidates,
-    });
+    })) as ChatMenuBoardRecommendResponseDto;
 
     response.intro_message = `메뉴판에서 인식된 후보 메뉴를 기준으로 ${this.mealTimeLabelMap[mealTime]} 추천을 정리해드렸어요!`;
 
@@ -231,11 +278,16 @@ export class ChatService {
       intent.amount_preference,
     );
 
-    if (candidateMenus.length === 0) {
+    const filteredCandidateMenus = this.applyIntentFilters(
+      candidateMenus,
+      intent,
+    );
+
+    if (filteredCandidateMenus.length === 0) {
       throw new BadRequestException('No menus available for recommendation');
     }
 
-    const rankedMenus = candidateMenus
+    const rankedMenus = filteredCandidateMenus
       .map((menu) => ({
         menu,
         score: this.scoreMenu(menu, intent, userInfo, rankingBasis),
@@ -258,22 +310,21 @@ export class ChatService {
     );
 
     const response = new ChatRecommendResponseDto();
+    response.chat_category = 'recommendation';
     response.intro_message = this.buildIntroMessage(intent, userInfo);
     response.recommendations = rankedMenus.map(({ menu, score }, index) => {
       const item = new ChatRecommendItemResponseDto();
       const generated = descriptionMap.get(menu.id);
 
-      item.rank = index + 1;
       item.menu_id = menu.id;
-      item.menu = menu.name;
-      item.data_source = menu.data_source;
-      item.brand = menu.brand ?? null;
-      item.amount = this.formatAmount(menu);
+      item.menu_name = menu.name;
+      item.unit = menu.unit;
+      item.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
+      item.unit_quantity = menu.unit_quantity;
       item.calories = roundNullableToOneDecimal(menu.calories) ?? 0;
-      item.carbs = roundNullableToOneDecimal(menu.carbs) ?? 0;
-      item.protein = roundNullableToOneDecimal(menu.protein) ?? 0;
-      item.fat = roundNullableToOneDecimal(menu.fat) ?? 0;
+      item.data_source = menu.data_source;
       item.score = roundToOneDecimal(score.finalScore);
+      item.rank = index + 1;
       item.one_line_summary =
         generated?.one_line_summary ?? this.buildFallbackSummary(menu, score);
       item.recommendation_reason =
@@ -281,10 +332,81 @@ export class ChatService {
 
       return item;
     });
-    response.recognized_candidates =
-      recognizedCandidates?.map((candidate) =>
-        this.toRecognizedCandidateResponse(candidate),
-      ) ?? [];
+    if (recognizedCandidates) {
+      (response as ChatMenuBoardRecommendResponseDto).recognized_candidates =
+        recognizedCandidates.map((candidate) =>
+          this.toRecognizedCandidateResponse(candidate),
+        );
+    }
+
+    await this.chatHistoryRepository.save(
+      this.chatHistoryRepository.create({
+        input_text: input,
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
+
+    return response;
+  }
+
+  private async feedback(
+    user: UserEntity,
+    userInfo: UserInfoEntity,
+    input: string,
+    classification: ChatClassification,
+  ): Promise<ChatRecommendResponseDto> {
+    if (classification.menu_names.length === 0) {
+      throw new BadRequestException('No menus found in feedback request');
+    }
+
+    const candidateMenus = await this.getAllCandidateMenus(user.id);
+
+    if (candidateMenus.length === 0) {
+      throw new BadRequestException('No menus available for feedback');
+    }
+
+    const targetDate = this.resolveTargetDate();
+    const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
+    const mealTime = this.inferMealTimeFromClock(new Date());
+    const rankingBasis = this.buildRecommendationBasis(
+      userInfo,
+      dailyNutrition,
+      mealTime,
+      'regular',
+    );
+    const matchedMenus = classification.menu_names.map((menuName) => ({
+      inputMenuName: menuName,
+      menu: this.findMostSimilarMenu(menuName, candidateMenus),
+    }));
+    const combinationNutrition = this.sumFeedbackNutrition(
+      matchedMenus.map(({ menu }) => menu),
+    );
+    const combinationScore = this.scoreFeedbackCombination(
+      combinationNutrition,
+      userInfo,
+      rankingBasis,
+    );
+    const feedback = new ChatFeedbackResponseDto();
+
+    feedback.menus = matchedMenus.map(({ inputMenuName, menu }) =>
+      this.toFeedbackMenuResponse(inputMenuName, menu),
+    );
+    feedback.total_calories = roundToOneDecimal(combinationNutrition.calories);
+    feedback.score = roundToOneDecimal(combinationScore.finalScore);
+    feedback.is_appropriate = combinationScore.finalScore >= 65;
+    feedback.feedback_summary = this.buildFeedbackSummary(combinationScore);
+    feedback.feedback_reason = this.buildFeedbackReason(
+      matchedMenus.map(({ menu }) => menu),
+      combinationNutrition,
+      combinationScore,
+      userInfo,
+    );
+
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'feedback';
+    response.intro_message = `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록을 기준으로 입력한 메뉴를 확인했어요.`;
+    response.feedback = feedback;
 
     await this.chatHistoryRepository.save(
       this.chatHistoryRepository.create({
@@ -510,16 +632,65 @@ ${JSON.stringify(menus)}
       );
     builder.andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 });
 
+    const brandFilters = Array.from(
+      new Set(
+        [intent.desired_brand, ...intent.include.brands].filter(
+          (brand): brand is string => !!brand,
+        ),
+      ),
+    );
+    const categoryFilters = Array.from(
+      new Set(
+        [intent.desired_category, ...intent.include.categories].filter(
+          (category): category is string => !!category,
+        ),
+      ),
+    );
+
     // 브랜드가 지정된 경우 우선 브랜드 필터를 걸어 관련 메뉴만 남깁니다.
-    if (intent.desired_brand) {
-      builder.andWhere('menu.brand LIKE :brand', {
-        brand: `%${intent.desired_brand}%`,
-      });
+    if (brandFilters.length > 0) {
+      builder.andWhere(
+        new Brackets((qb) => {
+          brandFilters.forEach((brand, index) => {
+            const parameterName = `brand${index}`;
+            const condition = `menu.brand LIKE :${parameterName}`;
+
+            if (index === 0) {
+              qb.where(condition, { [parameterName]: `%${brand}%` });
+              return;
+            }
+
+            qb.orWhere(condition, { [parameterName]: `%${brand}%` });
+          });
+        }),
+      );
     }
 
-    // 브랜드 필터 결과가 0건이면 아예 추천이 사라지지 않도록 전체 후보로 한 번 더 fallback 합니다.
+    // 카테고리가 지정된 경우도 우선 필터링합니다.
+    if (categoryFilters.length > 0) {
+      builder.andWhere(
+        new Brackets((qb) => {
+          categoryFilters.forEach((category, index) => {
+            const parameterName = `category${index}`;
+            const condition = `menu.category LIKE :${parameterName}`;
+
+            if (index === 0) {
+              qb.where(condition, { [parameterName]: `%${category}%` });
+              return;
+            }
+
+            qb.orWhere(condition, { [parameterName]: `%${category}%` });
+          });
+        }),
+      );
+    }
+
+    // 브랜드/카테고리 필터 결과가 0건이면 추천이 사라지지 않도록 전체 후보로 한 번 더 fallback 합니다.
     const menus = await builder.getMany();
-    if (menus.length > 0 || !intent.desired_brand) {
+    if (
+      menus.length > 0 ||
+      (brandFilters.length === 0 && categoryFilters.length === 0)
+    ) {
       return menus;
     }
 
@@ -533,6 +704,156 @@ ${JSON.stringify(menus)}
       )
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .getMany();
+  }
+
+  private async getAllCandidateMenus(userId: number): Promise<MenuEntity[]> {
+    return await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .getMany();
+  }
+
+  private applyIntentFilters(
+    menus: MenuEntity[],
+    intent: ParsedChatIntent,
+  ): MenuEntity[] {
+    return menus.filter((menu) => {
+      if (!this.matchesIncludeConditions(menu, intent.include)) {
+        return false;
+      }
+
+      if (this.matchesExcludeConditions(menu, intent.exclude)) {
+        return false;
+      }
+
+      return this.matchesNutritionConstraints(
+        menu,
+        intent.nutrition_constraints,
+      );
+    });
+  }
+
+  private matchesIncludeConditions(
+    menu: MenuEntity,
+    include: IntentConditionGroup,
+  ): boolean {
+    return (
+      (include.brands.length === 0 ||
+        this.matchesAnyTerm(menu.brand, include.brands)) &&
+      (include.categories.length === 0 ||
+        this.matchesAnyTerm(menu.category, include.categories)) &&
+      (include.menu_names.length === 0 ||
+        this.matchesAnyMenuText(menu, include.menu_names, 'name')) &&
+      this.matchesAllMenuText(menu, include.keywords)
+    );
+  }
+
+  private matchesExcludeConditions(
+    menu: MenuEntity,
+    exclude: IntentConditionGroup,
+  ): boolean {
+    return (
+      this.matchesAnyTerm(menu.brand, exclude.brands) ||
+      this.matchesAnyTerm(menu.category, exclude.categories) ||
+      this.matchesAnyMenuText(menu, exclude.menu_names, 'name') ||
+      this.matchesAnyMenuText(menu, exclude.keywords)
+    );
+  }
+
+  private matchesNutritionConstraints(
+    menu: MenuEntity,
+    constraints: NutritionConstraints,
+  ): boolean {
+    if (
+      constraints.max_calories !== null &&
+      (menu.calories ?? 0) > constraints.max_calories
+    ) {
+      return false;
+    }
+
+    if (
+      constraints.min_calories !== null &&
+      (menu.calories ?? 0) < constraints.min_calories
+    ) {
+      return false;
+    }
+
+    if (
+      constraints.min_protein !== null &&
+      (menu.protein ?? 0) < constraints.min_protein
+    ) {
+      return false;
+    }
+
+    if (
+      constraints.max_carbs !== null &&
+      (menu.carbs ?? 0) > constraints.max_carbs
+    ) {
+      return false;
+    }
+
+    if (
+      constraints.max_sugars !== null &&
+      (menu.sugars ?? 0) > constraints.max_sugars
+    ) {
+      return false;
+    }
+
+    if (constraints.max_fat !== null && (menu.fat ?? 0) > constraints.max_fat) {
+      return false;
+    }
+
+    if (
+      constraints.max_sodium !== null &&
+      (menu.sodium ?? 0) > constraints.max_sodium
+    ) {
+      return false;
+    }
+
+    if (constraints.caffeine_allowed === false && (menu.caffeine ?? 0) > 0) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private matchesAnyTerm(value: string | null | undefined, terms: string[]) {
+    return terms.some((term) => this.matchesTerm(value, term));
+  }
+
+  private matchesTerm(value: string | null | undefined, term: string) {
+    return (value ?? '').toLowerCase().includes(term.toLowerCase());
+  }
+
+  private matchesAllMenuText(menu: MenuEntity, terms: string[]) {
+    return terms.every((term) => this.matchesMenuText(menu, term));
+  }
+
+  private matchesAnyMenuText(
+    menu: MenuEntity,
+    terms: string[],
+    scope: 'all' | 'name' = 'all',
+  ) {
+    return terms.some((term) => this.matchesMenuText(menu, term, scope));
+  }
+
+  private matchesMenuText(
+    menu: MenuEntity,
+    term: string,
+    scope: 'all' | 'name' = 'all',
+  ) {
+    const text =
+      scope === 'name'
+        ? menu.name
+        : `${menu.name} ${menu.brand ?? ''} ${menu.category ?? ''}`;
+
+    return text.toLowerCase().includes(term.toLowerCase());
   }
 
   private buildRecommendationBasis(
@@ -858,6 +1179,187 @@ ${JSON.stringify(menus)}
     return `${menu.name}은(는) 전체 균형 점수가 높아 상위권에 선정되었습니다.`;
   }
 
+  private buildFeedbackSummary(score: ScoreBreakdown): string {
+    if (score.finalScore >= 80) {
+      return '현재 목표와 남은 섭취량 기준에서 꽤 잘 맞는 조합입니다.';
+    }
+
+    if (score.finalScore >= 65) {
+      return '현재 상황에서 무난하지만 다른 끼니 조절이 있으면 더 좋습니다.';
+    }
+
+    if (score.finalScore >= 45) {
+      return '먹을 수는 있지만 현재 목표 기준으로는 조금 아쉬운 조합입니다.';
+    }
+
+    return '현재 목표와 오늘 섭취 흐름을 보면 신중하게 조절하는 편이 좋습니다.';
+  }
+
+  private buildFeedbackReason(
+    menus: MenuEntity[],
+    nutrition: FeedbackNutrition,
+    score: ScoreBreakdown,
+    userInfo: UserInfoEntity,
+  ): string {
+    const goalLabel = this.goalToLabel(userInfo.goal);
+    const menuNames = menus.map((menu) => menu.name).join(', ');
+    const reasons = [
+      `총 ${roundToOneDecimal(nutrition.calories)}kcal, 탄수화물 ${roundToOneDecimal(nutrition.carbs)}g, 단백질 ${roundToOneDecimal(nutrition.protein)}g, 지방 ${roundToOneDecimal(nutrition.fat)}g 조합입니다.`,
+    ];
+
+    if (score.calorieScore < 55) {
+      reasons.push('현재 끼니 목표 칼로리와는 차이가 있는 편입니다.');
+    }
+
+    if (score.macroScore < 55) {
+      reasons.push('남은 탄단지 목표와의 정렬도는 높지 않습니다.');
+    }
+
+    if (score.sugarScore < 55) {
+      reasons.push('당 밀도도 함께 확인하는 것이 좋습니다.');
+    }
+
+    return `${menuNames} 조합은 ${goalLabel} 목표 기준 점수 ${roundToOneDecimal(score.finalScore)}점입니다. ${reasons.join(' ')}`;
+  }
+
+  private buildFeedbackIntent(input: string): ParsedChatIntent {
+    return {
+      normalized_request: input,
+      meal_time: this.inferMealTimeFromClock(new Date()),
+      desired_brand: this.extractBrandKeyword(input),
+      desired_category: this.extractCategoryKeyword(input),
+      nutrition_focus: [],
+      amount_preference: 'regular',
+      keywords: input
+        .split(/\s+/)
+        .map((token) => token.replace(/[^\w가-힣]/g, ''))
+        .filter((token) => token.length >= 2)
+        .slice(0, 6),
+      include: this.emptyIntentConditionGroup(),
+      exclude: this.emptyIntentConditionGroup(),
+      nutrition_constraints: this.emptyNutritionConstraints(),
+    };
+  }
+
+  private toFeedbackMenuResponse(
+    inputMenuName: string,
+    menu: MenuEntity,
+  ): ChatFeedbackMenuResponseDto {
+    const response = new ChatFeedbackMenuResponseDto();
+
+    response.input_menu_name = inputMenuName;
+    response.menu_id = menu.id;
+    response.menu_name = menu.name;
+    response.unit = menu.unit;
+    response.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
+    response.unit_quantity = menu.unit_quantity;
+    response.calories = roundNullableToOneDecimal(menu.calories) ?? 0;
+    response.data_source = menu.data_source;
+
+    return response;
+  }
+
+  private sumFeedbackNutrition(menus: MenuEntity[]): FeedbackNutrition {
+    return menus.reduce(
+      (acc, menu) => {
+        acc.calories += menu.calories ?? 0;
+        acc.carbs += menu.carbs ?? 0;
+        acc.protein += menu.protein ?? 0;
+        acc.fat += menu.fat ?? 0;
+        acc.sugars += menu.sugars ?? 0;
+        acc.sodium += menu.sodium ?? 0;
+        acc.caffeine += menu.caffeine ?? 0;
+        acc.weight += menu.weight ?? 0;
+        return acc;
+      },
+      {
+        calories: 0,
+        carbs: 0,
+        protein: 0,
+        fat: 0,
+        sugars: 0,
+        sodium: 0,
+        caffeine: 0,
+        weight: 0,
+      },
+    );
+  }
+
+  private scoreFeedbackCombination(
+    nutrition: FeedbackNutrition,
+    userInfo: UserInfoEntity,
+    basis: ReturnType<ChatService['buildRecommendationBasis']>,
+  ): ScoreBreakdown {
+    const syntheticMenu = {
+      calories: nutrition.calories,
+      carbs: nutrition.carbs,
+      protein: nutrition.protein,
+      fat: nutrition.fat,
+      sugars: nutrition.sugars,
+      sodium: nutrition.sodium,
+      caffeine: nutrition.caffeine,
+      weight: nutrition.weight,
+    } as MenuEntity;
+    const intent = this.buildFeedbackIntent('조합 피드백');
+
+    return this.scoreMenu(syntheticMenu, intent, userInfo, basis);
+  }
+
+  private findMostSimilarMenu(
+    inputMenuName: string,
+    menus: MenuEntity[],
+  ): MenuEntity {
+    return menus
+      .map((menu) => ({
+        menu,
+        similarity: this.calculateMenuSimilarity(inputMenuName, menu),
+      }))
+      .sort((a, b) => b.similarity - a.similarity)[0].menu;
+  }
+
+  private calculateMenuSimilarity(
+    inputMenuName: string,
+    menu: MenuEntity,
+  ): number {
+    const input = this.normalizeComparableText(inputMenuName);
+    const menuName = this.normalizeComparableText(menu.name);
+    const searchable = this.normalizeComparableText(
+      `${menu.name} ${menu.brand ?? ''} ${menu.category ?? ''}`,
+    );
+
+    if (!input) {
+      return 0;
+    }
+
+    if (menuName === input) {
+      return 100;
+    }
+
+    if (menuName.includes(input) || input.includes(menuName)) {
+      return 82;
+    }
+
+    if (searchable.includes(input)) {
+      return 72;
+    }
+
+    const inputTokens = new Set(input.split(/\s+/).filter(Boolean));
+    const menuTokens = new Set(searchable.split(/\s+/).filter(Boolean));
+    const overlapCount = Array.from(inputTokens).filter((token) =>
+      menuTokens.has(token),
+    ).length;
+
+    return inputTokens.size > 0 ? (overlapCount / inputTokens.size) * 60 : 0;
+  }
+
+  private normalizeComparableText(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^\w가-힣\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   private buildKeywordsFromCandidates(
     candidates: MenuRecognitionCandidate[],
   ): string[] {
@@ -907,6 +1409,68 @@ ${JSON.stringify(menus)}
     return response;
   }
 
+  private async classifyChatWithGemini(
+    input: string,
+  ): Promise<ChatClassification> {
+    const prompt = `
+사용자 입력을 채팅 카테고리로 분류하고 JSON object만 반환해.
+
+분류 규칙:
+- recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
+- feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
+- feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
+- recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+
+예시:
+"맘스터치에서 싸이버거 제외하고 메뉴 추천해줘" -> recommendation
+"오늘 점심 싸이버거 먹어도 돼?" -> feedback
+"싸이버거랑 콜라 먹었는데 괜찮아?" -> feedback
+
+입력:
+${input}
+
+반환 shape:
+{
+  "chat_category": "recommendation",
+  "menu_names": []
+}
+`.trim();
+
+    const data = await this.callGeminiJson(prompt);
+    const chatCategory =
+      data?.chat_category === 'feedback' ? 'feedback' : 'recommendation';
+
+    return {
+      chat_category: chatCategory,
+      menu_names:
+        chatCategory === 'feedback'
+          ? this.normalizeFreeTextArray(
+              data?.menu_names,
+              this.extractFeedbackMenuNamesFallback(input),
+            )
+          : this.normalizeFreeTextArray(data?.menu_names, []),
+    };
+  }
+
+  private extractFeedbackMenuNamesFallback(input: string): string[] {
+    const normalized = input
+      .replace(/먹어도\s*돼|괜찮아|어때|피드백|평가|판단|먹었는데/g, ' ')
+      .replace(/[^\w가-힣\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) {
+      return [];
+    }
+
+    return normalized
+      .split(/\s*(?:랑|하고|과|와|,)\s*/)
+      .map((value) => value.trim())
+      .filter((value) => value.length >= 2)
+      .slice(0, 5);
+  }
+
   private async parseIntentWithGemini(
     input: string,
     userInfo: UserInfoEntity,
@@ -933,6 +1497,10 @@ ${JSON.stringify(menus)}
 - amount_preference: "light" | "regular" | "hearty" | null
 - keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
 - normalized_request: 사용자의 의도를 한 문장으로 정리
+- include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
+- exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
+- nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
+- caffeine_allowed: "카페인 없는", "디카페인", "카페인 빼고"는 false, 명확하지 않으면 null
 
 사용자 프로필:
 goal=${this.goalToLabel(userInfo.goal)}
@@ -950,7 +1518,29 @@ JSON shape:
   "desired_category": null,
   "nutrition_focus": [],
   "amount_preference": "regular",
-  "keywords": []
+  "keywords": [],
+  "include": {
+    "brands": [],
+    "categories": [],
+    "menu_names": [],
+    "keywords": []
+  },
+  "exclude": {
+    "brands": [],
+    "categories": [],
+    "menu_names": [],
+    "keywords": []
+  },
+  "nutrition_constraints": {
+    "max_calories": null,
+    "min_calories": null,
+    "min_protein": null,
+    "max_carbs": null,
+    "max_sugars": null,
+    "max_fat": null,
+    "max_sodium": null,
+    "caffeine_allowed": null
+  }
 }
 `;
 
@@ -987,6 +1577,18 @@ JSON shape:
           this.normalizeAmountPreference(data.amount_preference) ??
           fallback.amount_preference,
         keywords: this.normalizeKeywordArray(data.keywords, fallback.keywords),
+        include: this.normalizeIntentConditionGroup(
+          data.include,
+          fallback.include,
+        ),
+        exclude: this.normalizeIntentConditionGroup(
+          data.exclude,
+          fallback.exclude,
+        ),
+        nutrition_constraints: this.normalizeNutritionConstraints(
+          data.nutrition_constraints,
+          fallback.nutrition_constraints,
+        ),
       };
     } catch (error) {
       if (error instanceof ServiceUnavailableException) {
@@ -1035,6 +1637,11 @@ JSON shape:
       nutrition_focus.push('hearty_meal');
     }
 
+    const include = this.extractFallbackIncludeConditions(normalizedInput);
+    const exclude = this.extractFallbackExcludeConditions(normalizedInput);
+    const nutritionConstraints =
+      this.extractFallbackNutritionConstraints(normalizedInput);
+
     return {
       normalized_request: normalizedInput,
       meal_time,
@@ -1052,7 +1659,136 @@ JSON shape:
         .map((token) => token.replace(/[^\w가-힣]/g, ''))
         .filter((token) => token.length >= 2)
         .slice(0, 6),
+      include,
+      exclude,
+      nutrition_constraints: nutritionConstraints,
     };
+  }
+
+  private extractFallbackIncludeConditions(
+    input: string,
+  ): IntentConditionGroup {
+    const include = this.emptyIntentConditionGroup();
+    const includedTerms = Array.from(
+      input.matchAll(/([가-힣A-Za-z0-9]+)\s*(?:만|중에서|위주|로)/g),
+    )
+      .map((match) => match[1]?.trim())
+      .filter((term): term is string => !!term && term.length >= 2);
+
+    includedTerms.forEach((term) => {
+      const brand = this.extractBrandKeyword(term);
+      const category = this.extractCategoryKeyword(term);
+
+      if (brand) {
+        include.brands.push(brand);
+        return;
+      }
+
+      if (category) {
+        include.categories.push(category);
+        return;
+      }
+
+      include.keywords.push(term);
+    });
+
+    return include;
+  }
+
+  private extractFallbackExcludeConditions(
+    input: string,
+  ): IntentConditionGroup {
+    const exclude = this.emptyIntentConditionGroup();
+    const excludedTerms = Array.from(
+      input.matchAll(/([가-힣A-Za-z0-9]+)\s*(?:제외|빼고|말고)/g),
+    )
+      .map((match) => match[1]?.trim())
+      .filter((term): term is string => !!term && term.length >= 2);
+
+    excludedTerms.forEach((term) => {
+      const brand = this.extractBrandKeyword(term);
+      const category = this.extractCategoryKeyword(term);
+
+      if (brand) {
+        exclude.brands.push(brand);
+        return;
+      }
+
+      if (category) {
+        exclude.categories.push(category);
+        return;
+      }
+
+      exclude.menu_names.push(term);
+    });
+
+    if (
+      input.includes('카페인') &&
+      (input.includes('제외') ||
+        input.includes('빼고') ||
+        input.includes('없는') ||
+        input.includes('디카페인'))
+    ) {
+      exclude.keywords.push('카페인');
+    }
+
+    return exclude;
+  }
+
+  private extractFallbackNutritionConstraints(
+    input: string,
+  ): NutritionConstraints {
+    const constraints = this.emptyNutritionConstraints();
+    const caloriesMatch = input.match(/(\d+(?:\.\d+)?)\s*(?:kcal|칼로리)/i);
+    const proteinMatch = input.match(/단백질\s*(\d+(?:\.\d+)?)\s*g?\s*이상/);
+    const carbsMatch = input.match(/탄수화물\s*(\d+(?:\.\d+)?)\s*g?\s*이하/);
+    const sugarsMatch = input.match(/당류?\s*(\d+(?:\.\d+)?)\s*g?\s*이하/);
+    const fatMatch = input.match(/지방\s*(\d+(?:\.\d+)?)\s*g?\s*이하/);
+    const sodiumMatch = input.match(/나트륨\s*(\d+(?:\.\d+)?)\s*mg?\s*이하/);
+
+    if (caloriesMatch) {
+      const calories = Number(caloriesMatch[1]);
+
+      if (Number.isFinite(calories)) {
+        if (input.includes('이상')) {
+          constraints.min_calories = calories;
+        } else {
+          constraints.max_calories = calories;
+        }
+      }
+    }
+
+    if (proteinMatch) {
+      constraints.min_protein = Number(proteinMatch[1]);
+    }
+
+    if (carbsMatch) {
+      constraints.max_carbs = Number(carbsMatch[1]);
+    }
+
+    if (sugarsMatch) {
+      constraints.max_sugars = Number(sugarsMatch[1]);
+    }
+
+    if (fatMatch) {
+      constraints.max_fat = Number(fatMatch[1]);
+    }
+
+    if (sodiumMatch) {
+      constraints.max_sodium = Number(sodiumMatch[1]);
+    }
+
+    if (
+      input.includes('카페인') &&
+      (input.includes('없는') ||
+        input.includes('빼고') ||
+        input.includes('제외') ||
+        input.includes('디카페인'))
+    ) {
+      constraints.caffeine_allowed = false;
+    }
+
+    return constraints;
   }
 
   private extractBrandKeyword(input: string): string | null {
@@ -1392,6 +2128,115 @@ ${JSON.stringify(menusPayload)}
     return typeof value === 'string' && value.trim().length > 0
       ? value.trim()
       : null;
+  }
+
+  private asNullableNumber(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    const parsed =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+          ? Number(value.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0])
+          : NaN;
+
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private emptyIntentConditionGroup(): IntentConditionGroup {
+    return {
+      brands: [],
+      categories: [],
+      menu_names: [],
+      keywords: [],
+    };
+  }
+
+  private emptyNutritionConstraints(): NutritionConstraints {
+    return {
+      max_calories: null,
+      min_calories: null,
+      min_protein: null,
+      max_carbs: null,
+      max_sugars: null,
+      max_fat: null,
+      max_sodium: null,
+      caffeine_allowed: null,
+    };
+  }
+
+  private normalizeIntentConditionGroup(
+    value: unknown,
+    fallback: IntentConditionGroup,
+  ): IntentConditionGroup {
+    if (!value || typeof value !== 'object') {
+      return fallback;
+    }
+
+    const source = value as Partial<
+      Record<keyof IntentConditionGroup, unknown>
+    >;
+
+    return {
+      brands: this.normalizeFreeTextArray(source.brands, fallback.brands),
+      categories: this.normalizeFreeTextArray(
+        source.categories,
+        fallback.categories,
+      ),
+      menu_names: this.normalizeFreeTextArray(
+        source.menu_names,
+        fallback.menu_names,
+      ),
+      keywords: this.normalizeFreeTextArray(source.keywords, fallback.keywords),
+    };
+  }
+
+  private normalizeNutritionConstraints(
+    value: unknown,
+    fallback: NutritionConstraints,
+  ): NutritionConstraints {
+    if (!value || typeof value !== 'object') {
+      return fallback;
+    }
+
+    const source = value as Partial<
+      Record<keyof NutritionConstraints, unknown>
+    >;
+    const caffeineAllowed =
+      typeof source.caffeine_allowed === 'boolean'
+        ? source.caffeine_allowed
+        : fallback.caffeine_allowed;
+
+    return {
+      max_calories:
+        this.asNullableNumber(source.max_calories) ?? fallback.max_calories,
+      min_calories:
+        this.asNullableNumber(source.min_calories) ?? fallback.min_calories,
+      min_protein:
+        this.asNullableNumber(source.min_protein) ?? fallback.min_protein,
+      max_carbs: this.asNullableNumber(source.max_carbs) ?? fallback.max_carbs,
+      max_sugars:
+        this.asNullableNumber(source.max_sugars) ?? fallback.max_sugars,
+      max_fat: this.asNullableNumber(source.max_fat) ?? fallback.max_fat,
+      max_sodium:
+        this.asNullableNumber(source.max_sodium) ?? fallback.max_sodium,
+      caffeine_allowed: caffeineAllowed,
+    };
+  }
+
+  private normalizeFreeTextArray(value: unknown, fallback: string[]): string[] {
+    if (!Array.isArray(value)) {
+      return fallback;
+    }
+
+    const normalized = value
+      .map((item) => this.asNonEmptyString(item))
+      .filter((item): item is string => !!item && item.length >= 2)
+      .slice(0, 10);
+
+    return normalized.length > 0 ? Array.from(new Set(normalized)) : fallback;
   }
 
   private normalizeStringArray(
