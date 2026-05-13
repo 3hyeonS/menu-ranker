@@ -85,6 +85,7 @@ export class ChatController {
                   {
                     menu_id: 512,
                     menu_name: '그릴드 치킨 버거',
+                    brand: '맘스터치',
                     unit: 0,
                     weight: 230,
                     unit_quantity: '인분',
@@ -116,6 +117,7 @@ export class ChatController {
                       input_menu_name: '싸이버거',
                       menu_id: 1,
                       menu_name: '싸이버거',
+                      brand: '맘스터치',
                       unit: 0,
                       weight: 230,
                       unit_quantity: '인분',
@@ -126,6 +128,7 @@ export class ChatController {
                       input_menu_name: '콜라',
                       menu_id: 42,
                       menu_name: '콜라',
+                      brand: '맘스터치',
                       unit: 1,
                       weight: 355,
                       unit_quantity: '잔',

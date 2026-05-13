@@ -318,6 +318,7 @@ export class ChatService {
 
       item.menu_id = menu.id;
       item.menu_name = menu.name;
+      item.brand = menu.brand ?? null;
       item.unit = menu.unit;
       item.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
       item.unit_quantity = menu.unit_quantity;
@@ -1250,6 +1251,7 @@ ${JSON.stringify(menus)}
     response.input_menu_name = inputMenuName;
     response.menu_id = menu.id;
     response.menu_name = menu.name;
+    response.brand = menu.brand ?? null;
     response.unit = menu.unit;
     response.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
     response.unit_quantity = menu.unit_quantity;

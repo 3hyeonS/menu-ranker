@@ -23,6 +23,14 @@ export class ChatFeedbackMenuResponseDto {
   menu_name: string;
 
   @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '브랜드명',
+    example: '맘스터치',
+  })
+  brand: string | null;
+
+  @ApiProperty({
     type: Number,
     description: '중량 단위  \n0: g  \n1: ml',
     example: 0,
