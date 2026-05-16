@@ -557,6 +557,8 @@ export class AuthService {
     }
 
     // 단백질 상하한 적용
+    protein *= 100;
+
     if (protein > 20) {
       protein = 20;
     }

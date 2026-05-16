@@ -6,6 +6,17 @@ export interface ErrorApiResponseOption {
   status?: number;
   message?: string;
   error?: string;
+  examples?: Record<
+    string,
+    {
+      summary?: string;
+      value: {
+        message: string;
+        statusCode: number;
+        error: string;
+      };
+    }
+  >;
 }
 
 export const ErrorApiResponse = (option: ErrorApiResponseOption) => {
@@ -13,22 +24,47 @@ export const ErrorApiResponse = (option: ErrorApiResponseOption) => {
     ApiResponse({
       status: option.status || 777,
       description: option.description || '설명 없음',
-      schema: {
-        properties: {
-          message: {
-            type: 'string',
-            example: option.message,
+      content: option.examples
+        ? {
+            'application/json': {
+              schema: {
+                properties: {
+                  message: {
+                    type: 'string',
+                    example: option.message,
+                  },
+                  statusCode: {
+                    type: 'number',
+                    example: option.status,
+                  },
+                  error: {
+                    type: 'string',
+                    example: option.error,
+                  },
+                },
+              },
+              examples: option.examples,
+            },
+          }
+        : undefined,
+      schema: option.examples
+        ? undefined
+        : {
+            properties: {
+              message: {
+                type: 'string',
+                example: option.message,
+              },
+              statusCode: {
+                type: 'number',
+                example: option.status,
+              },
+              error: {
+                type: 'string',
+                example: option.error,
+              },
+            },
           },
-          statusCode: {
-            type: 'number',
-            example: option.status,
-          },
-          error: {
-            type: 'string',
-            example: option.error,
-          },
-        },
-      },
     }),
   );
 };

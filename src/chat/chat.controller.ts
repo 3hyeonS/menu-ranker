@@ -25,12 +25,16 @@ import { ResponseMsg } from '../decorators/response-message-decorator';
 import { ResponseDto } from '../response-dto';
 import { GenericApiResponse } from '../decorators/generic-api-response-decorator';
 import { ErrorApiResponse } from '../decorators/error-api-response-decorator';
+import { NullApiResponse } from '../decorators/null-api-response-decorator';
 import { UserEntity } from '../auth/entity/user/user.entity';
 import { ChatService } from './chat.service';
 import { ChatRecommendRequestDto } from './dto/request-dto/chat-recommend-request-dto';
+import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
+import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
 import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-response-dto';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
+import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
 
 @ApiTags('채팅')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -231,6 +235,219 @@ export class ChatController {
     @UploadedFile() file: Express.Multer.File,
   ): Promise<ChatMenuBoardRecommendResponseDto> {
     return await this.chatService.recommendFromMenuBoard(user, file);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '음식 사진 기반 메뉴 피드백',
+    description:
+      '음식 사진에서 메뉴와 좌표를 복수 인식한 뒤 현재 유저 목표와 식사기록 기준으로 메뉴 조합 피드백을 반환',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '음식 사진 기반 메뉴 피드백 성공',
+    message: 'Food image feedback generated successfully',
+    model: ChatFoodImageFeedbackResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description:
+      'Bad Request  \nimage 파일 누락, 잘못된 형식, 또는 음식 사진 인식 실패 사유',
+    message: 'image file is required',
+    error: 'BadRequestException',
+    examples: {
+      imageRequired: {
+        summary: 'image 파일 누락',
+        value: {
+          message: 'image file is required',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      invalidImageType: {
+        summary: 'image 파일 형식 오류',
+        value: {
+          message: 'image file must be an image',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      lowImageQuality: {
+        summary: '사진 화질이 너무 낮음',
+        value: {
+          message: 'food image quality is too low',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      foodTooSmall: {
+        summary: '사진에서 음식이 너무 작음',
+        value: {
+          message: 'food in image is too small',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      tooBlurry: {
+        summary: '사진이 흐림',
+        value: {
+          message: 'food image is too blurry',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      poorLighting: {
+        summary: '조명이 좋지 않음',
+        value: {
+          message: 'food image lighting is too poor',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      foodOccluded: {
+        summary: '음식이 가려지거나 잘림',
+        value: {
+          message: 'food is occluded or cut off',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      noFoodDetected: {
+        summary: '사진에서 음식을 찾을 수 없음',
+        value: {
+          message: 'no food detected in image',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      noMatchingMenu: {
+        summary: '후보 메뉴와 매칭 불가',
+        value: {
+          message: 'no recognizable menu matched candidates',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+    },
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패 또는 응답 파싱 실패',
+    message: 'Gemini recommendation pipeline is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '음식 이미지 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: '음식 사진 파일',
+        },
+      },
+      required: ['image'],
+    },
+  })
+  @ResponseMsg('Food image feedback generated successfully')
+  @UseGuards(AuthGuard())
+  @UseInterceptors(FileInterceptor('image'))
+  @Post('/food-image-feedback')
+  async feedbackMenusFromFoodImage(
+    @GetUser() user: UserEntity,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<ChatFoodImageFeedbackResponseDto> {
+    return await this.chatService.feedbackFromFoodImage(user, file);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '채팅 기반 식사 기록 메타데이터 저장',
+    description:
+      '실제 식사 기록 저장은 home/registerMeal에서 진행하고, 이 API는 채팅 기록에 식사 기록을 진행했다는 메타데이터만 저장',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '채팅 식사 기록 메타데이터 저장 성공',
+    message: 'Chat meal record saved successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 배열 길이 오류',
+    message:
+      'menu_ids, menu_quantities and menu_input_modes must have the same length',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '본인 소유의 채팅 기록을 찾을 수 없음',
+    message: 'Chat history not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Chat meal record saved successfully')
+  @UseGuards(AuthGuard())
+  @Post('/meal-record')
+  async recordMealFromChat(
+    @GetUser() user: UserEntity,
+    @Body() chatMealRecordRequestDto: ChatMealRecordRequestDto,
+  ): Promise<void> {
+    await this.chatService.recordMealFromChat(user, chatMealRecordRequestDto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '채팅 기반 식사 기록 메타데이터 삭제',
+    description:
+      '해당 채팅 기록의 meal_record를 null로 변경합니다. 실제 meal DB 기록은 삭제하지 않습니다.',
+  })
+  @NullApiResponse({
+    status: 200,
+    description: '채팅 식사 기록 메타데이터 삭제 성공',
+    message: 'Chat meal record deleted successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 오류',
+    message: 'chat_id must be a number',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '본인 소유의 채팅 기록을 찾을 수 없음',
+    message: 'Chat history not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Chat meal record deleted successfully')
+  @UseGuards(AuthGuard())
+  @Post('/meal-record/delete')
+  async deleteMealRecordFromChat(
+    @GetUser() user: UserEntity,
+    @Body() chatMealRecordDeleteRequestDto: ChatMealRecordDeleteRequestDto,
+  ): Promise<void> {
+    await this.chatService.deleteMealRecordFromChat(
+      user,
+      chatMealRecordDeleteRequestDto,
+    );
   }
 
   @ApiBearerAuth('accessToken')

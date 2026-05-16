@@ -360,9 +360,84 @@ export class HomeController {
   })
   @ErrorApiResponse({
     status: 400,
-    description: 'Bad Request  \nimage 파일 누락 또는 잘못된 형식',
+    description:
+      'Bad Request  \nimage 파일 누락, 잘못된 형식, 또는 음식 사진 인식 실패 사유',
     message: 'image file is required',
     error: 'BadRequestException',
+    examples: {
+      imageRequired: {
+        summary: 'image 파일 누락',
+        value: {
+          message: 'image file is required',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      invalidImageType: {
+        summary: 'image 파일 형식 오류',
+        value: {
+          message: 'image file must be an image',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      lowImageQuality: {
+        summary: '사진 화질이 너무 낮음',
+        value: {
+          message: 'food image quality is too low',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      foodTooSmall: {
+        summary: '사진에서 음식이 너무 작음',
+        value: {
+          message: 'food in image is too small',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      tooBlurry: {
+        summary: '사진이 흐림',
+        value: {
+          message: 'food image is too blurry',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      poorLighting: {
+        summary: '조명이 좋지 않음',
+        value: {
+          message: 'food image lighting is too poor',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      foodOccluded: {
+        summary: '음식이 가려지거나 잘림',
+        value: {
+          message: 'food is occluded or cut off',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      noFoodDetected: {
+        summary: '사진에서 음식을 찾을 수 없음',
+        value: {
+          message: 'no food detected in image',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      noMatchingMenu: {
+        summary: '후보 메뉴와 매칭 불가',
+        value: {
+          message: 'no recognizable menu matched candidates',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 401,

@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ChatHistoryEntity } from '../../entity/chat-history.entity';
 import { ChatRecommendResponseDto } from './chat-recommend-response-dto';
+import { ChatMealRecordResponseDto } from './chat-meal-record-response-dto';
 
 export class ChatHistoryItemResponseDto {
   @ApiProperty({
@@ -30,11 +31,19 @@ export class ChatHistoryItemResponseDto {
   })
   response_payload: ChatRecommendResponseDto;
 
+  @ApiProperty({
+    type: ChatMealRecordResponseDto,
+    nullable: true,
+    description: '해당 채팅에서 식사 기록을 진행한 경우 저장되는 식사 기록 메타데이터',
+  })
+  meal_record: ChatMealRecordResponseDto | null;
+
   constructor(chatHistory: ChatHistoryEntity) {
     this.id = chatHistory.id;
     this.input_text = chatHistory.input_text;
     this.createdAt = chatHistory.createdAt;
     this.response_payload =
       chatHistory.response_payload as unknown as ChatRecommendResponseDto;
+    this.meal_record = chatHistory.meal_record;
   }
 }

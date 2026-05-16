@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -28,8 +29,25 @@ import { ChatHistoryItemResponseDto } from './dto/response-dto/chat-history-item
 import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
 import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
+import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
+import { ChatFoodImageRecognizedMenuResponseDto } from './dto/response-dto/chat-food-image-recognized-menu-response-dto';
+import { ChatFoodImagePositionResponseDto } from './dto/response-dto/chat-food-image-position-response-dto';
+import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
+import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
+
+const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
+  LOW_IMAGE_QUALITY: 'food image quality is too low',
+  FOOD_TOO_SMALL: 'food in image is too small',
+  TOO_BLURRY: 'food image is too blurry',
+  POOR_LIGHTING: 'food image lighting is too poor',
+  FOOD_OCCLUDED: 'food is occluded or cut off',
+  NO_FOOD_DETECTED: 'no food detected in image',
+  NO_MATCHING_MENU: 'no recognizable menu matched candidates',
+} as const;
 
 type ChatCategory = 'feedback' | 'recommendation';
+type FoodImageRecognitionFailureReason =
+  keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
 
 type ChatClassification = {
   chat_category: ChatCategory;
@@ -104,6 +122,16 @@ type MenuRecognitionCandidate = {
   category: string | null;
 };
 
+type FoodImagePosition = {
+  x: number;
+  y: number;
+};
+
+type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
+  confidence: number | null;
+  position: FoodImagePosition;
+};
+
 type GeminiDescription = {
   menu_id: number;
   one_line_summary: string;
@@ -146,6 +174,30 @@ export class ChatService {
     }
 
     const userInfo = await this.getRequiredUserInfo(user.id);
+    if (this.isSimpleRecommendationRequest(input)) {
+      const parsedIntent = this.buildFallbackIntent(input);
+      const mealTime =
+        parsedIntent.meal_time ?? this.inferMealTimeFromClock(new Date());
+      const finalizedIntent: ParsedChatIntent = {
+        ...parsedIntent,
+        meal_time: mealTime,
+        keywords: [],
+      };
+      const candidateMenus = await this.getCandidateMenus(
+        user.id,
+        finalizedIntent,
+      );
+
+      return await this.recommendWithPreparedContext({
+        user,
+        userInfo,
+        input,
+        intent: finalizedIntent,
+        candidateMenus,
+        skipGeneratedDescriptions: true,
+      });
+    }
+
     const classification = await this.classifyChatWithGemini(input);
 
     if (classification.chat_category === 'feedback') {
@@ -250,6 +302,90 @@ export class ChatService {
     return response;
   }
 
+  async feedbackFromFoodImage(
+    user: UserEntity,
+    file: Express.Multer.File,
+  ): Promise<ChatFoodImageFeedbackResponseDto> {
+    if (!file) {
+      throw new BadRequestException('image file is required');
+    }
+
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('image file must be an image');
+    }
+
+    const userInfo = await this.getRequiredUserInfo(user.id);
+    const availableMenus = await this.getAvailableMenuRecognitionCandidates(
+      user.id,
+    );
+
+    if (availableMenus.length === 0) {
+      throw new BadRequestException('No menus available for feedback');
+    }
+
+    const recognizedFoods = await this.recognizeFoodImageMenusWithGemini(
+      file,
+      availableMenus,
+    );
+    const recognizedIds = Array.from(
+      new Set(recognizedFoods.map((food) => food.id)),
+    );
+    const candidateMenus = await this.menuRepository.find({
+      where: recognizedIds.map((id) => ({ id, is_deleted: 0 })),
+      relations: { user: true },
+    });
+    const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
+    const matchedMenus = recognizedFoods
+      .map((food) => {
+        const menu = menuMap.get(food.id);
+
+        return menu
+          ? {
+              inputMenuName: food.name,
+              menu,
+            }
+          : null;
+      })
+      .filter(
+        (
+          item,
+        ): item is {
+          inputMenuName: string;
+          menu: MenuEntity;
+        } => !!item,
+      );
+
+    if (matchedMenus.length === 0) {
+      throw new BadRequestException(
+        FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
+      );
+    }
+
+    const response = (await this.buildFeedbackChatResponse({
+      user,
+      userInfo,
+      input: '음식 사진 기반 피드백',
+      matchedMenus,
+      introMessage:
+        '음식 사진에서 인식한 메뉴를 기준으로 현재 목표에 맞는지 확인했어요.',
+      skipHistorySave: true,
+    })) as ChatFoodImageFeedbackResponseDto;
+
+    response.recognized_foods = recognizedFoods.map((food) =>
+      this.toFoodImageRecognizedMenuResponse(food),
+    );
+
+    await this.chatHistoryRepository.save(
+      this.chatHistoryRepository.create({
+        input_text: '음식 사진 기반 피드백',
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
+
+    return response;
+  }
+
   private async recommendWithPreparedContext(params: {
     user: UserEntity;
     userInfo: UserInfoEntity;
@@ -257,6 +393,7 @@ export class ChatService {
     intent: ParsedChatIntent;
     candidateMenus: MenuEntity[];
     recognizedCandidates?: MenuRecognitionCandidate[];
+    skipGeneratedDescriptions?: boolean;
   }): Promise<ChatRecommendResponseDto> {
     const {
       user,
@@ -265,6 +402,7 @@ export class ChatService {
       intent,
       candidateMenus,
       recognizedCandidates,
+      skipGeneratedDescriptions = false,
     } = params;
 
     const targetDate = this.resolveTargetDate();
@@ -295,12 +433,14 @@ export class ChatService {
       .sort((a, b) => b.score.finalScore - a.score.finalScore)
       .slice(0, 10);
 
-    const generatedDescriptions = await this.generateDescriptionsWithGemini(
-      input,
-      intent,
-      rankingBasis,
-      rankedMenus,
-    );
+    const generatedDescriptions = skipGeneratedDescriptions
+      ? []
+      : await this.generateDescriptionsWithGemini(
+          input,
+          intent,
+          rankingBasis,
+          rankedMenus,
+        );
 
     const descriptionMap = new Map(
       generatedDescriptions.map((description) => [
@@ -367,6 +507,29 @@ export class ChatService {
       throw new BadRequestException('No menus available for feedback');
     }
 
+    const matchedMenus = classification.menu_names.map((menuName) => ({
+      inputMenuName: menuName,
+      menu: this.findMostSimilarMenu(menuName, candidateMenus),
+    }));
+
+    return await this.buildFeedbackChatResponse({
+      user,
+      userInfo,
+      input,
+      matchedMenus,
+      introMessage: `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록을 기준으로 입력한 메뉴를 확인했어요.`,
+    });
+  }
+
+  private async buildFeedbackChatResponse(params: {
+    user: UserEntity;
+    userInfo: UserInfoEntity;
+    input: string;
+    matchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>;
+    introMessage: string;
+    skipHistorySave?: boolean;
+  }): Promise<ChatRecommendResponseDto> {
+    const { user, userInfo, input, matchedMenus, introMessage } = params;
     const targetDate = this.resolveTargetDate();
     const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
     const mealTime = this.inferMealTimeFromClock(new Date());
@@ -376,10 +539,6 @@ export class ChatService {
       mealTime,
       'regular',
     );
-    const matchedMenus = classification.menu_names.map((menuName) => ({
-      inputMenuName: menuName,
-      menu: this.findMostSimilarMenu(menuName, candidateMenus),
-    }));
     const combinationNutrition = this.sumFeedbackNutrition(
       matchedMenus.map(({ menu }) => menu),
     );
@@ -406,16 +565,18 @@ export class ChatService {
 
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'feedback';
-    response.intro_message = `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록을 기준으로 입력한 메뉴를 확인했어요.`;
+    response.intro_message = introMessage;
     response.feedback = feedback;
 
-    await this.chatHistoryRepository.save(
-      this.chatHistoryRepository.create({
-        input_text: input,
-        response_payload: response as unknown as Record<string, any>,
-        user,
-      }),
-    );
+    if (!params.skipHistorySave) {
+      await this.chatHistoryRepository.save(
+        this.chatHistoryRepository.create({
+          input_text: input,
+          response_payload: response as unknown as Record<string, any>,
+          user,
+        }),
+      );
+    }
 
     return response;
   }
@@ -453,6 +614,63 @@ export class ChatService {
         (chatHistory) => new ChatHistoryItemResponseDto(chatHistory),
       ),
     );
+  }
+
+  async recordMealFromChat(
+    user: UserEntity,
+    chatMealRecordRequestDto: ChatMealRecordRequestDto,
+  ): Promise<void> {
+    const { chat_id, time, menu_ids, menu_quantities, menu_input_modes } =
+      chatMealRecordRequestDto;
+
+    if (
+      menu_ids.length !== menu_quantities.length ||
+      menu_ids.length !== menu_input_modes.length
+    ) {
+      throw new BadRequestException(
+        'menu_ids, menu_quantities and menu_input_modes must have the same length',
+      );
+    }
+
+    const chatHistory = await this.chatHistoryRepository.findOne({
+      where: {
+        id: chat_id,
+        user: { id: user.id },
+      },
+    });
+
+    if (!chatHistory) {
+      throw new NotFoundException('Chat history not found');
+    }
+
+    chatHistory.meal_record = {
+      time,
+      menu_ids,
+      menu_quantities,
+      menu_input_modes,
+    };
+
+    await this.chatHistoryRepository.save(chatHistory);
+  }
+
+  async deleteMealRecordFromChat(
+    user: UserEntity,
+    chatMealRecordDeleteRequestDto: ChatMealRecordDeleteRequestDto,
+  ): Promise<void> {
+    const chatHistory = await this.chatHistoryRepository.findOne({
+      where: {
+        id: chatMealRecordDeleteRequestDto.chat_id,
+        user: { id: user.id },
+      },
+    });
+
+    if (!chatHistory) {
+      throw new NotFoundException('Chat history not found');
+    }
+
+    chatHistory.meal_record = null;
+
+    await this.chatHistoryRepository.save(chatHistory);
   }
 
   private buildIntroMessage(
@@ -616,6 +834,166 @@ ${JSON.stringify(menus)}
         category: matched.category ?? inferredCategory ?? null,
       };
     });
+  }
+
+  private async recognizeFoodImageMenusWithGemini(
+    file: Express.Multer.File,
+    menus: MenuRecognitionCandidate[],
+  ): Promise<RecognizedFoodImageMenu[]> {
+    const prompt = `
+음식 사진을 보고, 아래 후보 메뉴 중 사진에 실제로 포함된 음식만 골라 JSON object만 반환해.
+
+규칙:
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- 후보 메뉴에 없는 음식은 절대 추가하지 마
+- 사진 속 음식 1개당 detected_foods 항목 1개를 반환해
+- 같은 메뉴가 사진에 여러 개 있으면 각각 별도 항목으로 반환해
+- 각 음식의 position은 이미지 전체 기준 0~1 정규화 중심 좌표로 반환해
+- position.x는 음식 중심의 x 좌표, position.y는 음식 중심의 y 좌표야
+- 확실하지 않은 음식은 제외해
+- 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
+- 사진 문제로 실패한 경우 recognition_status는 "failed", detected_foods는 빈 배열로 반환해
+- 음식은 보이지만 후보 메뉴와 일치하는 항목이 없으면 failure_reason은 "NO_MATCHING_MENU"로 반환해
+
+후보 메뉴:
+${JSON.stringify(menus)}
+
+반환 shape:
+{
+  "recognition_status": "recognized",
+  "failure_reason": null,
+  "detected_foods": [
+    {
+      "menu_id": 1,
+      "confidence": 0.86,
+      "position": {
+        "x": 0.29,
+        "y": 0.45
+      }
+    }
+  ]
+}
+
+failure_reason enum:
+- LOW_IMAGE_QUALITY: 사진의 해상도/화질이 너무 낮음
+- FOOD_TOO_SMALL: 사진에서 음식이 너무 작게 보임
+- TOO_BLURRY: 사진이 흔들렸거나 초점이 맞지 않음
+- POOR_LIGHTING: 사진이 너무 어둡거나 밝아 음식 구분이 어려움
+- FOOD_OCCLUDED: 음식이 가려졌거나 잘려서 판단이 어려움
+- NO_FOOD_DETECTED: 사진에서 음식을 찾을 수 없음
+- NO_MATCHING_MENU: 음식은 보이지만 후보 메뉴와 매칭할 수 없음
+`.trim();
+
+    const data = await this.callGeminiJsonWithImage(prompt, file);
+    this.assertFoodImageRecognizable(data);
+
+    const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
+      ? data.detected_foods
+      : [];
+    const menuMap = new Map(menus.map((menu) => [Number(menu.id), menu]));
+    const recognizedFoods = detectedFoods
+      .map((value) => this.normalizeRecognizedFoodImageMenu(value, menuMap))
+      .filter(
+        (food): food is RecognizedFoodImageMenu => food !== null,
+      );
+
+    if (recognizedFoods.length === 0) {
+      throw new BadRequestException(
+        FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
+      );
+    }
+
+    return recognizedFoods;
+  }
+
+  private normalizeRecognizedFoodImageMenu(
+    value: unknown,
+    menuMap: Map<number, MenuRecognitionCandidate>,
+  ): RecognizedFoodImageMenu | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const item = value as Record<string, unknown>;
+    const menuId = this.asNullableNumber(item.menu_id);
+    const position = this.normalizeFoodImagePosition(item.position);
+
+    if (
+      menuId === null ||
+      !Number.isInteger(menuId) ||
+      !menuMap.has(menuId) ||
+      !position
+    ) {
+      return null;
+    }
+
+    const confidence = this.asNullableNumber(item.confidence);
+    const matchedMenu = menuMap.get(menuId)!;
+
+    return {
+      ...matchedMenu,
+      confidence:
+        confidence === null ? null : this.roundNormalizedCoordinate(confidence),
+      position,
+    };
+  }
+
+  private normalizeFoodImagePosition(
+    value: unknown,
+  ): FoodImagePosition | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const position = value as Record<string, unknown>;
+    const x = this.asNullableNumber(position.x);
+    const y = this.asNullableNumber(position.y);
+
+    if (x === null || y === null) {
+      return null;
+    }
+
+    return {
+      x: this.clampNormalizedCoordinate(x),
+      y: this.clampNormalizedCoordinate(y),
+    };
+  }
+
+  private assertFoodImageRecognizable(value: any): void {
+    const failureReason = this.asFoodImageRecognitionFailureReason(
+      value?.failure_reason,
+    );
+    const isFailed = value?.recognition_status === 'failed';
+
+    if (!isFailed && !failureReason) {
+      return;
+    }
+
+    throw new BadRequestException(
+      failureReason
+        ? FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES[failureReason]
+        : 'food image could not be recognized',
+    );
+  }
+
+  private asFoodImageRecognitionFailureReason(
+    value: unknown,
+  ): FoodImageRecognitionFailureReason | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    return value in FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES
+      ? (value as FoodImageRecognitionFailureReason)
+      : null;
+  }
+
+  private clampNormalizedCoordinate(value: number): number {
+    return this.roundNormalizedCoordinate(Math.min(Math.max(value, 0), 1));
+  }
+
+  private roundNormalizedCoordinate(value: number): number {
+    return Math.round(value * 1000) / 1000;
   }
 
   private async getCandidateMenus(
@@ -1409,6 +1787,56 @@ ${JSON.stringify(menus)}
     response.brand = candidate.brand;
     response.category = candidate.category;
     return response;
+  }
+
+  private toFoodImageRecognizedMenuResponse(
+    food: RecognizedFoodImageMenu,
+  ): ChatFoodImageRecognizedMenuResponseDto {
+    const position = new ChatFoodImagePositionResponseDto();
+    position.x = food.position.x;
+    position.y = food.position.y;
+
+    const response = new ChatFoodImageRecognizedMenuResponseDto();
+    response.menu_id = food.id;
+    response.menu_name = food.name;
+    response.brand = food.brand;
+    response.category = food.category;
+    response.confidence = food.confidence;
+    response.position = position;
+    return response;
+  }
+
+  private isSimpleRecommendationRequest(input: string): boolean {
+    const normalized = input.replace(/\s+/g, '');
+
+    if (
+      !/(추천|골라|뭐먹|메뉴|음식)/.test(normalized) ||
+      /(먹어도돼|괜찮|어때|피드백|평가|판단|먹었)/.test(normalized)
+    ) {
+      return false;
+    }
+
+    if (
+      /(제외|빼고|말고|만|중에서|위주|칼로리|kcal|단백질|탄수|저탄수|당|저당|지방|나트륨|카페인|디카페인|가볍|간단|든든|포만)/i.test(
+        normalized,
+      )
+    ) {
+      return false;
+    }
+
+    if (
+      this.extractBrandKeyword(input) ||
+      this.extractCategoryKeyword(input)
+    ) {
+      return false;
+    }
+
+    const residue = normalized.replace(
+      /(지금|오늘|현재|이번|끼니|식사|밥|먹을|먹는|먹고싶은|메뉴|음식|추천|골라|뭐먹지|뭐먹을까|해줘|해주세요|줘|요|좀|하나|하나만|아무거나|괜찮은|좋은|알려줘|알려주세요)/g,
+      '',
+    );
+
+    return residue.length === 0;
   }
 
   private async classifyChatWithGemini(

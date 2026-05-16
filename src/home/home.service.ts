@@ -48,6 +48,19 @@ import { NutritionLabelRecognition } from './types/nutrition-label-recognition.t
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
 
+const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
+  LOW_IMAGE_QUALITY: 'food image quality is too low',
+  FOOD_TOO_SMALL: 'food in image is too small',
+  TOO_BLURRY: 'food image is too blurry',
+  POOR_LIGHTING: 'food image lighting is too poor',
+  FOOD_OCCLUDED: 'food is occluded or cut off',
+  NO_FOOD_DETECTED: 'no food detected in image',
+  NO_MATCHING_MENU: 'no recognizable menu matched candidates',
+} as const;
+
+type FoodImageRecognitionFailureReason =
+  keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
+
 @Injectable()
 export class HomeService {
   private s3: S3Client;
@@ -147,7 +160,7 @@ export class HomeService {
   async menuDetail(menuId: number): Promise<MenuResponseDto> {
     const menu = await this.menuRepository.findOneBy({
       id: menuId,
-      is_deleted: 0,
+      // is_deleted: 0,
     });
 
     if (!menu) {
@@ -301,19 +314,36 @@ export class HomeService {
 - 확실하지 않은 음식은 제외해
 - menu_ids와 menu_quantities의 길이는 반드시 같아야 해
 - 수량은 0보다 큰 숫자만 허용해
-- 음식이 없거나 후보와 일치하는 항목이 없으면 빈 배열 반환
+- 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
+- 사진 문제로 실패한 경우 recognition_status는 "failed", menu_ids와 menu_quantities는 빈 배열로 반환해
+- 음식은 보이지만 후보 메뉴와 일치하는 항목이 없으면 failure_reason은 "NO_MATCHING_MENU"로 반환해
 
 후보 메뉴:
 ${JSON.stringify(menus)}
 
 반환 shape:
 {
+  "recognition_status": "recognized",
+  "failure_reason": null,
   "menu_ids": [1, 2],
   "menu_quantities": [1, 2]
 }
+
+failure_reason enum:
+- LOW_IMAGE_QUALITY: 사진의 해상도/화질이 너무 낮음
+- FOOD_TOO_SMALL: 사진에서 음식이 너무 작게 보임
+- TOO_BLURRY: 사진이 흔들렸거나 초점이 맞지 않음
+- POOR_LIGHTING: 사진이 너무 어둡거나 밝아 음식 구분이 어려움
+- FOOD_OCCLUDED: 음식이 가려졌거나 잘려서 판단이 어려움
+- NO_FOOD_DETECTED: 사진에서 음식을 찾을 수 없음
+- NO_MATCHING_MENU: 음식은 보이지만 후보 메뉴와 매칭할 수 없음
 `.trim();
 
-    const data = await this.callGeminiJsonWithImage(prompt, file);
+    const data = await this.callGeminiJsonWithImage(
+      prompt,
+      file,
+      'Food image recognition is unavailable',
+    );
     const recognized = this.normalizeFoodImageRecognition(data, menus);
     const imageUrl = await this.uploadRecognizedFoodImage(user, file);
 
@@ -1121,6 +1151,8 @@ ${JSON.stringify(menus)}
     menu_ids: number[];
     menu_quantities: number[];
   } {
+    this.assertFoodImageRecognizable(value);
+
     const menuIdSet = new Set(menus.map((menu) => Number(menu.id)));
     const menuIds = Array.isArray(value?.menu_ids) ? value.menu_ids : [];
     const menuQuantities = Array.isArray(value?.menu_quantities)
@@ -1153,16 +1185,54 @@ ${JSON.stringify(menus)}
       merged.set(menuId, roundToOneDecimal(previousQuantity + quantity));
     }
 
+    if (merged.size === 0) {
+      throw new BadRequestException(
+        FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
+      );
+    }
+
     return {
       menu_ids: Array.from(merged.keys()),
       menu_quantities: Array.from(merged.values()),
     };
   }
 
+  // 음식 사진 인식 실패 사유를 클라이언트에 전달
+  private assertFoodImageRecognizable(value: any): void {
+    const failureReason = this.asFoodImageRecognitionFailureReason(
+      value?.failure_reason,
+    );
+    const isFailed = value?.recognition_status === 'failed';
+
+    if (!isFailed && !failureReason) {
+      return;
+    }
+
+    throw new BadRequestException(
+      failureReason
+        ? FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES[failureReason]
+        : 'food image could not be recognized',
+    );
+  }
+
+  // 음식 사진 인식 실패 사유 enum 검증
+  private asFoodImageRecognitionFailureReason(
+    value: unknown,
+  ): FoodImageRecognitionFailureReason | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    return value in FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES
+      ? (value as FoodImageRecognitionFailureReason)
+      : null;
+  }
+
   // Gemini 이미지 JSON 응답 호출
   private async callGeminiJsonWithImage(
     prompt: string,
     file: Express.Multer.File,
+    unavailableMessage = 'Nutrition label recognition is unavailable',
   ): Promise<any> {
     const apiKey = process.env.GEMINI_API_KEY;
     const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
@@ -1218,9 +1288,7 @@ ${JSON.stringify(menus)}
 
       return JSON.parse(this.stripCodeFence(text));
     } catch (error) {
-      throw new ServiceUnavailableException(
-        'Nutrition label recognition is unavailable',
-      );
+      throw new ServiceUnavailableException(unavailableMessage);
     }
   }
 
