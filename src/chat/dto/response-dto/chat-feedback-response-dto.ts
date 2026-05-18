@@ -17,7 +17,7 @@ export class ChatFeedbackResponseDto {
 
   @ApiProperty({
     type: Number,
-    description: '현재 유저 상황 기준 조합 적절성 점수',
+    description: '현재 유저 상황 기준 통합 조합 적절성 점수',
     example: 72.5,
   })
   score: number;

@@ -282,6 +282,7 @@ export class HomeService {
         'menu.name AS name',
         'menu.brand AS brand',
         'menu.category AS category',
+        'menu.weight AS weight',
       ])
       .where(
         new Brackets((qb) => {
@@ -297,6 +298,7 @@ export class HomeService {
         name: string;
         brand: string | null;
         category: string | null;
+        weight: number | null;
       }>();
 
     if (menus.length === 0) {
@@ -1146,14 +1148,21 @@ failure_reason enum:
   // 음식 사진 인식 결과 정규화
   private normalizeFoodImageRecognition(
     value: any,
-    menus: Array<{ id: number }>,
+    menus: Array<{ id: number; weight: number | null }>,
   ): {
     menu_ids: number[];
     menu_quantities: number[];
   } {
     this.assertFoodImageRecognizable(value);
 
-    const menuIdSet = new Set(menus.map((menu) => Number(menu.id)));
+    const menuMap = new Map(
+      menus.map((menu) => [
+        Number(menu.id),
+        {
+          weight: this.asNullableNumber(menu.weight) ?? 0,
+        },
+      ]),
+    );
     const menuIds = Array.isArray(value?.menu_ids) ? value.menu_ids : [];
     const menuQuantities = Array.isArray(value?.menu_quantities)
       ? value.menu_quantities
@@ -1176,13 +1185,18 @@ failure_reason enum:
         quantity === null ||
         !Number.isInteger(menuId) ||
         quantity <= 0 ||
-        !menuIdSet.has(menuId)
+        !menuMap.has(menuId)
       ) {
         continue;
       }
 
+      const menuWeight = menuMap.get(menuId)!.weight;
+      const weightQuantity = menuWeight > 0 ? quantity * menuWeight : 0;
       const previousQuantity = merged.get(menuId) ?? 0;
-      merged.set(menuId, roundToOneDecimal(previousQuantity + quantity));
+      merged.set(
+        menuId,
+        roundToOneDecimal(previousQuantity + weightQuantity),
+      );
     }
 
     if (merged.size === 0) {

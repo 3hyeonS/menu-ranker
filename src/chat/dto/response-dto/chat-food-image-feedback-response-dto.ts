@@ -18,6 +18,14 @@ export class ChatFoodImageFeedbackResponseDto {
   intro_message: string;
 
   @ApiProperty({
+    type: String,
+    description: 'S3에 저장된 음식 이미지 url',
+    example:
+      'https://bucket.s3.ap-northeast-2.amazonaws.com/chat-images/food-image-feedback/1/20260518/abc123.jpg',
+  })
+  image_url: string;
+
+  @ApiProperty({
     type: ChatFeedbackResponseDto,
     description: '사진에서 인식한 메뉴 조합 판단 결과',
   })

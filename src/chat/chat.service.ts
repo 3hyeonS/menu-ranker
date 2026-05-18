@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Brackets, Between, Repository } from 'typeorm';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { UserEntity } from '../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../auth/entity/user/userInfo.entity';
 import { MenuEntity } from '../home/entity/menu.entity';
@@ -142,6 +143,8 @@ type GeminiDescription = {
 export class ChatService {
   private readonly mealTimeLabelMap = ['아침', '점심', '저녁', '간식', '야식'];
   private readonly mealTimeShareMap = [0.24, 0.34, 0.28, 0.08, 0.06];
+  private readonly s3: S3Client;
+  private readonly bucketName: string;
 
   constructor(
     @InjectRepository(UserEntity)
@@ -157,7 +160,17 @@ export class ChatService {
     @InjectRepository(ChatHistoryEntity)
     private readonly chatHistoryRepository: Repository<ChatHistoryEntity>,
     private readonly httpService: HttpService,
-  ) {}
+  ) {
+    this.s3 = new S3Client({
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+    });
+
+    this.bucketName = process.env.AWS_S3_BUCKET_NAME;
+  }
 
   private maskSecret(value?: string): string {
     return value ? `${value.slice(0, 8)}...(${value.length})` : 'NOT_SET';
@@ -287,6 +300,7 @@ export class ChatService {
       exclude: this.emptyIntentConditionGroup(),
       nutrition_constraints: this.emptyNutritionConstraints(),
     };
+    const imageUrl = await this.uploadChatImage(user, file, 'menu-board');
 
     const response = (await this.recommendWithPreparedContext({
       user,
@@ -295,6 +309,7 @@ export class ChatService {
       intent,
       candidateMenus: orderedCandidateMenus,
       recognizedCandidates,
+      imageUrl,
     })) as ChatMenuBoardRecommendResponseDto;
 
     response.intro_message = `메뉴판에서 인식된 후보 메뉴를 기준으로 ${this.mealTimeLabelMap[mealTime]} 추천을 정리해드렸어요!`;
@@ -374,6 +389,11 @@ export class ChatService {
     response.recognized_foods = recognizedFoods.map((food) =>
       this.toFoodImageRecognizedMenuResponse(food),
     );
+    response.image_url = await this.uploadChatImage(
+      user,
+      file,
+      'food-image-feedback',
+    );
 
     await this.chatHistoryRepository.save(
       this.chatHistoryRepository.create({
@@ -394,6 +414,7 @@ export class ChatService {
     candidateMenus: MenuEntity[];
     recognizedCandidates?: MenuRecognitionCandidate[];
     skipGeneratedDescriptions?: boolean;
+    imageUrl?: string;
   }): Promise<ChatRecommendResponseDto> {
     const {
       user,
@@ -403,6 +424,7 @@ export class ChatService {
       candidateMenus,
       recognizedCandidates,
       skipGeneratedDescriptions = false,
+      imageUrl,
     } = params;
 
     const targetDate = this.resolveTargetDate();
@@ -452,6 +474,9 @@ export class ChatService {
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'recommendation';
     response.intro_message = this.buildIntroMessage(intent, userInfo);
+    if (imageUrl) {
+      (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
+    }
     response.recommendations = rankedMenus.map(({ menu, score }, index) => {
       const item = new ChatRecommendItemResponseDto();
       const generated = descriptionMap.get(menu.id);
@@ -548,9 +573,14 @@ export class ChatService {
       rankingBasis,
     );
     const feedback = new ChatFeedbackResponseDto();
+    const feedbackIntent = this.buildFeedbackIntent('개별 메뉴 피드백');
 
     feedback.menus = matchedMenus.map(({ inputMenuName, menu }) =>
-      this.toFeedbackMenuResponse(inputMenuName, menu),
+      this.toFeedbackMenuResponse(
+        inputMenuName,
+        menu,
+        this.scoreMenu(menu, feedbackIntent, userInfo, rankingBasis),
+      ),
     );
     feedback.total_calories = roundToOneDecimal(combinationNutrition.calories);
     feedback.score = roundToOneDecimal(combinationScore.finalScore);
@@ -1623,6 +1653,7 @@ failure_reason enum:
   private toFeedbackMenuResponse(
     inputMenuName: string,
     menu: MenuEntity,
+    score: ScoreBreakdown,
   ): ChatFeedbackMenuResponseDto {
     const response = new ChatFeedbackMenuResponseDto();
 
@@ -1634,6 +1665,8 @@ failure_reason enum:
     response.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
     response.unit_quantity = menu.unit_quantity;
     response.calories = roundNullableToOneDecimal(menu.calories) ?? 0;
+    response.score = roundToOneDecimal(score.finalScore);
+    response.is_appropriate = score.finalScore >= 65;
     response.data_source = menu.data_source;
 
     return response;
@@ -2543,6 +2576,44 @@ ${JSON.stringify(menusPayload)}
       throw new ServiceUnavailableException(
         'Gemini recommendation pipeline is unavailable',
       );
+    }
+  }
+
+  private async uploadChatImage(
+    user: UserEntity,
+    file: Express.Multer.File,
+    imageType: 'menu-board' | 'food-image-feedback',
+  ): Promise<string> {
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomString = Math.random().toString(36).substring(2, 12);
+    const fileExtension = this.getImageExtension(file.mimetype);
+    const fileKey = `chat-images/${imageType}/${user.id}/${date}/${randomString}.${fileExtension}`;
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: fileKey,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
+
+    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+  }
+
+  private getImageExtension(mimeType?: string): string {
+    switch (mimeType) {
+      case 'image/jpeg':
+      case 'image/jpg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'image/heic':
+        return 'heic';
+      default:
+        return 'bin';
     }
   }
 

@@ -16,8 +16,9 @@ export class FoodImageRecognitionResponseDto {
 
   @ApiProperty({
     type: [Number],
-    description: '각 메뉴의 수량 배열',
-    example: [1, 2],
+    description:
+      '각 메뉴의 인식 중량 배열. 사진에서 인식한 개수/인분 수에 메뉴 weight을 곱한 값',
+    example: [230, 460],
   })
   menu_quantities: number[];
 

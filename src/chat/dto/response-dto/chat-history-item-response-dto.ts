@@ -32,6 +32,15 @@ export class ChatHistoryItemResponseDto {
   response_payload: ChatRecommendResponseDto;
 
   @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '이미지 기반 채팅인 경우 S3에 저장된 입력 이미지 url',
+    example:
+      'https://bucket.s3.ap-northeast-2.amazonaws.com/chat-images/food-image-feedback/1/20260518/abc123.jpg',
+  })
+  image_url: string | null;
+
+  @ApiProperty({
     type: ChatMealRecordResponseDto,
     nullable: true,
     description: '해당 채팅에서 식사 기록을 진행한 경우 저장되는 식사 기록 메타데이터',
@@ -44,6 +53,10 @@ export class ChatHistoryItemResponseDto {
     this.createdAt = chatHistory.createdAt;
     this.response_payload =
       chatHistory.response_payload as unknown as ChatRecommendResponseDto;
+    this.image_url =
+      typeof chatHistory.response_payload?.image_url === 'string'
+        ? chatHistory.response_payload.image_url
+        : null;
     this.meal_record = chatHistory.meal_record;
   }
 }

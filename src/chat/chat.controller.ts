@@ -35,6 +35,8 @@ import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-resp
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
 import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
+import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
+import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
 
 @ApiTags('채팅')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -49,7 +51,12 @@ export class ChatController {
     description:
       '입력값을 Gemini로 피드백/추천으로 분류. 피드백은 입력 메뉴를 DB 메뉴와 매핑한 뒤 현재 유저 목표와 식사기록 기준으로 판단하고, 추천은 기존 메뉴 추천 로직을 사용',
   })
-  @ApiExtraModels(ResponseDto, ChatRecommendResponseDto)
+  @ApiExtraModels(
+    ResponseDto,
+    ChatRecommendResponseDto,
+    ChatFeedbackResponseDto,
+    ChatFeedbackMenuResponseDto,
+  )
   @ApiResponse({
     status: 201,
     description: '채팅형 메뉴 추천 성공',
@@ -126,6 +133,8 @@ export class ChatController {
                       weight: 230,
                       unit_quantity: '인분',
                       calories: 594,
+                      score: 71.2,
+                      is_appropriate: true,
                       data_source: 0,
                     },
                     {
@@ -137,6 +146,8 @@ export class ChatController {
                       weight: 355,
                       unit_quantity: '잔',
                       calories: 150,
+                      score: 48.5,
+                      is_appropriate: false,
                       data_source: 0,
                     },
                   ],

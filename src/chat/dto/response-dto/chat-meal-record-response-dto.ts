@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class ChatMealRecordResponseDto {
   @ApiProperty({
     type: Number,
-    description: '끼니  \n0: 아침  \n1: 점심  \n2: 저녁  \n3: 간식',
+    description: '끼니  \n0: 아침  \n1: 점심  \n2: 저녁  \n3: 간식  \n4: 야식',
     example: 1,
   })
   time: number;

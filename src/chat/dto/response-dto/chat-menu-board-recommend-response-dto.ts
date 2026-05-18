@@ -19,6 +19,14 @@ export class ChatMenuBoardRecommendResponseDto {
   intro_message: string;
 
   @ApiProperty({
+    type: String,
+    description: 'S3에 저장된 메뉴판 이미지 url',
+    example:
+      'https://bucket.s3.ap-northeast-2.amazonaws.com/chat-images/menu-board/1/20260518/abc123.jpg',
+  })
+  image_url: string;
+
+  @ApiProperty({
     type: [ChatRecommendItemResponseDto],
     description: '상위 10개 추천 메뉴',
   })

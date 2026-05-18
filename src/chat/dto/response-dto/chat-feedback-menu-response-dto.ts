@@ -60,6 +60,20 @@ export class ChatFeedbackMenuResponseDto {
 
   @ApiProperty({
     type: Number,
+    description: '현재 유저 상황 기준 개별 메뉴 적절성 점수',
+    example: 72.5,
+  })
+  score: number;
+
+  @ApiProperty({
+    type: Boolean,
+    description: '현재 유저 상황 기준 개별 메뉴 적절 여부',
+    example: true,
+  })
+  is_appropriate: boolean;
+
+  @ApiProperty({
+    type: Number,
     description: '메뉴 데이터 출처  \n0: 기본 데이터  \n1: 사용자 등록',
     example: 0,
   })
