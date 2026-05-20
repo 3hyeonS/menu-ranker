@@ -223,6 +223,38 @@ export class ChatService {
     });
   }
 
+  private shouldRetryGeminiWithFallback(error: unknown): boolean {
+    const geminiError = error as {
+      code?: string;
+      response?: {
+        status?: number;
+        data?: {
+          error?: {
+            status?: string;
+          };
+        };
+      };
+    };
+    const httpStatus = geminiError.response?.status;
+    const errorStatus = geminiError.response?.data?.error?.status;
+
+    return (
+      httpStatus === 429 ||
+      httpStatus === 500 ||
+      httpStatus === 503 ||
+      httpStatus === 504 ||
+      errorStatus === 'RESOURCE_EXHAUSTED' ||
+      geminiError.code === 'ECONNABORTED'
+    );
+  }
+
+  private buildGeminiBaseUrl(model: string, baseUrlOverride?: string): string {
+    return (
+      baseUrlOverride ??
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+    );
+  }
+
   async recommend(
     user: UserEntity,
     chatRecommendRequestDto: ChatRecommendRequestDto,
@@ -2946,19 +2978,62 @@ ${JSON.stringify(menusPayload)}
     file: Express.Multer.File,
   ): Promise<any> {
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
-    const baseUrl =
-      process.env.GEMINI_BASE_URL ??
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const primaryModel =
+      process.env.GEMINI_IMAGE_MODEL ??
+      process.env.GEMINI_MODEL ??
+      'gemini-2.5-flash';
+    const fallbackModel =
+      process.env.GEMINI_IMAGE_FALLBACK_MODEL ?? 'gemini-2.0-flash-lite';
+    const baseUrlOverride =
+      process.env.GEMINI_IMAGE_BASE_URL ?? process.env.GEMINI_BASE_URL;
 
     if (!apiKey) {
       console.log('[CHAT] GEMINI ENV CHECK', {
         GEMINI_API_KEY: this.maskSecret(process.env.GEMINI_API_KEY),
-        GEMINI_MODEL: model,
+        GEMINI_MODEL: primaryModel,
       });
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
+    const attempts = Array.from(
+      new Set(
+        [primaryModel, fallbackModel].filter(
+          (model): model is string =>
+            typeof model === 'string' && model.trim().length > 0,
+        ),
+      ),
+    );
+    for (const [index, model] of attempts.entries()) {
+      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
+
+      try {
+        return await this.postGeminiImageJson(prompt, file, apiKey, baseUrl);
+      } catch (error) {
+        this.logGeminiError(
+          index === 0 ? 'image-json' : `image-json-fallback:${model}`,
+          error,
+        );
+
+        if (
+          index === attempts.length - 1 ||
+          !this.shouldRetryGeminiWithFallback(error)
+        ) {
+          break;
+        }
+      }
+    }
+
+    throw new ServiceUnavailableException(
+      'Gemini recommendation pipeline is unavailable',
+    );
+  }
+
+  private async postGeminiImageJson(
+    prompt: string,
+    file: Express.Multer.File,
+    apiKey: string,
+    baseUrl: string,
+  ): Promise<any> {
     try {
       const response = await firstValueFrom(
         this.httpService.post(
@@ -3003,10 +3078,7 @@ ${JSON.stringify(menusPayload)}
 
       return JSON.parse(this.stripCodeFence(text));
     } catch (error) {
-      this.logGeminiError('image-json', error);
-      throw new ServiceUnavailableException(
-        'Gemini recommendation pipeline is unavailable',
-      );
+      throw error;
     }
   }
 
