@@ -998,6 +998,7 @@ failure_reason enum:
       32,
     );
     const rematchedFoods = await this.rematchFoodImageMenusWithGemini(
+      file,
       predictions,
       candidatePool,
     );
@@ -1122,7 +1123,7 @@ failure_reason enum:
   ): MenuRecognitionCandidate[] {
     const scoredById = new Map<number, RecognitionCandidateScore>();
 
-    texts.forEach((text) => {
+    this.expandRecognitionTexts(texts).forEach((text) => {
       this.findTopRecognitionCandidates(
         text,
         menus,
@@ -1151,6 +1152,47 @@ failure_reason enum:
       .sort((a, b) => b.score - a.score)
       .map(({ menu }) => menu)
       .slice(0, limit);
+  }
+
+  private expandRecognitionTexts(texts: string[]): string[] {
+    const expanded = new Set<string>();
+
+    texts.forEach((text) => {
+      const normalized = text.trim();
+      if (!normalized) {
+        return;
+      }
+
+      expanded.add(normalized);
+
+      const compact = this.normalizeCompactText(normalized);
+      if (compact.includes('햄버거') || compact.includes('버거')) {
+        expanded.add('버거');
+        expanded.add(normalized.replace(/햄버거/g, '버거'));
+      }
+      if (
+        compact.includes('감자튀김') ||
+        compact.includes('프렌치프라이') ||
+        compact.includes('후렌치후라이') ||
+        compact.includes('프라이')
+      ) {
+        expanded.add('감자');
+        expanded.add('프라이');
+        expanded.add('후렌치후라이');
+      }
+      if (compact.includes('치킨')) {
+        expanded.add('치킨');
+      }
+      if (compact.includes('샐러드')) {
+        expanded.add('샐러드');
+      }
+      if (compact.includes('콜라') || compact.includes('음료')) {
+        expanded.add('콜라');
+        expanded.add('음료');
+      }
+    });
+
+    return Array.from(expanded);
   }
 
   private async rematchMenuBoardCandidatesWithGemini(
@@ -1206,6 +1248,7 @@ ${JSON.stringify(candidates)}
   }
 
   private async rematchFoodImageMenusWithGemini(
+    file: Express.Multer.File,
     predictions: FoodImagePrediction[],
     candidates: MenuRecognitionCandidate[],
   ): Promise<RecognizedFoodImageMenu[]> {
@@ -1214,12 +1257,13 @@ ${JSON.stringify(candidates)}
     }
 
     const prompt = `
-음식 사진 1차 인식 결과와 서버가 추린 후보 메뉴만 보고 각 음식에 가장 잘 맞는 menu_id를 골라 JSON object로 반환해.
+음식 사진, 1차 인식 결과, 서버가 추린 후보 메뉴를 함께 보고 각 음식에 가장 잘 맞는 menu_id를 골라 JSON object로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 - 후보 목록에 없는 메뉴 id는 절대 반환하지 마
 - food_index는 입력 detected_foods의 index 값을 그대로 사용해
+- 음식 사진의 시각 정보와 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 음식에 보이면 같은 menu_id를 여러 food_index에 매칭해도 돼
 
@@ -1248,7 +1292,7 @@ ${JSON.stringify(candidates)}
 `.trim();
 
     try {
-      const data = await this.callGeminiJson(prompt);
+      const data = await this.callGeminiJsonWithImage(prompt, file);
       const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
         ? data.detected_foods
         : [];
@@ -1376,6 +1420,11 @@ ${JSON.stringify(candidates)}
       score = 84;
     } else if (searchable.includes(input)) {
       score = 74;
+    } else if (
+      category &&
+      (input.includes(category) || category.includes(input))
+    ) {
+      score = 68;
     } else {
       score = this.calculateCharacterDiceScore(input, menuName) * 72;
     }
