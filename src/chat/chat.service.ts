@@ -123,9 +123,26 @@ type MenuRecognitionCandidate = {
   category: string | null;
 };
 
+type MenuBoardRecognitionResult = {
+  recognizedTexts: string[];
+  inferredBrand: string | null;
+  inferredCategory: string | null;
+};
+
+type RecognitionCandidateScore = {
+  menu: MenuRecognitionCandidate;
+  score: number;
+};
+
 type FoodImagePosition = {
   x: number;
   y: number;
+};
+
+type FoodImagePrediction = {
+  foodName: string;
+  confidence: number | null;
+  position: FoodImagePosition;
 };
 
 type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
@@ -143,6 +160,7 @@ type GeminiDescription = {
 export class ChatService {
   private readonly mealTimeLabelMap = ['아침', '점심', '저녁', '간식', '야식'];
   private readonly mealTimeShareMap = [0.24, 0.34, 0.28, 0.08, 0.06];
+  private readonly rematchCandidateLimit = 100;
   private readonly s3: S3Client;
   private readonly bucketName: string;
 
@@ -174,6 +192,35 @@ export class ChatService {
 
   private maskSecret(value?: string): string {
     return value ? `${value.slice(0, 8)}...(${value.length})` : 'NOT_SET';
+  }
+
+  private logGeminiError(context: string, error: unknown): void {
+    const geminiError = error as {
+      message?: string;
+      code?: string;
+      response?: {
+        status?: number;
+        data?: {
+          error?: {
+            code?: number;
+            status?: string;
+            message?: string;
+          };
+        };
+      };
+    };
+
+    console.error('[CHAT] GEMINI ERROR', {
+      context,
+      httpStatus: geminiError.response?.status ?? null,
+      errorCode: geminiError.response?.data?.error?.code ?? null,
+      errorStatus: geminiError.response?.data?.error?.status ?? null,
+      errorMessage:
+        geminiError.response?.data?.error?.message ??
+        geminiError.message ??
+        null,
+      networkCode: geminiError.code ?? null,
+    });
   }
 
   async recommend(
@@ -815,55 +862,42 @@ export class ChatService {
     menus: MenuRecognitionCandidate[],
   ): Promise<MenuRecognitionCandidate[]> {
     const prompt = `
-메뉴판 사진을 보고, 아래 메뉴 entity 후보 중 사진 속 메뉴와 가장 일치하는 값들만 골라 JSON object만 반환해.
+메뉴판 사진을 OCR로 읽고, 사진에 보이는 메뉴명 후보만 JSON object로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- 사진 속 실제 메뉴명과 매칭되는 후보만 선택해
-- 후보 목록에 없는 메뉴는 절대 추가하지 마
-- OCR로 읽힌 문구와 후보 매칭에 자신 있는 항목만 남겨
-- 최대 30개까지만 반환해
-- candidate_menu_ids에는 중복을 넣지 마
+- 메뉴판에 실제로 적힌 메뉴명만 recognized_texts에 넣어
+- 가격, 원산지, 알레르기 안내, 옵션 설명, 광고 문구는 제외해
+- OCR이 불확실한 문구는 제외해
+- 최대 50개까지만 반환해
 - 메뉴판의 브랜드나 카테고리가 보이면 inferred_brand, inferred_category에 넣고 불명확하면 null
-
-후보 메뉴:
-${JSON.stringify(menus)}
 
 반환 shape:
 {
   "recognized_texts": ["싸이버거", "치즈버거"],
   "inferred_brand": "맘스터치",
-  "inferred_category": "버거",
-  "candidate_menu_ids": [1, 2, 3]
+  "inferred_category": "버거"
 }
 `.trim();
 
     const data = await this.callGeminiJsonWithImage(prompt, file);
-    const candidateIds: unknown[] = Array.isArray(data?.candidate_menu_ids)
-      ? data.candidate_menu_ids
-      : [];
-    const menuMap = new Map(menus.map((menu) => [Number(menu.id), menu]));
-    const uniqueIds = Array.from(
-      new Set<number>(
-        candidateIds
-          .map((value) => Number(value))
-          .filter(
-            (id): id is number => Number.isInteger(id) && menuMap.has(id),
-          ),
-      ),
-    ).slice(0, 30);
+    const recognition = this.normalizeMenuBoardRecognition(data);
+    const candidatePool = this.buildRecognitionCandidatePool(
+      recognition.recognizedTexts,
+      menus,
+      recognition,
+      this.rematchCandidateLimit,
+      15,
+      34,
+    );
+    const rematchedCandidates = await this.rematchMenuBoardCandidatesWithGemini(
+      recognition,
+      candidatePool,
+    );
 
-    const inferredBrand = this.asNonEmptyString(data?.inferred_brand);
-    const inferredCategory = this.asNonEmptyString(data?.inferred_category);
-
-    return uniqueIds.map((id) => {
-      const matched = menuMap.get(id)!;
-      return {
-        ...matched,
-        brand: matched.brand ?? inferredBrand ?? null,
-        category: matched.category ?? inferredCategory ?? null,
-      };
-    });
+    return rematchedCandidates.length > 0
+      ? rematchedCandidates
+      : candidatePool.slice(0, 30);
   }
 
   private async recognizeFoodImageMenusWithGemini(
@@ -871,22 +905,19 @@ ${JSON.stringify(menus)}
     menus: MenuRecognitionCandidate[],
   ): Promise<RecognizedFoodImageMenu[]> {
     const prompt = `
-음식 사진을 보고, 아래 후보 메뉴 중 사진에 실제로 포함된 음식만 골라 JSON object만 반환해.
+음식 사진을 보고, 사진에 실제로 포함된 음식명을 JSON object로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- 후보 메뉴에 없는 음식은 절대 추가하지 마
 - 사진 속 음식 1개당 detected_foods 항목 1개를 반환해
 - 같은 메뉴가 사진에 여러 개 있으면 각각 별도 항목으로 반환해
+- food_name에는 사진 속 음식의 가장 구체적인 이름을 넣어
 - 각 음식의 position은 이미지 전체 기준 0~1 정규화 중심 좌표로 반환해
 - position.x는 음식 중심의 x 좌표, position.y는 음식 중심의 y 좌표야
 - 확실하지 않은 음식은 제외해
 - 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
 - 사진 문제로 실패한 경우 recognition_status는 "failed", detected_foods는 빈 배열로 반환해
-- 음식은 보이지만 후보 메뉴와 일치하는 항목이 없으면 failure_reason은 "NO_MATCHING_MENU"로 반환해
-
-후보 메뉴:
-${JSON.stringify(menus)}
+- 음식은 보이지만 이름을 특정하기 어렵다면 failure_reason은 "NO_MATCHING_MENU"로 반환해
 
 반환 shape:
 {
@@ -894,7 +925,7 @@ ${JSON.stringify(menus)}
   "failure_reason": null,
   "detected_foods": [
     {
-      "menu_id": 1,
+      "food_name": "싸이버거",
       "confidence": 0.86,
       "position": {
         "x": 0.29,
@@ -920,12 +951,32 @@ failure_reason enum:
     const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
       ? data.detected_foods
       : [];
-    const menuMap = new Map(menus.map((menu) => [Number(menu.id), menu]));
-    const recognizedFoods = detectedFoods
-      .map((value) => this.normalizeRecognizedFoodImageMenu(value, menuMap))
-      .filter(
-        (food): food is RecognizedFoodImageMenu => food !== null,
-      );
+    const predictions = detectedFoods
+      .map((value) => this.normalizeFoodImagePrediction(value))
+      .filter((food): food is FoodImagePrediction => food !== null);
+    const candidatePool = this.buildRecognitionCandidatePool(
+      predictions.map((food) => food.foodName),
+      menus,
+      {
+        inferredBrand: null,
+        inferredCategory: null,
+      },
+      this.rematchCandidateLimit,
+      15,
+      32,
+    );
+    const rematchedFoods = await this.rematchFoodImageMenusWithGemini(
+      predictions,
+      candidatePool,
+    );
+    const recognizedFoods =
+      rematchedFoods.length > 0
+        ? rematchedFoods
+        : predictions
+            .map((prediction) =>
+              this.matchFoodImagePredictionLocally(prediction, menus),
+            )
+            .filter((food): food is RecognizedFoodImageMenu => food !== null);
 
     if (recognizedFoods.length === 0) {
       throw new BadRequestException(
@@ -936,41 +987,422 @@ failure_reason enum:
     return recognizedFoods;
   }
 
-  private normalizeRecognizedFoodImageMenu(
+  private normalizeFoodImagePrediction(
     value: unknown,
-    menuMap: Map<number, MenuRecognitionCandidate>,
-  ): RecognizedFoodImageMenu | null {
+  ): FoodImagePrediction | null {
     if (!value || typeof value !== 'object') {
       return null;
     }
 
     const item = value as Record<string, unknown>;
-    const menuId = this.asNullableNumber(item.menu_id);
+    const foodName = this.asNonEmptyString(item.food_name);
     const position = this.normalizeFoodImagePosition(item.position);
 
-    if (
-      menuId === null ||
-      !Number.isInteger(menuId) ||
-      !menuMap.has(menuId) ||
-      !position
-    ) {
+    if (!foodName || !position) {
       return null;
     }
 
     const confidence = this.asNullableNumber(item.confidence);
-    const matchedMenu = menuMap.get(menuId)!;
 
     return {
-      ...matchedMenu,
+      foodName,
       confidence:
         confidence === null ? null : this.roundNormalizedCoordinate(confidence),
       position,
     };
   }
 
-  private normalizeFoodImagePosition(
+  private matchFoodImagePredictionLocally(
+    prediction: FoodImagePrediction,
+    menus: MenuRecognitionCandidate[],
+  ): RecognizedFoodImageMenu | null {
+    const matchedMenu = this.findBestRecognitionCandidate(
+      prediction.foodName,
+      menus,
+      null,
+      null,
+      55,
+    );
+
+    return matchedMenu
+      ? {
+          ...matchedMenu,
+          confidence: prediction.confidence,
+          position: prediction.position,
+        }
+      : null;
+  }
+
+  private normalizeMenuBoardRecognition(
+    value: any,
+  ): MenuBoardRecognitionResult {
+    return {
+      recognizedTexts: this.normalizeFreeTextArray(value?.recognized_texts, [])
+        .filter((text) => text.length >= 2)
+        .slice(0, 50),
+      inferredBrand: this.asNonEmptyString(value?.inferred_brand),
+      inferredCategory: this.asNonEmptyString(value?.inferred_category),
+    };
+  }
+
+  private matchRecognitionCandidates(
+    texts: string[],
+    menus: MenuRecognitionCandidate[],
+    context: Pick<
+      MenuBoardRecognitionResult,
+      'inferredBrand' | 'inferredCategory'
+    >,
+    limit: number,
+  ): MenuRecognitionCandidate[] {
+    const matchedById = new Map<number, MenuRecognitionCandidate>();
+
+    texts.forEach((text) => {
+      const matched = this.findBestRecognitionCandidate(
+        text,
+        menus,
+        context.inferredBrand,
+        context.inferredCategory,
+        58,
+      );
+
+      if (matched) {
+        matchedById.set(matched.id, {
+          ...matched,
+          brand: matched.brand ?? context.inferredBrand ?? null,
+          category: matched.category ?? context.inferredCategory ?? null,
+        });
+      }
+    });
+
+    return Array.from(matchedById.values()).slice(0, limit);
+  }
+
+  private buildRecognitionCandidatePool(
+    texts: string[],
+    menus: MenuRecognitionCandidate[],
+    context: Pick<
+      MenuBoardRecognitionResult,
+      'inferredBrand' | 'inferredCategory'
+    >,
+    limit: number,
+    perTextLimit: number,
+    minScore: number,
+  ): MenuRecognitionCandidate[] {
+    const scoredById = new Map<number, RecognitionCandidateScore>();
+
+    texts.forEach((text) => {
+      this.findTopRecognitionCandidates(
+        text,
+        menus,
+        context.inferredBrand,
+        context.inferredCategory,
+        perTextLimit,
+        minScore,
+      ).forEach((candidate) => {
+        const current = scoredById.get(candidate.menu.id);
+
+        if (!current || candidate.score > current.score) {
+          scoredById.set(candidate.menu.id, {
+            menu: {
+              ...candidate.menu,
+              brand: candidate.menu.brand ?? context.inferredBrand ?? null,
+              category:
+                candidate.menu.category ?? context.inferredCategory ?? null,
+            },
+            score: candidate.score,
+          });
+        }
+      });
+    });
+
+    return Array.from(scoredById.values())
+      .sort((a, b) => b.score - a.score)
+      .map(({ menu }) => menu)
+      .slice(0, limit);
+  }
+
+  private async rematchMenuBoardCandidatesWithGemini(
+    recognition: MenuBoardRecognitionResult,
+    candidates: MenuRecognitionCandidate[],
+  ): Promise<MenuRecognitionCandidate[]> {
+    if (recognition.recognizedTexts.length === 0 || candidates.length === 0) {
+      return [];
+    }
+
+    const prompt = `
+메뉴판 OCR 결과와 서버가 추린 후보 메뉴만 보고 최종 매칭되는 메뉴 id를 골라 JSON object로 반환해.
+
+규칙:
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- 후보 목록에 없는 메뉴 id는 절대 반환하지 마
+- OCR 텍스트와 후보 메뉴명이 같은 메뉴를 우선 선택해
+- 브랜드/카테고리는 보조 정보로만 사용해
+- 확실하지 않은 후보는 제외해
+- candidate_menu_ids는 중복 없이 최대 30개까지만 반환해
+
+OCR 결과:
+${JSON.stringify(recognition)}
+
+후보 메뉴:
+${JSON.stringify(candidates)}
+
+반환 shape:
+{
+  "candidate_menu_ids": [1, 2, 3]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt);
+      const candidateIds: unknown[] = Array.isArray(data?.candidate_menu_ids)
+        ? data.candidate_menu_ids
+        : [];
+      const candidateMap = new Map(candidates.map((menu) => [menu.id, menu]));
+
+      return Array.from(
+        new Set(
+          candidateIds
+            .map((value) => Number(value))
+            .filter((id) => Number.isInteger(id) && candidateMap.has(id)),
+        ),
+      )
+        .map((id) => candidateMap.get(id)!)
+        .slice(0, 30);
+    } catch {
+      return [];
+    }
+  }
+
+  private async rematchFoodImageMenusWithGemini(
+    predictions: FoodImagePrediction[],
+    candidates: MenuRecognitionCandidate[],
+  ): Promise<RecognizedFoodImageMenu[]> {
+    if (predictions.length === 0 || candidates.length === 0) {
+      return [];
+    }
+
+    const prompt = `
+음식 사진 1차 인식 결과와 서버가 추린 후보 메뉴만 보고 각 음식에 가장 잘 맞는 menu_id를 골라 JSON object로 반환해.
+
+규칙:
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- 후보 목록에 없는 메뉴 id는 절대 반환하지 마
+- food_index는 입력 detected_foods의 index 값을 그대로 사용해
+- 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
+- 같은 메뉴가 여러 음식에 보이면 같은 menu_id를 여러 food_index에 매칭해도 돼
+
+detected_foods:
+${JSON.stringify(
+  predictions.map((prediction, index) => ({
+    index,
+    food_name: prediction.foodName,
+    confidence: prediction.confidence,
+  })),
+)}
+
+후보 메뉴:
+${JSON.stringify(candidates)}
+
+반환 shape:
+{
+  "detected_foods": [
+    {
+      "food_index": 0,
+      "menu_id": 1,
+      "confidence": 0.86
+    }
+  ]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt);
+      const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
+        ? data.detected_foods
+        : [];
+      const candidateMap = new Map(candidates.map((menu) => [menu.id, menu]));
+
+      return detectedFoods
+        .map((value) =>
+          this.normalizeRematchedFoodImageMenu(
+            value,
+            predictions,
+            candidateMap,
+          ),
+        )
+        .filter((food): food is RecognizedFoodImageMenu => food !== null);
+    } catch {
+      return [];
+    }
+  }
+
+  private normalizeRematchedFoodImageMenu(
     value: unknown,
-  ): FoodImagePosition | null {
+    predictions: FoodImagePrediction[],
+    candidateMap: Map<number, MenuRecognitionCandidate>,
+  ): RecognizedFoodImageMenu | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const item = value as Record<string, unknown>;
+    const foodIndex = this.asNullableNumber(item.food_index);
+    const menuId = this.asNullableNumber(item.menu_id);
+
+    if (
+      foodIndex === null ||
+      menuId === null ||
+      !Number.isInteger(foodIndex) ||
+      !Number.isInteger(menuId) ||
+      foodIndex < 0 ||
+      foodIndex >= predictions.length ||
+      !candidateMap.has(menuId)
+    ) {
+      return null;
+    }
+
+    const prediction = predictions[foodIndex];
+    const matchedMenu = candidateMap.get(menuId)!;
+    const confidence = this.asNullableNumber(item.confidence);
+
+    return {
+      ...matchedMenu,
+      confidence:
+        confidence === null
+          ? prediction.confidence
+          : this.roundNormalizedCoordinate(confidence),
+      position: prediction.position,
+    };
+  }
+
+  private findTopRecognitionCandidates(
+    inputName: string,
+    menus: MenuRecognitionCandidate[],
+    inferredBrand: string | null,
+    inferredCategory: string | null,
+    limit: number,
+    minScore: number,
+  ): RecognitionCandidateScore[] {
+    return menus
+      .map((menu) => ({
+        menu,
+        score: this.calculateRecognitionCandidateScore(
+          inputName,
+          menu,
+          inferredBrand,
+          inferredCategory,
+        ),
+      }))
+      .filter(({ score }) => score >= minScore)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
+  private findBestRecognitionCandidate(
+    inputName: string,
+    menus: MenuRecognitionCandidate[],
+    inferredBrand: string | null,
+    inferredCategory: string | null,
+    minScore: number,
+  ): MenuRecognitionCandidate | null {
+    const [bestMatch] = menus
+      .map((menu) => ({
+        menu,
+        score: this.calculateRecognitionCandidateScore(
+          inputName,
+          menu,
+          inferredBrand,
+          inferredCategory,
+        ),
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    return bestMatch && bestMatch.score >= minScore ? bestMatch.menu : null;
+  }
+
+  private calculateRecognitionCandidateScore(
+    inputName: string,
+    menu: MenuRecognitionCandidate,
+    inferredBrand: string | null,
+    inferredCategory: string | null,
+  ): number {
+    const input = this.normalizeCompactText(inputName);
+    const menuName = this.normalizeCompactText(menu.name);
+    const brand = this.normalizeCompactText(menu.brand ?? '');
+    const category = this.normalizeCompactText(menu.category ?? '');
+    const searchable = `${menuName}${brand}${category}`;
+
+    if (!input) {
+      return 0;
+    }
+
+    let score = 0;
+
+    if (menuName === input) {
+      score = 100;
+    } else if (menuName.includes(input) || input.includes(menuName)) {
+      score = 84;
+    } else if (searchable.includes(input)) {
+      score = 74;
+    } else {
+      score = this.calculateCharacterDiceScore(input, menuName) * 72;
+    }
+
+    const inferredBrandText = this.normalizeCompactText(inferredBrand ?? '');
+    const inferredCategoryText = this.normalizeCompactText(
+      inferredCategory ?? '',
+    );
+
+    if (inferredBrandText && brand && brand.includes(inferredBrandText)) {
+      score += 6;
+    }
+    if (
+      inferredCategoryText &&
+      category &&
+      category.includes(inferredCategoryText)
+    ) {
+      score += 4;
+    }
+
+    return Math.min(score, 100);
+  }
+
+  private normalizeCompactText(value: string): string {
+    return this.normalizeComparableText(value).replace(/\s+/g, '');
+  }
+
+  private calculateCharacterDiceScore(left: string, right: string): number {
+    if (left.length === 0 || right.length === 0) {
+      return 0;
+    }
+
+    if (left.length === 1 || right.length === 1) {
+      return left === right ? 1 : 0;
+    }
+
+    const leftBigrams = this.toBigramCounts(left);
+    const rightBigrams = this.toBigramCounts(right);
+    let intersection = 0;
+
+    leftBigrams.forEach((count, bigram) => {
+      intersection += Math.min(count, rightBigrams.get(bigram) ?? 0);
+    });
+
+    return (2 * intersection) / (left.length - 1 + right.length - 1);
+  }
+
+  private toBigramCounts(value: string): Map<string, number> {
+    const counts = new Map<string, number>();
+
+    for (let index = 0; index < value.length - 1; index += 1) {
+      const bigram = value.slice(index, index + 2);
+      counts.set(bigram, (counts.get(bigram) ?? 0) + 1);
+    }
+
+    return counts;
+  }
+
+  private normalizeFoodImagePosition(value: unknown): FoodImagePosition | null {
     if (!value || typeof value !== 'object') {
       return null;
     }
@@ -1857,10 +2289,7 @@ failure_reason enum:
       return false;
     }
 
-    if (
-      this.extractBrandKeyword(input) ||
-      this.extractCategoryKeyword(input)
-    ) {
+    if (this.extractBrandKeyword(input) || this.extractCategoryKeyword(input)) {
       return false;
     }
 
@@ -2441,7 +2870,7 @@ ${JSON.stringify(menusPayload)}
         );
     } catch (error) {
       if (error instanceof ServiceUnavailableException) {
-        throw error;
+        return [];
       }
       return [];
     }
@@ -2505,6 +2934,7 @@ ${JSON.stringify(menusPayload)}
 
       return JSON.parse(this.stripCodeFence(text));
     } catch (error) {
+      this.logGeminiError('text-json', error);
       throw new ServiceUnavailableException(
         'Gemini recommendation pipeline is unavailable',
       );
@@ -2573,6 +3003,7 @@ ${JSON.stringify(menusPayload)}
 
       return JSON.parse(this.stripCodeFence(text));
     } catch (error) {
+      this.logGeminiError('image-json', error);
       throw new ServiceUnavailableException(
         'Gemini recommendation pipeline is unavailable',
       );
