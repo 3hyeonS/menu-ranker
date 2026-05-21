@@ -6,6 +6,9 @@ export class ProfileResponseDto {
   @ApiProperty({ example: '홍길동' })
   nickname: string;
 
+  @ApiProperty({ example: '소셜프로필명', nullable: true })
+  name: string | null;
+
   @ApiProperty({
     enum: [0, 1],
     description: '성별 (0: 남성, 1: 여성)',
@@ -71,6 +74,7 @@ export class ProfileResponseDto {
 
   constructor(user: UserEntity, userInfo: UserInfoEntity) {
     this.nickname = user.nickname;
+    this.name = user.name;
     this.gender = userInfo.gender;
     this.birthYear = userInfo.birthYear;
     this.height = userInfo.height;

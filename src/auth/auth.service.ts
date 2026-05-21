@@ -55,6 +55,10 @@ export class AuthService {
     return 'Welcome Autorization';
   }
 
+  private buildDefaultNickname(userId: number): string {
+    return `멜로유저${userId}`;
+  }
+
   // userAuth controller
   // 카카오 정보 회원 가입
   async signUpWithKakao(
@@ -79,11 +83,14 @@ export class AuthService {
 
     // 새 사용자 생성 로직
     const newUser = await this.userRepository.save({
-      nickname: kakaoUserNickname,
+      nickname: '멜로유저',
+      name: kakaoUserNickname,
       email: kakaoEmail,
       signWith: await this.signWithRepository.findOneBy({ platform: 'KAKAO' }),
       authority: await this.authorityRepository.findOneBy({ role: 'USER' }),
     });
+    newUser.nickname = this.buildDefaultNickname(newUser.id);
+    await this.userRepository.save(newUser);
 
     await this.kakaoKeyRepository.save({
       kakaoId: kakaoUserId,
@@ -244,11 +251,14 @@ export class AuthService {
   ): Promise<UserEntity> {
     // 새 사용자 생성 로직
     const newUser = await this.userRepository.save({
-      nickname: name,
+      nickname: '멜로유저',
+      name,
       email: email,
       signWith: await this.signWithRepository.findOneBy({ platform: 'APPLE' }),
       authority: await this.authorityRepository.findOneBy({ role: 'USER' }),
     });
+    newUser.nickname = this.buildDefaultNickname(newUser.id);
+    await this.userRepository.save(newUser);
 
     await this.appleKeyRepository.save({
       appleId,
@@ -274,6 +284,7 @@ export class AuthService {
 
     return await this.userRepository.save({
       nickname: adminId,
+      name: adminId,
       email,
       signWith: local,
       authority: admin,

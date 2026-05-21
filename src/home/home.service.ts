@@ -99,6 +99,17 @@ export class HomeService {
     return 'Welcome home';
   }
 
+  private toSearchTokens(input: string): string[] {
+    return Array.from(
+      new Set(
+        input
+          .split(/\s+/)
+          .map((token) => token.trim())
+          .filter((token) => token.length > 0),
+      ),
+    );
+  }
+
   // menu controller
   // 메뉴 검색
   async search(input: string, user: UserEntity): Promise<SearchResponseDto> {
@@ -109,6 +120,7 @@ export class HomeService {
     }
 
     const keywordPattern = `%${keyword}%`;
+    const keywordTokens = this.toSearchTokens(keyword);
 
     const menuList = await this.menuRepository
       .createQueryBuilder('menu')
@@ -128,6 +140,29 @@ export class HomeService {
           }).orWhere('menu.brand = :brandKeyword', {
             brandKeyword: keyword,
           });
+
+          if (keywordTokens.length > 1) {
+            qb.orWhere(
+              new Brackets((tokenQb) => {
+                keywordTokens.forEach((token, index) => {
+                  tokenQb.andWhere(
+                    new Brackets((fieldQb) => {
+                      fieldQb
+                        .where(`menu.name LIKE :searchToken${index}`, {
+                          [`searchToken${index}`]: `%${token}%`,
+                        })
+                        .orWhere(`menu.brand LIKE :searchToken${index}`, {
+                          [`searchToken${index}`]: `%${token}%`,
+                        })
+                        .orWhere(`menu.category LIKE :searchToken${index}`, {
+                          [`searchToken${index}`]: `%${token}%`,
+                        });
+                    }),
+                  );
+                });
+              }),
+            );
+          }
         }),
       )
       .getMany();

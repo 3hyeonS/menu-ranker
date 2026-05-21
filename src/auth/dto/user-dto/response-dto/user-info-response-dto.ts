@@ -6,6 +6,9 @@ export class UserInfoResponseDto {
   @ApiProperty({ example: '홍길동' })
   nickname: string;
 
+  @ApiProperty({ example: '소셜프로필명', nullable: true })
+  name: string | null;
+
   @ApiProperty({ example: 'example@email.com' })
   email: string;
 
@@ -81,6 +84,7 @@ export class UserInfoResponseDto {
 
   constructor(user: UserEntity, userInfo: UserInfoEntity) {
     this.nickname = user.nickname;
+    this.name = user.name;
     this.email = user.email;
     this.gender = userInfo.gender;
     this.birthYear = userInfo.birthYear;

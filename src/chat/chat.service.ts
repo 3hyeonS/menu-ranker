@@ -857,9 +857,9 @@ export class ChatService {
         meal.mealMenus.forEach((mealMenu) => {
           const quantity = mealMenu.quantity ?? 0;
           acc.calories += (mealMenu.menu.calories ?? 0) * quantity;
-          acc.carbs += (mealMenu.menu.carbs ?? 0) * quantity;
+          acc.carbs += this.getEffectiveCarbs(mealMenu.menu) * quantity;
           acc.protein += (mealMenu.menu.protein ?? 0) * quantity;
-          acc.fat += (mealMenu.menu.fat ?? 0) * quantity;
+          acc.fat += this.getEffectiveFat(mealMenu.menu) * quantity;
         });
         return acc;
       },
@@ -1170,6 +1170,17 @@ failure_reason enum:
         expanded.add('버거');
         expanded.add(normalized.replace(/햄버거/g, '버거'));
       }
+      if (compact.includes('베이컨')) {
+        expanded.add('베이컨');
+        expanded.add('샌드위치');
+        expanded.add('서브');
+        expanded.add('비엘티');
+        expanded.add('BLT');
+      }
+      if (compact.includes('샌드위치') || compact.includes('샌드')) {
+        expanded.add('샌드위치');
+        expanded.add('서브');
+      }
       if (
         compact.includes('감자튀김') ||
         compact.includes('프렌치프라이') ||
@@ -1193,6 +1204,23 @@ failure_reason enum:
     });
 
     return Array.from(expanded);
+  }
+
+  private isLikelyStandaloneIngredient(value: string): boolean {
+    const compact = this.normalizeCompactText(value);
+    return [
+      '베이컨',
+      '치즈',
+      '토마토',
+      '양상추',
+      '상추',
+      '양파',
+      '피클',
+      '소스',
+      '마요네즈',
+      '마요',
+      '햄',
+    ].includes(compact);
   }
 
   private async rematchMenuBoardCandidatesWithGemini(
@@ -1443,6 +1471,16 @@ ${JSON.stringify(candidates)}
       category.includes(inferredCategoryText)
     ) {
       score += 4;
+    }
+
+    if (
+      this.isLikelyStandaloneIngredient(inputName) &&
+      menuName === input &&
+      !['샌드위치', '버거', '샐러드'].some((dishCategory) =>
+        category.includes(dishCategory),
+      )
+    ) {
+      score -= 45;
     }
 
     return Math.min(score, 100);
@@ -1715,7 +1753,7 @@ ${JSON.stringify(candidates)}
 
     if (
       constraints.max_carbs !== null &&
-      (menu.carbs ?? 0) > constraints.max_carbs
+      this.getEffectiveCarbs(menu) > constraints.max_carbs
     ) {
       return false;
     }
@@ -1727,7 +1765,10 @@ ${JSON.stringify(candidates)}
       return false;
     }
 
-    if (constraints.max_fat !== null && (menu.fat ?? 0) > constraints.max_fat) {
+    if (
+      constraints.max_fat !== null &&
+      this.getEffectiveFat(menu) > constraints.max_fat
+    ) {
       return false;
     }
 
@@ -1852,6 +1893,32 @@ ${JSON.stringify(candidates)}
     return safeRatio.map((value) => roundToOneDecimal((value / sum) * 100));
   }
 
+  private getEffectiveCarbs(menu: MenuEntity): number {
+    const carbs = menu.carbs ?? 0;
+
+    if (carbs !== 0) {
+      return carbs;
+    }
+
+    return menu.sugars ?? carbs;
+  }
+
+  private getEffectiveFat(menu: MenuEntity): number {
+    const fat = menu.fat ?? 0;
+
+    if (fat !== 0) {
+      return fat;
+    }
+
+    const detailedFats = [menu.sat_fat, menu.trans_fat, menu.un_sat_fat].filter(
+      (value): value is number => value !== null && value !== undefined,
+    );
+
+    return detailedFats.length > 0
+      ? detailedFats.reduce((sum, value) => sum + value, 0)
+      : fat;
+  }
+
   private scoreMenu(
     menu: MenuEntity,
     intent: ParsedChatIntent,
@@ -1860,9 +1927,9 @@ ${JSON.stringify(candidates)}
   ): ScoreBreakdown {
     // 메뉴별 점수는 칼로리 적합도, 탄단지 적합도, 목표 적합도, 포만감, 당 밀도, 의도 매칭으로 구성합니다.
     const calories = menu.calories ?? 0;
-    const carbs = menu.carbs ?? 0;
+    const carbs = this.getEffectiveCarbs(menu);
     const protein = menu.protein ?? 0;
-    const fat = menu.fat ?? 0;
+    const fat = this.getEffectiveFat(menu);
     const sugars = menu.sugars ?? 0;
     const weight = menu.weight ?? 0;
 
@@ -1955,9 +2022,9 @@ ${JSON.stringify(candidates)}
     fallbackRatio: number[],
   ): number[] {
     // 메뉴 영양성분을 kcal 기준 탄단지 비율로 환산합니다.
-    const carbsCalories = (menu.carbs ?? 0) * 4;
+    const carbsCalories = this.getEffectiveCarbs(menu) * 4;
     const proteinCalories = (menu.protein ?? 0) * 4;
-    const fatCalories = (menu.fat ?? 0) * 9;
+    const fatCalories = this.getEffectiveFat(menu) * 9;
     const totalMacroCalories = carbsCalories + proteinCalories + fatCalories;
 
     if (totalMacroCalories <= 0) {
@@ -2027,10 +2094,10 @@ ${JSON.stringify(candidates)}
           score += (menu.protein ?? 0) >= 20 ? 14 : 0;
           break;
         case 'high_fat':
-          score += (menu.fat ?? 0) >= 18 ? 12 : 0;
+          score += this.getEffectiveFat(menu) >= 18 ? 12 : 0;
           break;
         case 'low_carb':
-          score += (menu.carbs ?? 0) <= 20 ? 12 : 0;
+          score += this.getEffectiveCarbs(menu) <= 20 ? 12 : 0;
           break;
         case 'low_sugar':
           score += (menu.sugars ?? 0) <= 8 ? 10 : 0;
@@ -2189,9 +2256,9 @@ ${JSON.stringify(candidates)}
     return menus.reduce(
       (acc, menu) => {
         acc.calories += menu.calories ?? 0;
-        acc.carbs += menu.carbs ?? 0;
+        acc.carbs += this.getEffectiveCarbs(menu);
         acc.protein += menu.protein ?? 0;
-        acc.fat += menu.fat ?? 0;
+        acc.fat += this.getEffectiveFat(menu);
         acc.sugars += menu.sugars ?? 0;
         acc.sodium += menu.sodium ?? 0;
         acc.caffeine += menu.caffeine ?? 0;
@@ -2882,9 +2949,9 @@ JSON shape:
       category: menu.category,
       amount: this.formatAmount(menu),
       calories: roundNullableToOneDecimal(menu.calories) ?? 0,
-      carbs: roundNullableToOneDecimal(menu.carbs) ?? 0,
+      carbs: roundToOneDecimal(this.getEffectiveCarbs(menu)),
       protein: roundNullableToOneDecimal(menu.protein) ?? 0,
-      fat: roundNullableToOneDecimal(menu.fat) ?? 0,
+      fat: roundToOneDecimal(this.getEffectiveFat(menu)),
       sugars: roundNullableToOneDecimal(menu.sugars) ?? 0,
       local_reason: score.localReason,
     }));

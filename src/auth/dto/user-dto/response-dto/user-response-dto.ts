@@ -10,6 +10,9 @@ export class UserResponseDto {
   @ApiProperty({ example: '홍길동' })
   nickname: string;
 
+  @ApiProperty({ example: '카카오프로필명', nullable: true })
+  name: string | null;
+
   @ApiProperty({ example: 'example@email.com' })
   email: string;
 
@@ -22,6 +25,7 @@ export class UserResponseDto {
   constructor(user: UserEntity) {
     this.id = user.id;
     this.nickname = user.nickname;
+    this.name = user.name;
     this.email = user.email;
     this.platform = user.signWith.platform;
     this.role = user.authority.role;

@@ -28,6 +28,9 @@ export class UserEntity {
   @Column({ type: 'varchar', name: 'nickname', nullable: false })
   nickname: string;
 
+  @Column({ type: 'varchar', name: 'name', nullable: true })
+  name: string | null;
+
   @Column({ type: 'varchar', name: 'email', nullable: false })
   email: string;
 

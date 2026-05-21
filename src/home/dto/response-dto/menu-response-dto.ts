@@ -17,6 +17,13 @@ export class MenuResponseDto {
   data_source: number;
 
   @ApiProperty({
+    type: Number,
+    description: '삭제 여부  \n0: 미삭제  \n1: 삭제',
+    example: 0,
+  })
+  is_deleted: number;
+
+  @ApiProperty({
     type: String,
     description: '메뉴명',
     example: '싸이버거',
@@ -166,6 +173,7 @@ export class MenuResponseDto {
   constructor(menu: MenuEntity) {
     this.id = menu.id;
     this.data_source = menu.data_source;
+    this.is_deleted = menu.is_deleted;
     this.name = menu.name;
     this.brand = menu.brand;
     this.category = menu.category;

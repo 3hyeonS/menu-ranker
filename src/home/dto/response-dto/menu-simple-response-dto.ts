@@ -74,6 +74,15 @@ export class MenuSimpleResponseDto {
 
   @ApiProperty({
     type: Number,
+    required: false,
+    nullable: true,
+    description: '탄수화물이 0 또는 null인 경우 함께 반환되는 당류(g)',
+    example: 7,
+  })
+  sugars?: number = null;
+
+  @ApiProperty({
+    type: Number,
     description: '단백질(g)',
     example: 28,
   })
@@ -85,6 +94,33 @@ export class MenuSimpleResponseDto {
     example: 28,
   })
   fat: number = null;
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    nullable: true,
+    description: '지방이 0 또는 null인 경우 함께 반환되는 포화지방(g)',
+    example: 8,
+  })
+  sat_fat?: number = null;
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    nullable: true,
+    description: '지방이 0 또는 null인 경우 함께 반환되는 트랜스지방(g)',
+    example: 0.5,
+  })
+  trans_fat?: number = null;
+
+  @ApiProperty({
+    type: Number,
+    required: false,
+    nullable: true,
+    description: '지방이 0 또는 null인 경우 함께 반환되는 불포화지방(g)',
+    example: 19.5,
+  })
+  un_sat_fat?: number = null;
 
   constructor(menu: MenuEntity) {
     this.id = menu.id;
@@ -99,5 +135,18 @@ export class MenuSimpleResponseDto {
     this.carbs = menu.carbs;
     this.protein = menu.protein;
     this.fat = menu.fat;
+    this.assignFallbackNutritionDetails(menu);
+  }
+
+  private assignFallbackNutritionDetails(menu: MenuEntity): void {
+    if (menu.carbs === null || menu.carbs === undefined || menu.carbs === 0) {
+      this.sugars = menu.sugars;
+    }
+
+    if (menu.fat === null || menu.fat === undefined || menu.fat === 0) {
+      this.sat_fat = menu.sat_fat;
+      this.trans_fat = menu.trans_fat;
+      this.un_sat_fat = menu.un_sat_fat;
+    }
   }
 }
