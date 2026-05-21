@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddUserNameDefaultNickname1780000000000
-  implements MigrationInterface
-{
+export class AddUserNameDefaultNickname1780000000000 implements MigrationInterface {
   name = 'AddUserNameDefaultNickname1780000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -13,7 +11,7 @@ export class AddUserNameDefaultNickname1780000000000
       'UPDATE `user` SET `name` = `nickname` WHERE `name` IS NULL',
     );
     await queryRunner.query(
-      "UPDATE `user` SET `nickname` = CONCAT('멜로유저', `id`) WHERE `nickname` IS NULL OR `nickname` = ''",
+      "UPDATE `user` SET `nickname` = CONCAT('멜로유저', `id`) WHERE `nickname` IS NULL OR `nickname` = '' OR `nickname` = '멜로유저'",
     );
   }
 

@@ -1,6 +1,8 @@
 import {
   ConflictException,
+  InternalServerErrorException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -29,6 +31,8 @@ import { UserGoalEntity } from './entity/user/userGoal.entity';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(UserEntity)
     private userRepository: Repository<UserEntity>,
@@ -67,18 +71,22 @@ export class AuthService {
   ): Promise<UserEntity> {
     const kakaoAccount = profile.kakao_account;
 
-    const kakaoUserNickname = kakaoAccount.profile.nickname;
-    const kakaoEmail = kakaoAccount.email;
+    const kakaoUserNickname = kakaoAccount?.profile?.nickname ?? null;
+    const kakaoEmail = kakaoAccount?.email ?? '';
 
-    // 카카오 프로필 데이터를 기반으로 사용자 찾기 또는 생성 로직을 구현
-    const existingUser = await this.userRepository.findOne({
+    // 카카오 회원번호를 기준으로 기존 사용자를 찾는다.
+    const existingKakaoKey = await this.kakaoKeyRepository.findOne({
       where: {
-        email: kakaoEmail,
-        signWith: { platform: 'KAKAO' },
+        kakaoId: kakaoUserId,
+      },
+      relations: {
+        user: true,
       },
     });
-    if (existingUser?.kakaoKey?.kakaoId === kakaoUserId) {
-      return existingUser;
+    if (existingKakaoKey?.user) {
+      return await this.userRepository.findOneBy({
+        id: existingKakaoKey.user.id,
+      });
     }
 
     // 새 사용자 생성 로직
@@ -121,8 +129,15 @@ export class AuthService {
       // [2] 사용자 정보 반환
       return { accessToken, refreshToken, user };
     } catch (error) {
-      console.log(error);
-      throw new UnauthorizedException('Authorization code is Invalid');
+      this.logger.error('Kakao sign-in failed', error?.stack ?? error);
+
+      if (
+        error?.response?.config?.url === 'https://kauth.kakao.com/oauth/token'
+      ) {
+        throw new UnauthorizedException('Authorization code is Invalid');
+      }
+
+      throw new InternalServerErrorException('Failed to sign in with Kakao');
     }
   }
 
