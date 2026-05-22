@@ -110,6 +110,93 @@ export class HomeService {
     );
   }
 
+  private normalizeSearchText(value: string): string {
+    return (value ?? '')
+      .toLowerCase()
+      .replace(/[^\w가-힣\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private normalizeCompactSearchText(value: string): string {
+    return this.normalizeSearchText(value).replace(/\s+/g, '');
+  }
+
+  private calculateSearchSimilarity(keyword: string, menu: MenuEntity): number {
+    const input = this.normalizeSearchText(keyword);
+    const compactInput = this.normalizeCompactSearchText(keyword);
+    const menuName = this.normalizeSearchText(menu.name);
+    const compactMenuName = this.normalizeCompactSearchText(menu.name);
+    const brand = this.normalizeSearchText(menu.brand ?? '');
+    const category = this.normalizeSearchText(menu.category ?? '');
+    const searchable = [menuName, brand, category].filter(Boolean).join(' ');
+
+    if (!input || !compactInput) {
+      return 0;
+    }
+
+    let score = 0;
+
+    if (menuName === input || compactMenuName === compactInput) {
+      score = 100;
+    } else if (
+      menuName.startsWith(input) ||
+      compactMenuName.startsWith(compactInput)
+    ) {
+      score = 94;
+    } else if (
+      menuName.includes(input) ||
+      compactMenuName.includes(compactInput)
+    ) {
+      score = 86;
+    } else if (brand === input) {
+      score = 74;
+    } else if (searchable.includes(input)) {
+      score = 66;
+    }
+
+    if (score > 0) {
+      const lengthGap = Math.abs(compactMenuName.length - compactInput.length);
+      score -= Math.min(lengthGap, 20) * 0.8;
+    }
+
+    const keywordTokens = this.toSearchTokens(input);
+    if (keywordTokens.length > 0) {
+      const matchedTokens = keywordTokens.filter((token) =>
+        searchable.includes(token),
+      ).length;
+      score += (matchedTokens / keywordTokens.length) * 12;
+    }
+
+    return score;
+  }
+
+  private sortMenusBySearchSimilarity(
+    menus: MenuEntity[],
+    keyword: string,
+  ): MenuEntity[] {
+    return [...menus]
+      .map((menu) => ({
+        menu,
+        score: this.calculateSearchSimilarity(keyword, menu),
+      }))
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+
+        const aNameLength = this.normalizeCompactSearchText(a.menu.name).length;
+        const bNameLength = this.normalizeCompactSearchText(b.menu.name).length;
+
+        if (aNameLength !== bNameLength) {
+          return aNameLength - bNameLength;
+        }
+
+        return a.menu.name.localeCompare(b.menu.name, 'ko');
+      })
+      .map(({ menu }) => menu);
+  }
+
   // menu controller
   // 메뉴 검색
   async search(input: string, user: UserEntity): Promise<SearchResponseDto> {
@@ -167,9 +254,10 @@ export class HomeService {
       )
       .getMany();
 
-    const menu_list: MenuSimpleResponseDto[] = menuList.map(
-      (menu) => new MenuSimpleResponseDto(menu),
-    );
+    const menu_list: MenuSimpleResponseDto[] = this.sortMenusBySearchSimilarity(
+      menuList,
+      keyword,
+    ).map((menu) => new MenuSimpleResponseDto(menu));
 
     const searchedBrandRows = await this.menuRepository
       .createQueryBuilder('menu')
@@ -1235,10 +1323,7 @@ failure_reason enum:
       const menuWeight = menuMap.get(menuId)!.weight;
       const weightQuantity = menuWeight > 0 ? quantity * menuWeight : 0;
       const previousQuantity = merged.get(menuId) ?? 0;
-      merged.set(
-        menuId,
-        roundToOneDecimal(previousQuantity + weightQuantity),
-      );
+      merged.set(menuId, roundToOneDecimal(previousQuantity + weightQuantity));
     }
 
     if (merged.size === 0) {
