@@ -61,6 +61,184 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
 
+type AlternativeNutritionGoal =
+  | 'lowCalorie'
+  | 'highProtein'
+  | 'lowSugar'
+  | 'meal'
+  | 'light';
+
+type AlternativeSearchIntent = {
+  families: string[];
+  categories: string[];
+  attributes: string[];
+  nutritionGoals: AlternativeNutritionGoal[];
+  candidateKeywords: string[];
+};
+
+type AlternativeFamilyRule = {
+  family: string;
+  keywords: string[];
+  categories: string[];
+  candidateKeywords: string[];
+};
+
+type AlternativeAttributeRule = {
+  attribute: string;
+  keywords: string[];
+  candidateKeywords: string[];
+};
+
+type AlternativeNutritionGoalRule = {
+  goal: AlternativeNutritionGoal;
+  keywords: string[];
+};
+
+const ALTERNATIVE_FAMILY_RULES: AlternativeFamilyRule[] = [
+  {
+    family: 'burger',
+    keywords: ['버거', '햄버거'],
+    categories: ['즉석식품류', '빵 및 과자류', '과자류·빵류 또는 떡류'],
+    candidateKeywords: ['버거', '햄버거'],
+  },
+  {
+    family: 'noodle',
+    keywords: ['라면', '국수', '면', '파스타', '우동', '쫄면', '냉면'],
+    categories: ['면 및 만두류', '면류', '즉석식품류'],
+    candidateKeywords: ['라면', '국수', '면', '파스타', '우동', '쫄면', '냉면'],
+  },
+  {
+    family: 'rice',
+    keywords: ['밥', '덮밥', '볶음밥', '비빔밥', '도시락', '김밥'],
+    categories: ['밥류', '즉석식품류', '특수영양식품'],
+    candidateKeywords: ['밥', '덮밥', '볶음밥', '비빔밥', '도시락', '김밥'],
+  },
+  {
+    family: 'soup',
+    keywords: ['국', '탕', '찌개', '전골', '국밥', '곰탕', '해장국'],
+    categories: ['국 및 탕류', '찌개 및 전골류', '즉석식품류'],
+    candidateKeywords: ['국', '탕', '찌개', '전골', '국밥', '곰탕', '해장국'],
+  },
+  {
+    family: 'drink',
+    keywords: ['커피', '라떼', '주스', '음료', '차', '티', '콜드브루'],
+    categories: ['음료 및 차류', '음료류'],
+    candidateKeywords: ['커피', '라떼', '주스', '음료', '차', '티', '콜드브루'],
+  },
+  {
+    family: 'dessert',
+    keywords: ['빵', '케이크', '쿠키', '과자', '떡', '베이글', '도넛'],
+    categories: ['빵 및 과자류', '과자류·빵류 또는 떡류'],
+    candidateKeywords: ['빵', '케이크', '쿠키', '과자', '떡', '베이글', '도넛'],
+  },
+  {
+    family: 'ice',
+    keywords: ['아이스크림', '빙수', '젤라또', '쉐이크'],
+    categories: ['유제품류 및 빙과류', '빙과류', '유가공품류'],
+    candidateKeywords: ['아이스크림', '빙수', '젤라또', '쉐이크'],
+  },
+  {
+    family: 'fried',
+    keywords: ['튀김', '프라이', '치킨', '돈까스', '가라아게'],
+    categories: ['튀김류', '식육가공품 및 포장육', '즉석식품류'],
+    candidateKeywords: ['튀김', '프라이', '치킨', '돈까스', '가라아게'],
+  },
+  {
+    family: 'grill',
+    keywords: ['구이', '불고기', '스테이크', '갈비', '삼겹살'],
+    categories: ['구이류', '식육가공품 및 포장육', '즉석식품류'],
+    candidateKeywords: ['구이', '불고기', '스테이크', '갈비', '삼겹살'],
+  },
+  {
+    family: 'salad',
+    keywords: ['샐러드', '샐러트'],
+    categories: ['생채·무침류', '즉석식품류', '특수영양식품'],
+    candidateKeywords: ['샐러드', '샐러트'],
+  },
+];
+
+const ALTERNATIVE_ATTRIBUTE_RULES: AlternativeAttributeRule[] = [
+  {
+    attribute: 'spicy',
+    keywords: ['매운', '매콤', '불닭', '핫', '스파이시', '고추', '칠리'],
+    candidateKeywords: [
+      '매운',
+      '매콤',
+      '불닭',
+      '핫',
+      '스파이시',
+      '고추',
+      '칠리',
+    ],
+  },
+  {
+    attribute: 'cheese',
+    keywords: ['치즈', '크림', '버터', '까르보'],
+    candidateKeywords: ['치즈', '크림', '버터', '까르보'],
+  },
+  {
+    attribute: 'chicken',
+    keywords: ['닭', '치킨', '닭가슴살'],
+    candidateKeywords: ['닭', '치킨', '닭가슴살'],
+  },
+  {
+    attribute: 'beef',
+    keywords: ['소고기', '쇠고기', '비프', '불고기'],
+    candidateKeywords: ['소고기', '쇠고기', '비프', '불고기'],
+  },
+  {
+    attribute: 'pork',
+    keywords: ['돼지', '돈', '삼겹', '제육'],
+    candidateKeywords: ['돼지', '돈', '삼겹', '제육'],
+  },
+  {
+    attribute: 'seafood',
+    keywords: ['새우', '해물', '참치', '연어', '오징어', '고등어'],
+    candidateKeywords: ['새우', '해물', '참치', '연어', '오징어', '고등어'],
+  },
+  {
+    attribute: 'sweet',
+    keywords: ['달달', '달콤', '초코', '딸기', '바닐라', '카라멜', '꿀'],
+    candidateKeywords: [
+      '달달',
+      '달콤',
+      '초코',
+      '딸기',
+      '바닐라',
+      '카라멜',
+      '꿀',
+    ],
+  },
+  {
+    attribute: 'vegetable',
+    keywords: ['야채', '채소', '나물', '비건', '두부'],
+    candidateKeywords: ['야채', '채소', '나물', '비건', '두부'],
+  },
+];
+
+const ALTERNATIVE_NUTRITION_GOAL_RULES: AlternativeNutritionGoalRule[] = [
+  {
+    goal: 'lowCalorie',
+    keywords: ['저칼로리', '낮은칼로리', '칼로리낮', '다이어트'],
+  },
+  {
+    goal: 'highProtein',
+    keywords: ['고단백', '단백질', '프로틴', '닭가슴살'],
+  },
+  {
+    goal: 'lowSugar',
+    keywords: ['저당', '무설탕', '제로', '당류낮', '당낮'],
+  },
+  {
+    goal: 'meal',
+    keywords: ['든든', '식사', '한끼', '배부른'],
+  },
+  {
+    goal: 'light',
+    keywords: ['가벼운', '간단', '라이트'],
+  },
+];
+
 @Injectable()
 export class HomeService {
   private s3: S3Client;
@@ -197,6 +375,281 @@ export class HomeService {
       .map(({ menu }) => menu);
   }
 
+  private hasAnyKeyword(text: string, keywords: string[]): boolean {
+    return keywords.some((keyword) => text.includes(keyword));
+  }
+
+  private uniqueValues(values: string[]): string[] {
+    return Array.from(new Set(values.filter((value) => value.length > 0)));
+  }
+
+  private inferAlternativeSearchIntent(
+    keyword: string,
+  ): AlternativeSearchIntent {
+    const normalized = this.normalizeCompactSearchText(keyword);
+    const matchedFamilyRules = ALTERNATIVE_FAMILY_RULES.filter((rule) =>
+      this.hasAnyKeyword(normalized, rule.keywords),
+    );
+    const matchedAttributeRules = ALTERNATIVE_ATTRIBUTE_RULES.filter((rule) =>
+      this.hasAnyKeyword(normalized, rule.keywords),
+    );
+    const matchedNutritionGoalRules = ALTERNATIVE_NUTRITION_GOAL_RULES.filter(
+      (rule) => this.hasAnyKeyword(normalized, rule.keywords),
+    );
+
+    return {
+      families: matchedFamilyRules.map((rule) => rule.family),
+      categories: this.uniqueValues(
+        matchedFamilyRules.flatMap((rule) => rule.categories),
+      ),
+      attributes: matchedAttributeRules.map((rule) => rule.attribute),
+      nutritionGoals: this.uniqueValues(
+        matchedNutritionGoalRules.map((rule) => rule.goal),
+      ) as AlternativeNutritionGoal[],
+      candidateKeywords: this.uniqueValues([
+        ...matchedFamilyRules.flatMap((rule) => rule.candidateKeywords),
+        ...matchedAttributeRules.flatMap((rule) => rule.candidateKeywords),
+      ]),
+    };
+  }
+
+  private hasAlternativeSearchIntent(intent: AlternativeSearchIntent): boolean {
+    return (
+      intent.categories.length > 0 ||
+      intent.candidateKeywords.length > 0 ||
+      intent.nutritionGoals.length > 0
+    );
+  }
+
+  private async findAlternativeMenusByIntent(
+    keyword: string,
+    user: UserEntity,
+  ): Promise<MenuEntity[]> {
+    const intent = this.inferAlternativeSearchIntent(keyword);
+
+    if (!this.hasAlternativeSearchIntent(intent)) {
+      return [];
+    }
+
+    let queryBuilder = this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+            userId: user.id,
+          });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 });
+
+    if (intent.categories.length > 0 || intent.candidateKeywords.length > 0) {
+      queryBuilder = queryBuilder.andWhere(
+        new Brackets((qb) => {
+          if (intent.categories.length > 0) {
+            qb.orWhere('menu.category IN (:...alternativeCategories)', {
+              alternativeCategories: intent.categories,
+            });
+          }
+
+          intent.candidateKeywords.forEach((candidateKeyword, index) => {
+            qb.orWhere(`menu.name LIKE :alternativeKeyword${index}`, {
+              [`alternativeKeyword${index}`]: `%${candidateKeyword}%`,
+            })
+              .orWhere(`menu.brand LIKE :alternativeKeyword${index}`, {
+                [`alternativeKeyword${index}`]: `%${candidateKeyword}%`,
+              })
+              .orWhere(`menu.category LIKE :alternativeKeyword${index}`, {
+                [`alternativeKeyword${index}`]: `%${candidateKeyword}%`,
+              });
+          });
+        }),
+      );
+    }
+
+    if (
+      intent.nutritionGoals.includes('lowCalorie') ||
+      intent.nutritionGoals.includes('light')
+    ) {
+      queryBuilder = queryBuilder.orderBy('menu.calories', 'ASC');
+    } else if (intent.nutritionGoals.includes('highProtein')) {
+      queryBuilder = queryBuilder
+        .andWhere('menu.protein IS NOT NULL')
+        .orderBy('menu.protein', 'DESC');
+    } else if (intent.nutritionGoals.includes('lowSugar')) {
+      queryBuilder = queryBuilder
+        .andWhere('menu.sugars IS NOT NULL')
+        .orderBy('menu.sugars', 'ASC');
+    } else if (intent.nutritionGoals.includes('meal')) {
+      queryBuilder = queryBuilder
+        .orderBy('menu.calories', 'DESC')
+        .addOrderBy('menu.protein', 'DESC');
+    } else {
+      queryBuilder = queryBuilder.orderBy('menu.name', 'ASC');
+    }
+
+    queryBuilder = queryBuilder
+      .andWhere('menu.calories BETWEEN :minCalories AND :maxCalories', {
+        minCalories: 0,
+        maxCalories: 1200,
+      })
+      .andWhere('(menu.weight IS NULL OR menu.weight <= :maxWeight)', {
+        maxWeight: 1000,
+      })
+      .limit(200);
+
+    const candidates = await queryBuilder.getMany();
+
+    return candidates
+      .map((menu) => ({
+        menu,
+        score: this.calculateAlternativeMenuScore(menu, intent),
+      }))
+      .filter(({ score }) => score >= 30)
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score;
+        }
+
+        return a.menu.name.localeCompare(b.menu.name, 'ko');
+      })
+      .slice(0, 20)
+      .map(({ menu }) => menu);
+  }
+
+  private calculateAlternativeMenuScore(
+    menu: MenuEntity,
+    intent: AlternativeSearchIntent,
+  ): number {
+    const name = this.normalizeCompactSearchText(menu.name);
+    const brand = this.normalizeCompactSearchText(menu.brand ?? '');
+    const category = menu.category ?? '';
+    const searchable = `${name}${brand}${this.normalizeCompactSearchText(
+      category,
+    )}`;
+
+    let score = 0;
+
+    if (intent.categories.includes(category)) {
+      score += 34;
+    } else if (
+      intent.categories.some((intentCategory) =>
+        category.includes(intentCategory),
+      )
+    ) {
+      score += 22;
+    }
+
+    for (const familyRule of ALTERNATIVE_FAMILY_RULES) {
+      if (!intent.families.includes(familyRule.family)) {
+        continue;
+      }
+
+      if (this.hasAnyKeyword(searchable, familyRule.candidateKeywords)) {
+        score += 22;
+      }
+    }
+
+    for (const attributeRule of ALTERNATIVE_ATTRIBUTE_RULES) {
+      if (!intent.attributes.includes(attributeRule.attribute)) {
+        continue;
+      }
+
+      if (this.hasAnyKeyword(searchable, attributeRule.candidateKeywords)) {
+        score += 18;
+      }
+    }
+
+    score += this.calculateAlternativeNutritionScore(menu, intent);
+    score += this.calculateAlternativeQualityScore(menu);
+
+    return score;
+  }
+
+  private calculateAlternativeNutritionScore(
+    menu: MenuEntity,
+    intent: AlternativeSearchIntent,
+  ): number {
+    const calories = menu.calories ?? 0;
+    const protein = menu.protein ?? 0;
+    const sugars = menu.sugars;
+    let score = 0;
+
+    if (intent.nutritionGoals.includes('lowCalorie')) {
+      if (calories > 0 && calories <= 250) {
+        score += 24;
+      } else if (calories > 0 && calories <= 450) {
+        score += 16;
+      } else if (calories > 0 && calories <= 650) {
+        score += 8;
+      } else {
+        score -= 10;
+      }
+    }
+
+    if (intent.nutritionGoals.includes('highProtein')) {
+      if (protein >= 25) {
+        score += 24;
+      } else if (protein >= 15) {
+        score += 16;
+      } else if (protein >= 8) {
+        score += 8;
+      }
+    }
+
+    if (intent.nutritionGoals.includes('lowSugar')) {
+      if (sugars === null || sugars === undefined) {
+        score += 0;
+      } else if (sugars <= 3) {
+        score += 20;
+      } else if (sugars <= 8) {
+        score += 12;
+      } else {
+        score -= 8;
+      }
+    }
+
+    if (intent.nutritionGoals.includes('meal')) {
+      if (calories >= 350 && protein >= 12) {
+        score += 18;
+      } else if (calories >= 250) {
+        score += 10;
+      }
+    }
+
+    if (intent.nutritionGoals.includes('light')) {
+      if (calories > 0 && calories <= 350) {
+        score += 18;
+      } else if (calories > 0 && calories <= 500) {
+        score += 8;
+      } else {
+        score -= 8;
+      }
+    }
+
+    return score;
+  }
+
+  private calculateAlternativeQualityScore(menu: MenuEntity): number {
+    const calories = menu.calories ?? 0;
+    const weight = menu.weight ?? 0;
+    let score = 0;
+
+    if (calories > 0 && calories <= 900) {
+      score += 6;
+    }
+
+    if (weight > 0 && weight <= 700) {
+      score += 4;
+    }
+
+    if (calories > 1000 || weight > 1000) {
+      score -= 20;
+    }
+
+    return score;
+  }
+
   // menu controller
   // 메뉴 검색
   async search(input: string, user: UserEntity): Promise<SearchResponseDto> {
@@ -254,7 +707,7 @@ export class HomeService {
       )
       .getMany();
 
-    const menu_list: MenuSimpleResponseDto[] = this.sortMenusBySearchSimilarity(
+    let menu_list: MenuSimpleResponseDto[] = this.sortMenusBySearchSimilarity(
       menuList,
       keyword,
     ).map((menu) => new MenuSimpleResponseDto(menu));
@@ -270,13 +723,19 @@ export class HomeService {
 
     const brand_list: string[] = searchedBrandRows.map((row) => row.brand);
 
-    // 유사 메뉴, 브랜드 검색 알고리즘 필요
+    const has_result = menu_list.length > 0 || brand_list.length > 0;
 
-    return new SearchResponseDto(
-      menu_list.length > 0 || brand_list.length > 0,
-      menu_list,
-      brand_list,
-    );
+    if (!has_result) {
+      const alternativeMenus = await this.findAlternativeMenusByIntent(
+        keyword,
+        user,
+      );
+      menu_list = alternativeMenus.map(
+        (menu) => new MenuSimpleResponseDto(menu),
+      );
+    }
+
+    return new SearchResponseDto(has_result, menu_list, brand_list);
   }
 
   // 메뉴 영양성분 상세 조회
