@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiExtraModels, ApiOperation } from '@nestjs/swagger';
 import { ApiTags } from '@nestjs/swagger';
@@ -21,6 +30,7 @@ import { RolesGuard } from '../custom-role.guard';
 import { GetUser } from '../../decorators/get-user-decorator';
 import { UserEntity } from '../entity/user/user.entity';
 import { RegisterUserInfoRequestDto } from '../dto/user-dto/request-dto/register-user-info-request-dto';
+import { RegisterSubCodeRequestDto } from '../../profile/dto/request-dto/register-subCode-request-dto';
 
 @ApiTags('유저 인증')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -39,6 +49,32 @@ export class UserAuthController {
   @UseGuards(AuthGuard('kakao'))
   async kakaoLogin() {
     // 이 부분은 Passport의 AuthGuard에 의해 카카오 로그인 페이지로 리다이렉트
+  }
+
+  @ApiOperation({
+    summary: '웹 카카오 로그인 페이지',
+    description: '웹 전용 redirect_uri로 카카오 로그인 페이지로 redirect',
+  })
+  @Get('/kakao/web')
+  async kakaoWebLogin(@Res() response): Promise<void> {
+    const clientId = process.env.KAKAO_CLIENT_ID;
+    const redirectUri = process.env.KAKAO_WEB_REDIRECT_URI;
+
+    if (!clientId) {
+      throw new BadRequestException('KAKAO_CLIENT_ID is required');
+    }
+
+    if (!redirectUri) {
+      throw new BadRequestException('KAKAO_WEB_REDIRECT_URI is required');
+    }
+
+    const authorizationUrl =
+      'https://kauth.kakao.com/oauth/authorize' +
+      `?response_type=code` +
+      `&client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+    response.redirect(authorizationUrl);
   }
 
   // 2. 카카오 로그인 콜백 엔드포인트
@@ -72,6 +108,42 @@ export class UserAuthController {
     return {
       accessToken: accessToken, // 헤더로 사용할 Access Token
       refreshToken: refreshToken, // 클라이언트 보안 저장소에 저장할 Refresh Token
+      user: userResponseDto,
+    };
+  }
+
+  @ApiOperation({
+    summary: '웹 카카오 로그인 콜백',
+    description:
+      '웹 프론트가 KAKAO_WEB_REDIRECT_URI로 받은 authorization code를 전달하면 JWT를 발급',
+  })
+  @GenericApiResponse({
+    status: 200,
+    description: '웹 카카오 로그인에 성공',
+    message: 'Signed in successfully with Kakao Web Account',
+    model: UserTokenResponseDto,
+  })
+  @ResponseMsg('Signed in successfully with Kakao Web Account')
+  @Post('/kakao/web/callback')
+  async kakaoWebCallback(@Query('code') kakaoAuthResCode: string): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: UserResponseDto;
+  }> {
+    if (!kakaoAuthResCode) {
+      throw new BadRequestException('code is required');
+    }
+
+    const { accessToken, refreshToken, user } =
+      await this.authService.signInWithKakao(
+        kakaoAuthResCode,
+        process.env.KAKAO_WEB_REDIRECT_URI,
+      );
+
+    const userResponseDto = new UserResponseDto(user);
+    return {
+      accessToken,
+      refreshToken,
       user: userResponseDto,
     };
   }
@@ -220,6 +292,47 @@ export class UserAuthController {
       user,
       registerUserInfoRequestDto,
     );
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '구독 코드 인가',
+    description:
+      '웹 카카오 로그인 후 프로필 등록 여부와 무관하게 구독 코드를 인가',
+  })
+  @PrimitiveApiResponse({
+    status: 201,
+    description: '구독 코드 인가 성공',
+    message: 'Subscription code authorized successfully',
+    type: 'boolean',
+    example: true,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '유효하지 않거나 비활성화된 구독 코드',
+    message: 'Subscription code is not active',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '존재하지 않는 구독 코드',
+    message: 'Subscription code not found',
+    error: 'NotFoundException',
+  })
+  @ErrorApiResponse({
+    status: 409,
+    description: '이미 사용했거나 사용 한도가 초과된 구독 코드',
+    message: 'Your subCode already exists',
+    error: 'ConflictException',
+  })
+  @ResponseMsg('Subscription code authorized successfully')
+  @UseGuards(AuthGuard())
+  @Post('/authorizeSubCode')
+  async authorizeSubCode(
+    @GetUser() user: UserEntity,
+    @Body() dto: RegisterSubCodeRequestDto,
+  ): Promise<boolean> {
+    return await this.authService.authorizeSubscriptionCode(user, dto.subCode);
   }
 
   // 유저 정보 등록 여부 확인

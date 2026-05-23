@@ -10,13 +10,19 @@ import { GenericApiResponse } from '../../decorators/generic-api-response-decora
 import { ResponseMsg } from '../../decorators/response-message-decorator';
 import { AdminSignUpRequestDto } from '../dto/user-dto/request-dto/user-sign-up-request-dto';
 import { UserTokenResponseDto } from '../dto/token-dto/response-dto/user-token-response-dto';
+import { SubscriptionService } from '../subscription.service';
+import { CreateSubscriptionCodeRequestDto } from '../dto/subscription-code-dto/request-dto/create-subscription-code-request-dto';
+import { SubscriptionCodeResponseDto } from '../dto/subscription-code-dto/response-dto/subscription-code-response-dto';
 
 @ApiTags('관리자 인증')
 @UseInterceptors(ResponseTransformInterceptor)
 @ApiExtraModels(ResponseDto)
 @Controller('/adminAuth')
 export class AdminAuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private subscriptionService: SubscriptionService,
+  ) {}
 
   // 1. 관리자 회원가입
   @ApiOperation({
@@ -90,5 +96,37 @@ export class AdminAuthController {
       refreshToken: refreshToken,
       user: userResponseDto,
     };
+  }
+
+  @ApiOperation({
+    summary: '구독 코드 발급',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '구독 코드 발급 성공',
+    message: 'Subscription code created successfully',
+    model: SubscriptionCodeResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 또는 날짜 범위 오류',
+    message: 'expires_at must be after starts_at',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 409,
+    description: '이미 존재하는 구독 코드',
+    message: 'Subscription code already exists',
+    error: 'ConflictException',
+  })
+  @ResponseMsg('Subscription code created successfully')
+  @Post('/subscriptionCodes')
+  async createSubscriptionCode(
+    @Body() dto: CreateSubscriptionCodeRequestDto,
+  ): Promise<SubscriptionCodeResponseDto> {
+    const subscriptionCode =
+      await this.subscriptionService.createSubscriptionCode(dto);
+
+    return new SubscriptionCodeResponseDto(subscriptionCode);
   }
 }

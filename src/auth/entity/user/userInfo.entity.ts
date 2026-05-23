@@ -57,7 +57,7 @@ export class UserInfoEntity {
   @Column({ type: 'json', name: 'target_ratio', nullable: false })
   target_ratio: number[];
 
-  @Column({ type: 'varchar', name: 'subCode', nullable: true, unique: true })
+  @Column({ type: 'varchar', name: 'subCode', nullable: true })
   subCode: string;
 
   @OneToOne(() => UserEntity, (user) => user.userInfo, {

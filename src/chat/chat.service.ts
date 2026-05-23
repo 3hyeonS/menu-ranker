@@ -93,6 +93,12 @@ type DailyNutrition = {
   fat: number;
 };
 
+type MacroAmounts = {
+  carbs: number;
+  protein: number;
+  fat: number;
+};
+
 type FeedbackNutrition = DailyNutrition & {
   sugars: number;
   sodium: number;
@@ -1838,6 +1844,11 @@ ${JSON.stringify(candidates)}
       userInfo.target_calories - dailyNutrition.calories,
       0,
     );
+    const macroOverages = {
+      carbs: Math.max(dailyNutrition.carbs - targetMacroGrams.carbs, 0),
+      protein: Math.max(dailyNutrition.protein - targetMacroGrams.protein, 0),
+      fat: Math.max(dailyNutrition.fat - targetMacroGrams.fat, 0),
+    };
     const remainingMacros = {
       carbs: Math.max(targetMacroGrams.carbs - dailyNutrition.carbs, 0),
       protein: Math.max(targetMacroGrams.protein - dailyNutrition.protein, 0),
@@ -1871,6 +1882,8 @@ ${JSON.stringify(candidates)}
       dailyNutrition,
       remainingCalories,
       remainingMacros,
+      macroOverages,
+      targetMacroGrams,
       targetMealCalories,
     };
   }
@@ -1948,7 +1961,14 @@ ${JSON.stringify(candidates)}
     const calorieScore = this.clampScore(
       100 - (calorieGap / Math.max(basis.targetMealCalories, 1)) * 100,
     );
-    const macroScore = this.clampScore(100 - macroDistance / 1.8);
+    const macroOveragePenalty = this.calculateMacroOveragePenalty(
+      { carbs, protein, fat },
+      basis.macroOverages,
+      basis.targetMacroGrams,
+    );
+    const macroScore = this.clampScore(
+      100 - macroDistance / 1.8 - macroOveragePenalty,
+    );
 
     // 포만감 효율은 "단백질 칼로리 비율"과 "중량 대비 칼로리"를 함께 반영합니다.
     const proteinCalorieRatio = calories > 0 ? (protein * 4) / calories : 0;
@@ -2039,7 +2059,7 @@ ${JSON.stringify(candidates)}
   }
 
   private getRemainingMacroRatio(
-    remainingMacros: { carbs: number; protein: number; fat: number },
+    remainingMacros: MacroAmounts,
     fallbackRatio: number[],
   ): number[] {
     // 오늘 남은 탄단지 목표도 같은 기준으로 kcal 비율화해서 비교에 사용합니다.
@@ -2057,6 +2077,36 @@ ${JSON.stringify(candidates)}
       (proteinCalories / total) * 100,
       (fatCalories / total) * 100,
     ];
+  }
+
+  private calculateMacroOveragePenalty(
+    menuMacros: MacroAmounts,
+    macroOverages: MacroAmounts,
+    targetMacroGrams: MacroAmounts,
+  ): number {
+    const macroPenaltyWeights: MacroAmounts = {
+      carbs: 1,
+      protein: 0.45,
+      fat: 1.25,
+    };
+
+    return (Object.keys(menuMacros) as Array<keyof MacroAmounts>).reduce(
+      (penalty, macro) => {
+        const target = Math.max(targetMacroGrams[macro], 1);
+        const overageRatio = macroOverages[macro] / target;
+
+        if (overageRatio <= 0) {
+          return penalty;
+        }
+
+        const menuRatio = menuMacros[macro] / target;
+
+        return (
+          penalty + overageRatio * menuRatio * macroPenaltyWeights[macro] * 100
+        );
+      },
+      0,
+    );
   }
 
   private calculateIntentScore(

@@ -11,6 +11,7 @@ import { ProfileService } from './profile.service';
 import { InquiryEntity } from './entity/inquiry.entity';
 import { ProfileRatioSumTo100Constraint } from './dto/request-dto/update-target-ratio-request-dto';
 import { UserGoalEntity } from '../auth/entity/user/userGoal.entity';
+import { AuthModule } from '../auth/auth.module';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ dotenv.config();
       InquiryEntity,
       UserGoalEntity,
     ]),
+    AuthModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
   ],

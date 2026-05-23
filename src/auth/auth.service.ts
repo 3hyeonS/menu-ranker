@@ -28,6 +28,7 @@ import { UserInfoResponseDto } from './dto/user-dto/response-dto/user-info-respo
 import { roundToOneDecimal } from '../utils/number.util';
 import { UserInfoEntity } from './entity/user/userInfo.entity';
 import { UserGoalEntity } from './entity/user/userGoal.entity';
+import { SubscriptionService } from './subscription.service';
 
 @Injectable()
 export class AuthService {
@@ -52,6 +53,7 @@ export class AuthService {
     private userGoalRepository: Repository<UserGoalEntity>,
     private jwtService: JwtService,
     private httpService: HttpService,
+    private subscriptionService: SubscriptionService,
   ) {}
 
   // 문자 출력
@@ -111,10 +113,14 @@ export class AuthService {
   // 카카오 로그인
   async signInWithKakao(
     kakaoAuthResCode: string,
+    redirectUri = process.env.KAKAO_REDIRECT_URI,
   ): Promise<{ accessToken: string; refreshToken: string; user: UserEntity }> {
     try {
       // Authorization Code로 Kakao API에 Access Token 요청
-      const kakaoAccessToken = await this.getKakaoAccessToken(kakaoAuthResCode);
+      const kakaoAccessToken = await this.getKakaoAccessToken(
+        kakaoAuthResCode,
+        redirectUri,
+      );
 
       // Access Token으로 Kakao 사용자 정보, 회원번호 요청
       const kakaoUserInfo = await this.getKakaoUserInfo(kakaoAccessToken);
@@ -142,14 +148,17 @@ export class AuthService {
   }
 
   // Kakao Authorization Code로 Kakao Access Token 요청
-  async getKakaoAccessToken(code: string): Promise<string> {
+  async getKakaoAccessToken(
+    code: string,
+    redirectUri = process.env.KAKAO_REDIRECT_URI,
+  ): Promise<string> {
     console.log('KAKAO code:', code);
-    console.log('KAKAO redirectUri:', process.env.KAKAO_REDIRECT_URI);
+    console.log('KAKAO redirectUri:', redirectUri);
     const tokenUrl = 'https://kauth.kakao.com/oauth/token';
     const payload = {
       grant_type: 'authorization_code',
       client_id: process.env.KAKAO_CLIENT_ID, // Kakao REST API Key
-      redirect_uri: process.env.KAKAO_REDIRECT_URI,
+      redirect_uri: redirectUri,
       code,
       // client_secret: process.env.KAKAO_CLIENT_SECRET, // 필요시 사용
     };
@@ -611,8 +620,11 @@ export class AuthService {
     user: UserEntity,
     registerUserInfoRequestDto: RegisterUserInfoRequestDto,
   ): Promise<UserInfoResponseDto> {
-    const normalizedSubCode =
-      registerUserInfoRequestDto.subCode?.trim() || null;
+    const normalizedSubCode = registerUserInfoRequestDto.subCode
+      ? this.subscriptionService.normalizeCode(
+          registerUserInfoRequestDto.subCode,
+        )
+      : null;
 
     const myUserInfo = await this.userInfoRepository.findOne({
       where: {
@@ -624,15 +636,9 @@ export class AuthService {
     }
 
     if (normalizedSubCode) {
-      const duplicatedSubCodeUserInfo = await this.userInfoRepository.findOne({
-        where: {
-          subCode: normalizedSubCode,
-        },
-      });
-
-      if (duplicatedSubCodeUserInfo) {
-        throw new ConflictException('Your subCode already exists');
-      }
+      await this.subscriptionService.validateSubscriptionCode(
+        normalizedSubCode,
+      );
     }
 
     const newUserInfo = await this.userInfoRepository.save({
@@ -647,7 +653,7 @@ export class AuthService {
       ),
       target_calories: registerUserInfoRequestDto.target_calories,
       target_ratio: registerUserInfoRequestDto.target_ratio,
-      subCode: normalizedSubCode,
+      subCode: null,
       user: user,
     });
 
@@ -662,7 +668,23 @@ export class AuthService {
 
     await this.userGoalRepository.save(newUserGoal);
 
+    if (normalizedSubCode) {
+      await this.subscriptionService.authorizeSubscriptionCode(
+        user,
+        normalizedSubCode,
+      );
+      newUserInfo.subCode = normalizedSubCode;
+    }
+
     return new UserInfoResponseDto(user, newUserInfo);
+  }
+
+  async authorizeSubscriptionCode(
+    user: UserEntity,
+    subCode: string,
+  ): Promise<boolean> {
+    await this.subscriptionService.authorizeSubscriptionCode(user, subCode);
+    return true;
   }
 
   // 유저 정보 보유 여부

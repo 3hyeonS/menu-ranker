@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, Repository } from 'typeorm';
 import { UserEntity } from '../auth/entity/user/user.entity';
@@ -26,6 +21,7 @@ import { InquiryEntity } from './entity/inquiry.entity';
 import { UserGoalEntity } from '../auth/entity/user/userGoal.entity';
 import { GetUserGoalSnapshotRequestDto } from './dto/request-dto/get-user-goal-snapshot-request-dto';
 import { UserGoalSnapshotResponseDto } from './dto/response-dto/user-goal-snapshot-response-dto';
+import { SubscriptionService } from '../auth/subscription.service';
 
 @Injectable()
 export class ProfileService {
@@ -38,6 +34,7 @@ export class ProfileService {
     private readonly userGoalRepository: Repository<UserGoalEntity>,
     @InjectRepository(InquiryEntity)
     private readonly profileInquiryRepository: Repository<InquiryEntity>,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   async getProfile(user: UserEntity): Promise<ProfileResponseDto> {
@@ -136,28 +133,10 @@ export class ProfileService {
     user: UserEntity,
     dto: RegisterSubCodeRequestDto,
   ): Promise<ProfileResponseDto> {
-    const normalizedSubCode = dto.subCode.trim();
-    if (!normalizedSubCode) {
-      throw new BadRequestException('subCode must not be empty');
-    }
+    await this.getUserInfoOrThrow(user.id);
+    await this.subscriptionService.authorizeSubscriptionCode(user, dto.subCode);
 
-    const duplicatedSubCodeUserInfo = await this.userInfoRepository.findOne({
-      where: {
-        subCode: normalizedSubCode,
-      },
-      relations: {
-        user: true,
-      },
-    });
-
-    if (
-      duplicatedSubCodeUserInfo &&
-      duplicatedSubCodeUserInfo.user.id !== user.id
-    ) {
-      throw new ConflictException('Your subCode already exists');
-    }
-
-    return await this.updateUserInfo(user.id, { subCode: normalizedSubCode });
+    return await this.getProfile(user);
   }
 
   async inquiry(user: UserEntity, dto: CreateInquiryRequestDto): Promise<void> {

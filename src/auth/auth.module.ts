@@ -24,6 +24,9 @@ import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
 import { MenuEntity } from '../home/entity/menu.entity';
 import { BrandAddEntity } from '../home/entity/brand-add.entity';
 import { UserGoalEntity } from './entity/user/userGoal.entity';
+import { SubscriptionCodeEntity } from './entity/subscription-code.entity';
+import { UserSubscriptionEntity } from './entity/user-subscription.entity';
+import { SubscriptionService } from './subscription.service';
 
 // .env 파일 로드
 dotenv.config();
@@ -44,13 +47,21 @@ dotenv.config();
       MenuEntity,
       BrandAddEntity,
       UserGoalEntity,
+      SubscriptionCodeEntity,
+      UserSubscriptionEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
     HttpModule,
   ],
   controllers: [CommonAuthController, AdminAuthController, UserAuthController],
-  providers: [AuthService, JwtStrategy, AppleStrategy, KakaoAppStrategy],
-  exports: [AuthService, JwtModule, PassportModule],
+  providers: [
+    AuthService,
+    SubscriptionService,
+    JwtStrategy,
+    AppleStrategy,
+    KakaoAppStrategy,
+  ],
+  exports: [AuthService, SubscriptionService, JwtModule, PassportModule],
 })
 export class AuthModule {}
