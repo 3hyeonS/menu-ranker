@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { TRole } from '../../../auth/entity/authority.entity';
 import { UserEntity } from '../../../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../../../auth/entity/user/userInfo.entity';
 
@@ -8,6 +9,9 @@ export class ProfileResponseDto {
 
   @ApiProperty({ example: '소셜프로필명', nullable: true })
   name: string | null;
+
+  @ApiProperty({ example: 'USER' })
+  role: TRole;
 
   @ApiProperty({
     enum: [0, 1],
@@ -75,6 +79,7 @@ export class ProfileResponseDto {
   constructor(user: UserEntity, userInfo: UserInfoEntity) {
     this.nickname = user.nickname;
     this.name = user.name;
+    this.role = user.authority.role;
     this.gender = userInfo.gender;
     this.birthYear = userInfo.birthYear;
     this.height = userInfo.height;

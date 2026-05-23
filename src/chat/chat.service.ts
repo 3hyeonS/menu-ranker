@@ -47,6 +47,11 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
 } as const;
 
 type ChatCategory = 'feedback' | 'recommendation';
+type ChatIntroMessageSource =
+  | 'text_recommendation'
+  | 'text_feedback'
+  | 'menu_board_recommendation'
+  | 'food_image_feedback';
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
 
@@ -395,9 +400,8 @@ export class ChatService {
       candidateMenus: orderedCandidateMenus,
       recognizedCandidates,
       imageUrl,
+      introSource: 'menu_board_recommendation',
     })) as ChatMenuBoardRecommendResponseDto;
-
-    response.intro_message = `메뉴판에서 인식된 후보 메뉴를 기준으로 ${this.mealTimeLabelMap[mealTime]} 추천을 정리해드렸어요!`;
 
     return response;
   }
@@ -468,6 +472,15 @@ export class ChatService {
       matchedMenus,
       introMessage:
         '음식 사진에서 인식한 메뉴를 기준으로 현재 목표에 맞는지 확인했어요.',
+      introSource: 'food_image_feedback',
+      extractedItems: recognizedFoods.map((food, index) => ({
+        rank: index + 1,
+        menu: food.name,
+        brand: food.brand,
+        category: food.category,
+        confidence: food.confidence,
+        position: food.position,
+      })),
       skipHistorySave: true,
     })) as ChatFoodImageFeedbackResponseDto;
 
@@ -500,6 +513,7 @@ export class ChatService {
     recognizedCandidates?: MenuRecognitionCandidate[];
     skipGeneratedDescriptions?: boolean;
     imageUrl?: string;
+    introSource?: ChatIntroMessageSource;
   }): Promise<ChatRecommendResponseDto> {
     const {
       user,
@@ -510,6 +524,7 @@ export class ChatService {
       recognizedCandidates,
       skipGeneratedDescriptions = false,
       imageUrl,
+      introSource = 'text_recommendation',
     } = params;
 
     const targetDate = this.resolveTargetDate();
@@ -558,7 +573,17 @@ export class ChatService {
 
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'recommendation';
-    response.intro_message = this.buildIntroMessage(intent, userInfo);
+    response.intro_message = await this.generateIntroMessageWithGemini({
+      source: introSource,
+      input,
+      userInfo,
+      intent,
+      dailyNutrition,
+      basis: rankingBasis,
+      rankedMenus,
+      recognizedCandidates,
+      fallback: this.buildIntroMessage(intent, userInfo),
+    });
     if (imageUrl) {
       (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
     }
@@ -628,6 +653,7 @@ export class ChatService {
       input,
       matchedMenus,
       introMessage: `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록을 기준으로 입력한 메뉴를 확인했어요.`,
+      introSource: 'text_feedback',
     });
   }
 
@@ -637,9 +663,19 @@ export class ChatService {
     input: string;
     matchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>;
     introMessage: string;
+    introSource?: ChatIntroMessageSource;
+    extractedItems?: unknown[];
     skipHistorySave?: boolean;
   }): Promise<ChatRecommendResponseDto> {
-    const { user, userInfo, input, matchedMenus, introMessage } = params;
+    const {
+      user,
+      userInfo,
+      input,
+      matchedMenus,
+      introMessage,
+      introSource = 'text_feedback',
+      extractedItems,
+    } = params;
     const targetDate = this.resolveTargetDate();
     const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
     const mealTime = this.inferMealTimeFromClock(new Date());
@@ -680,8 +716,18 @@ export class ChatService {
 
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'feedback';
-    response.intro_message = introMessage;
     response.feedback = feedback;
+    response.intro_message = await this.generateIntroMessageWithGemini({
+      source: introSource,
+      input,
+      userInfo,
+      dailyNutrition,
+      basis: rankingBasis,
+      feedback,
+      matchedMenus,
+      extractedItems,
+      fallback: introMessage,
+    });
 
     if (!params.skipHistorySave) {
       await this.chatHistoryRepository.save(
@@ -2972,6 +3018,124 @@ JSON shape:
         return '증량';
       default:
         return '유지';
+    }
+  }
+
+  private async generateIntroMessageWithGemini(params: {
+    source: ChatIntroMessageSource;
+    input: string;
+    userInfo: UserInfoEntity;
+    dailyNutrition: DailyNutrition;
+    basis: ReturnType<ChatService['buildRecommendationBasis']>;
+    fallback: string;
+    intent?: ParsedChatIntent;
+    rankedMenus?: RankedMenu[];
+    recognizedCandidates?: MenuRecognitionCandidate[];
+    feedback?: ChatFeedbackResponseDto;
+    matchedMenus?: Array<{ inputMenuName: string; menu: MenuEntity }>;
+    extractedItems?: unknown[];
+  }): Promise<string> {
+    const sourceLabelMap: Record<ChatIntroMessageSource, string> = {
+      text_recommendation: '사용자 텍스트 기반 메뉴 추천',
+      text_feedback: '사용자 텍스트 기반 메뉴 피드백',
+      menu_board_recommendation: '메뉴판 사진 기반 메뉴 추천',
+      food_image_feedback: '음식 사진 기반 메뉴 피드백',
+    };
+
+    const rankedMenuPayload = params.rankedMenus?.map(
+      ({ menu, score }, index) => ({
+        rank: index + 1,
+        menu_id: menu.id,
+        menu: menu.name,
+        brand: menu.brand,
+        category: menu.category,
+        calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+        score: roundToOneDecimal(score.finalScore),
+        local_reason: score.localReason,
+      }),
+    );
+    const matchedMenuPayload = params.matchedMenus?.map(
+      ({ inputMenuName, menu }, index) => ({
+        rank: index + 1,
+        input_menu_name: inputMenuName,
+        menu_id: menu.id,
+        menu: menu.name,
+        brand: menu.brand,
+        category: menu.category,
+        calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+      }),
+    );
+
+    const prompt = `
+사용자에게 채팅 응답의 첫 문장 intro_message를 한국어 JSON object로 작성해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+작성 규칙:
+- intro_message는 120자 이내의 짧은 답변
+- 한 문장일 필요는 없고, 필요하면 3문장까지 자연스럽게 작성
+- 딱딱한 템플릿처럼 쓰지 말고, 상황을 이해한 말투로 작성
+- 메뉴명/브랜드/목표/사진 인식 맥락 중 중요한 것만 1~2개 자연스럽게 반영
+- 과장, 의학적 단정, 확정적인 건강 효과 표현은 피하기
+- 느낌표는 필요할 때만 최대 1개 사용
+
+사용자 텍스트의 종류:
+${sourceLabelMap[params.source]}
+
+사용자 입력:
+${params.input}
+
+사용자 정보:
+${JSON.stringify({
+  goal: this.goalToLabel(params.userInfo.goal),
+  target_calories: params.userInfo.target_calories,
+  target_ratio: this.normalizeTargetRatio(params.userInfo.target_ratio),
+  consumed_today: {
+    calories: roundToOneDecimal(params.dailyNutrition.calories),
+    carbs: roundToOneDecimal(params.dailyNutrition.carbs),
+    protein: roundToOneDecimal(params.dailyNutrition.protein),
+    fat: roundToOneDecimal(params.dailyNutrition.fat),
+  },
+  remaining_today: {
+    calories: roundToOneDecimal(params.basis.remainingCalories),
+    carbs: roundToOneDecimal(params.basis.remainingMacros.carbs),
+    protein: roundToOneDecimal(params.basis.remainingMacros.protein),
+    fat: roundToOneDecimal(params.basis.remainingMacros.fat),
+  },
+  target_meal_calories: roundToOneDecimal(params.basis.targetMealCalories),
+})}
+
+정규화 의도:
+${JSON.stringify(params.intent ?? null)}
+
+알고리즘 추천 메뉴 랭크:
+${JSON.stringify(rankedMenuPayload ?? null)}
+
+사진/텍스트에서 추출한 후보 랭크:
+${JSON.stringify(params.recognizedCandidates ?? params.extractedItems ?? null)}
+
+피드백 메뉴 랭크:
+${JSON.stringify(matchedMenuPayload ?? null)}
+
+피드백 결과:
+${JSON.stringify(params.feedback ?? null)}
+
+반환 shape:
+{
+  "intro_message": "string"
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt);
+      const introMessage = this.asNonEmptyString(data?.intro_message);
+
+      if (!introMessage) {
+        return params.fallback;
+      }
+
+      return introMessage.slice(0, 160);
+    } catch {
+      return params.fallback;
     }
   }
 
