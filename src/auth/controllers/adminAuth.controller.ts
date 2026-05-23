@@ -112,6 +112,24 @@ export class AdminAuthController {
     description: 'Bad Request  \nbody 입력값의 필드 조건 또는 날짜 범위 오류',
     message: 'expires_at must be after starts_at',
     error: 'BadRequestException',
+    examples: {
+      validationError: {
+        summary: '입력값 검증 오류',
+        value: {
+          message: 'code should not be empty',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      invalidDateRange: {
+        summary: '날짜 범위 오류',
+        value: {
+          message: 'expires_at must be after starts_at',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 409,

@@ -101,10 +101,10 @@ export class UserAuthController {
     refreshToken: string;
     user: UserResponseDto;
   }> {
-    const { accessToken, refreshToken, user } =
+    const { accessToken, refreshToken, user, isSubscribed } =
       await this.authService.signInWithKakao(kakaoAuthResCode);
 
-    const userResponseDto = new UserResponseDto(user);
+    const userResponseDto = new UserResponseDto(user, isSubscribed);
     return {
       accessToken: accessToken, // 헤더로 사용할 Access Token
       refreshToken: refreshToken, // 클라이언트 보안 저장소에 저장할 Refresh Token
@@ -134,13 +134,13 @@ export class UserAuthController {
       throw new BadRequestException('code is required');
     }
 
-    const { accessToken, refreshToken, user } =
+    const { accessToken, refreshToken, user, isSubscribed } =
       await this.authService.signInWithKakao(
         kakaoAuthResCode,
         process.env.KAKAO_WEB_REDIRECT_URI,
       );
 
-    const userResponseDto = new UserResponseDto(user);
+    const userResponseDto = new UserResponseDto(user, isSubscribed);
     return {
       accessToken,
       refreshToken,
@@ -184,10 +184,10 @@ export class UserAuthController {
     refreshToken: string;
     user: UserResponseDto;
   }> {
-    const { accessToken, refreshToken, user } =
+    const { accessToken, refreshToken, user, isSubscribed } =
       await this.authService.signInWithApple(payload);
 
-    const userResponseDto = new UserResponseDto(user);
+    const userResponseDto = new UserResponseDto(user, isSubscribed);
     return {
       accessToken: accessToken, // 헤더로 사용할 Access Token
       refreshToken: refreshToken, // 클라이언트 보안 저장소에 저장할 Refresh Token
@@ -259,9 +259,28 @@ export class UserAuthController {
   })
   @ErrorApiResponse({
     status: 400,
-    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    description:
+      'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류 또는 비활성 구독 코드',
     message: 'ratio sum must be 100',
     error: 'BadRequestException',
+    examples: {
+      validationError: {
+        summary: '프로필 입력값 오류',
+        value: {
+          message: 'ratio sum must be 100',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      inactiveSubCode: {
+        summary: '구독 코드 비활성/기간 오류',
+        value: {
+          message: 'Subscription code is not active',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 401,
@@ -276,10 +295,43 @@ export class UserAuthController {
     error: 'ForbiddenException',
   })
   @ErrorApiResponse({
+    status: 404,
+    description: '존재하지 않는 구독 코드',
+    message: 'Subscription code not found',
+    error: 'NotFoundException',
+  })
+  @ErrorApiResponse({
     status: 409,
-    description: '이미 등록된 유저 정보가 있음',
+    description:
+      '이미 등록된 유저 정보가 있거나 구독 코드가 이미 사용됨/사용 한도 초과',
     message: 'Your profile already exists',
     error: 'ConflictException',
+    examples: {
+      profileAlreadyExists: {
+        summary: '이미 등록된 유저 정보',
+        value: {
+          message: 'Your profile already exists',
+          statusCode: 409,
+          error: 'ConflictException',
+        },
+      },
+      subCodeAlreadyUsedByUser: {
+        summary: '같은 유저가 같은 구독 코드 재사용',
+        value: {
+          message: 'Your subCode already exists',
+          statusCode: 409,
+          error: 'ConflictException',
+        },
+      },
+      subCodeUsageLimitExceeded: {
+        summary: '구독 코드 사용 한도 초과',
+        value: {
+          message: 'Subscription code usage limit exceeded',
+          statusCode: 409,
+          error: 'ConflictException',
+        },
+      },
+    },
   })
   @ResponseMsg('User Info registered successfully')
   @UseGuards(AuthGuard())
@@ -312,6 +364,24 @@ export class UserAuthController {
     description: '유효하지 않거나 비활성화된 구독 코드',
     message: 'Subscription code is not active',
     error: 'BadRequestException',
+    examples: {
+      emptySubCode: {
+        summary: '구독 코드 누락',
+        value: {
+          message: 'subCode must not be empty',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      inactiveSubCode: {
+        summary: '구독 코드 비활성/기간 오류',
+        value: {
+          message: 'Subscription code is not active',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 404,
@@ -324,6 +394,24 @@ export class UserAuthController {
     description: '이미 사용했거나 사용 한도가 초과된 구독 코드',
     message: 'Your subCode already exists',
     error: 'ConflictException',
+    examples: {
+      subCodeAlreadyUsedByUser: {
+        summary: '같은 유저가 같은 구독 코드 재사용',
+        value: {
+          message: 'Your subCode already exists',
+          statusCode: 409,
+          error: 'ConflictException',
+        },
+      },
+      subCodeUsageLimitExceeded: {
+        summary: '구독 코드 사용 한도 초과',
+        value: {
+          message: 'Subscription code usage limit exceeded',
+          statusCode: 409,
+          error: 'ConflictException',
+        },
+      },
+    },
   })
   @ResponseMsg('Subscription code authorized successfully')
   @UseGuards(AuthGuard())

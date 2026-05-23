@@ -543,9 +543,28 @@ export class ProfileController {
   })
   @ErrorApiResponse({
     status: 400,
-    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    description:
+      'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류 또는 비활성 구독 코드',
     message: 'subCode should not be empty',
     error: 'BadRequestException',
+    examples: {
+      emptySubCode: {
+        summary: '구독 코드 누락',
+        value: {
+          message: 'subCode should not be empty',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      inactiveSubCode: {
+        summary: '구독 코드 비활성/기간 오류',
+        value: {
+          message: 'Subscription code is not active',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 401,
@@ -561,15 +580,51 @@ export class ProfileController {
   })
   @ErrorApiResponse({
     status: 404,
-    description: '유저 정보가 아직 등록되지 않음',
+    description: '유저 정보가 아직 등록되지 않았거나 구독 코드가 존재하지 않음',
     message: 'User info not found',
     error: 'NotFoundException',
+    examples: {
+      userInfoNotFound: {
+        summary: '유저 정보 미등록',
+        value: {
+          message: 'User info not found',
+          statusCode: 404,
+          error: 'NotFoundException',
+        },
+      },
+      subCodeNotFound: {
+        summary: '존재하지 않는 구독 코드',
+        value: {
+          message: 'Subscription code not found',
+          statusCode: 404,
+          error: 'NotFoundException',
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 409,
-    description: '이미 다른 유저가 사용 중인 구독 코드',
+    description: '이미 사용했거나 사용 한도가 초과된 구독 코드',
     message: 'Your subCode already exists',
     error: 'ConflictException',
+    examples: {
+      subCodeAlreadyUsedByUser: {
+        summary: '같은 유저가 같은 구독 코드 재사용',
+        value: {
+          message: 'Your subCode already exists',
+          statusCode: 409,
+          error: 'ConflictException',
+        },
+      },
+      subCodeUsageLimitExceeded: {
+        summary: '구독 코드 사용 한도 초과',
+        value: {
+          message: 'Subscription code usage limit exceeded',
+          statusCode: 409,
+          error: 'ConflictException',
+        },
+      },
+    },
   })
   @ResponseMsg('Subscription code updated successfully')
   @UseGuards(AuthGuard())

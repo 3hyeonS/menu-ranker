@@ -22,12 +22,20 @@ export class UserResponseDto {
   @ApiProperty({ example: 'USER' })
   role: TRole;
 
-  constructor(user: UserEntity) {
+  @ApiProperty({
+    type: Boolean,
+    description: '활성 구독 여부',
+    example: true,
+  })
+  is_subscribed: boolean;
+
+  constructor(user: UserEntity, isSubscribed = false) {
     this.id = user.id;
     this.nickname = user.nickname;
     this.name = user.name;
     this.email = user.email;
     this.platform = user.signWith.platform;
     this.role = user.authority.role;
+    this.is_subscribed = isSubscribed;
   }
 }

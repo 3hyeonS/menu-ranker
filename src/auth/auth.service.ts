@@ -114,7 +114,12 @@ export class AuthService {
   async signInWithKakao(
     kakaoAuthResCode: string,
     redirectUri = process.env.KAKAO_REDIRECT_URI,
-  ): Promise<{ accessToken: string; refreshToken: string; user: UserEntity }> {
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: UserEntity;
+    isSubscribed: boolean;
+  }> {
     try {
       // Authorization Code로 Kakao API에 Access Token 요청
       const kakaoAccessToken = await this.getKakaoAccessToken(
@@ -132,8 +137,11 @@ export class AuthService {
       // [1] JWT 토큰 생성 (Secret + Payload)
       const accessToken = await this.generateAccessToken(user);
       const refreshToken = await this.generateRefreshToken(user);
+      const isSubscribed = await this.subscriptionService.hasActiveSubscription(
+        user.id,
+      );
       // [2] 사용자 정보 반환
-      return { accessToken, refreshToken, user };
+      return { accessToken, refreshToken, user, isSubscribed };
     } catch (error) {
       this.logger.error('Kakao sign-in failed', error?.stack ?? error);
 
@@ -196,9 +204,12 @@ export class AuthService {
   }
 
   // apple 로그인
-  async signInWithApple(
-    payload: any,
-  ): Promise<{ accessToken: string; refreshToken: string; user: UserEntity }> {
+  async signInWithApple(payload: any): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: UserEntity;
+    isSubscribed: boolean;
+  }> {
     try {
       const appleIdTokenClaims = await appleSignin.verifyIdToken(
         payload.id_token,
@@ -257,8 +268,11 @@ export class AuthService {
       // [1] JWT 토큰 생성 (Secret + Payload)
       const accessToken = await this.generateAccessToken(user);
       const refreshToken = await this.generateRefreshToken(user);
+      const isSubscribed = await this.subscriptionService.hasActiveSubscription(
+        user.id,
+      );
       // [2] 사용자 정보 반환
-      return { accessToken, refreshToken, user };
+      return { accessToken, refreshToken, user, isSubscribed };
     } catch (err) {
       // Token is not verified'
       console.log(err);
