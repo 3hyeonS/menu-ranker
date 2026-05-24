@@ -2221,7 +2221,7 @@ ${JSON.stringify(candidates)}
       reasons.push('현재 끼니 목표 칼로리에 잘 맞습니다');
     }
     if (scores.macroScore >= 75) {
-      reasons.push('남은 탄단지 목표와의 정렬도가 좋습니다');
+      reasons.push('남은 탄단지 목표에 적합합니다');
     }
     if (scores.satietyScore >= 75) {
       reasons.push(
