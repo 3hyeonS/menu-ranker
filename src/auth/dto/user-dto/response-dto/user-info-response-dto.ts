@@ -79,10 +79,22 @@ export class UserInfoResponseDto {
     type: String,
     description: '구독 코드',
     example: 'subCodeExample',
+    nullable: true,
   })
-  subCode: string;
+  subCode: string | null;
 
-  constructor(user: UserEntity, userInfo: UserInfoEntity) {
+  @ApiProperty({
+    type: Boolean,
+    description: '활성 구독 여부',
+    example: true,
+  })
+  is_subscribed: boolean;
+
+  constructor(
+    user: UserEntity,
+    userInfo: UserInfoEntity,
+    isSubscribed = false,
+  ) {
     this.nickname = user.nickname;
     this.name = user.name;
     this.email = user.email;
@@ -96,5 +108,6 @@ export class UserInfoResponseDto {
     this.target_calories = userInfo.target_calories;
     this.target_ratio = userInfo.target_ratio;
     this.subCode = userInfo.subCode;
+    this.is_subscribed = isSubscribed;
   }
 }

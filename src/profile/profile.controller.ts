@@ -154,6 +154,12 @@ export class ProfileController {
     message: 'User info not found',
     error: 'NotFoundException',
   })
+  @ErrorApiResponse({
+    status: 409,
+    description: '이미 사용 중인 닉네임',
+    message: 'Nickname already exists',
+    error: 'ConflictException',
+  })
   @ResponseMsg('Nickname updated successfully')
   @UseGuards(AuthGuard())
   @Post('/updateNickname')

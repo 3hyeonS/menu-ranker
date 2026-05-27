@@ -6,9 +6,8 @@ import { MenuSimpleResponseDto } from './menu-simple-response-dto';
 export class SearchResponseDto {
   @ApiProperty({
     type: Boolean,
-    description:
-      '결과값 여부  \ntrue: 결과값 있음  \nfalse: 결과값 없음(유사 메뉴/브랜드 출력)',
-    example: false,
+    description: '검색 결과 존재 여부',
+    example: true,
   })
   has_result: boolean;
 
@@ -21,19 +20,21 @@ export class SearchResponseDto {
   menu_list: MenuSimpleResponseDto[];
 
   @ApiProperty({
-    type: [String],
-    description: '브랜드 리스트',
-    example: ['싸이버거', '버거킹'],
+    type: Number,
+    nullable: true,
+    description:
+      '다음 페이지 조회에 사용할 cursor(menu_id). 더 조회할 데이터가 없으면 null',
+    example: 512,
   })
-  brand_list: string[];
+  next_cursor: number | null;
 
   constructor(
     hasResult: boolean,
     menuList: MenuSimpleResponseDto[],
-    brandList: string[],
+    nextCursor: number | null,
   ) {
     this.has_result = hasResult;
     this.menu_list = menuList;
-    this.brand_list = brandList;
+    this.next_cursor = nextCursor;
   }
 }

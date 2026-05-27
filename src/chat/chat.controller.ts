@@ -47,9 +47,9 @@ export class ChatController {
 
   @ApiBearerAuth('accessToken')
   @ApiOperation({
-    summary: '채팅형 메뉴 피드백/추천',
+    summary: '채팅형 메뉴 피드백/추천/범용 질문',
     description:
-      '입력값을 Gemini로 피드백/추천으로 분류. 피드백은 입력 메뉴를 DB 메뉴와 매핑한 뒤 현재 유저 목표와 식사기록 기준으로 판단하고, 추천은 기존 메뉴 추천 로직을 사용',
+      '입력값을 Gemini로 피드백/추천/범용 질문으로 분류. 피드백은 입력 메뉴를 DB 메뉴와 매핑한 뒤 현재 유저 목표와 식사기록 기준으로 판단하고, 추천은 기존 메뉴 추천 로직을 사용. 범용 질문은 메뉴 DB 랭킹 없이 사용자 정보와 오늘 섭취 흐름을 참고해 답변',
   })
   @ApiExtraModels(
     ResponseDto,
@@ -157,8 +157,22 @@ export class ChatController {
                   feedback_summary:
                     '먹을 수는 있지만 현재 목표 기준으로는 조금 아쉬운 조합입니다.',
                   feedback_reason:
-                    '싸이버거, 콜라 조합은 감량 목표 기준 점수 63.2점입니다. 총 744kcal 조합입니다. 현재 끼니 목표 칼로리와는 차이가 있는 편입니다.',
+                    '싸이버거, 콜라 조합은 감량 목표 기준 점수 63.2점입니다. 총 744kcal 조합이라 오늘 남은 섭취 흐름 기준으로는 다소 부담이 있는 편입니다.',
                 },
+              },
+            },
+          },
+          general: {
+            summary: '범용 식단/영양 질문으로 분류된 경우',
+            value: {
+              message: 'Menu recommendations generated successfully',
+              statusCode: 201,
+              data: {
+                chat_category: 'general',
+                intro_message:
+                  '탄수화물 섭취 타이밍은 목표와 활동량에 맞춰 조절하는 편이 좋습니다.',
+                general_answer:
+                  '탄수화물은 무조건 줄이기보다 하루 활동량이 큰 시간대에 배치하는 방식이 현실적입니다. 운동을 한다면 운동 전후나 활동량이 많은 낮 시간대에 나눠 먹는 편이 컨디션 유지에 도움이 될 수 있어요.\n\n감량 중이라도 탄수화물을 완전히 끊으면 식욕이 커지거나 다음 끼니에서 과하게 먹기 쉬울 수 있습니다. 밥, 고구마, 과일처럼 양을 조절하기 쉬운 식품을 기준으로 잡고, 저녁에는 오늘 섭취 흐름에 따라 양만 조금 줄이는 식으로 접근해보세요.',
               },
             },
           },

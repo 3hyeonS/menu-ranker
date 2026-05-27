@@ -14,6 +14,13 @@ export class ProfileResponseDto {
   role: TRole;
 
   @ApiProperty({
+    type: Boolean,
+    description: '활성 구독 여부',
+    example: true,
+  })
+  is_subscribed: boolean;
+
+  @ApiProperty({
     enum: [0, 1],
     description: '성별 (0: 남성, 1: 여성)',
     example: 0,
@@ -76,10 +83,15 @@ export class ProfileResponseDto {
   })
   target_ratio: number[];
 
-  constructor(user: UserEntity, userInfo: UserInfoEntity) {
+  constructor(
+    user: UserEntity,
+    userInfo: UserInfoEntity,
+    isSubscribed = false,
+  ) {
     this.nickname = user.nickname;
     this.name = user.name;
     this.role = user.authority.role;
+    this.is_subscribed = isSubscribed;
     this.gender = userInfo.gender;
     this.birthYear = userInfo.birthYear;
     this.height = userInfo.height;

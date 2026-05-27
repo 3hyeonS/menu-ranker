@@ -260,7 +260,7 @@ export class UserAuthController {
   @ErrorApiResponse({
     status: 400,
     description:
-      'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류 또는 비활성 구독 코드',
+      'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류, 구독 코드 누락 또는 비활성 구독 코드',
     message: 'ratio sum must be 100',
     error: 'BadRequestException',
     examples: {
@@ -268,6 +268,14 @@ export class UserAuthController {
         summary: '프로필 입력값 오류',
         value: {
           message: 'ratio sum must be 100',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      emptySubCode: {
+        summary: '구독 코드 공백',
+        value: {
+          message: 'subCode must not be empty',
           statusCode: 400,
           error: 'BadRequestException',
         },
@@ -299,6 +307,16 @@ export class UserAuthController {
     description: '존재하지 않는 구독 코드',
     message: 'Subscription code not found',
     error: 'NotFoundException',
+    examples: {
+      subCodeNotFound: {
+        summary: '존재하지 않는 구독 코드',
+        value: {
+          message: 'Subscription code not found',
+          statusCode: 404,
+          error: 'NotFoundException',
+        },
+      },
+    },
   })
   @ErrorApiResponse({
     status: 409,

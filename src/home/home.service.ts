@@ -14,6 +14,7 @@ import { firstValueFrom } from 'rxjs';
 import { UserEntity } from '../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../auth/entity/user/userInfo.entity';
 import { MenuEntity } from './entity/menu.entity';
+import { SearchMenuRequestDto } from './dto/request-dto/search-menu-request-dto';
 import { SearchResponseDto } from './dto/response-dto/search-response-dto';
 import { MenuSimpleResponseDto } from './dto/response-dto/menu-simple-response-dto';
 import { MenuResponseDto } from './dto/response-dto/menu-response-dto';
@@ -652,17 +653,22 @@ export class HomeService {
 
   // menu controller
   // 메뉴 검색
-  async search(input: string, user: UserEntity): Promise<SearchResponseDto> {
-    const keyword = input?.trim();
+  async search(
+    searchMenuRequestDto: SearchMenuRequestDto,
+    user: UserEntity,
+  ): Promise<SearchResponseDto> {
+    const keyword = searchMenuRequestDto.input?.trim();
+    const limit = searchMenuRequestDto.limit;
+    const cursor = searchMenuRequestDto.cursor;
 
     if (!keyword) {
-      return new SearchResponseDto(false, [], []);
+      return new SearchResponseDto(false, [], null);
     }
 
     const keywordPattern = `%${keyword}%`;
     const keywordTokens = this.toSearchTokens(keyword);
 
-    const menuList = await this.menuRepository
+    const menuQuery = this.menuRepository
       .createQueryBuilder('menu')
       .leftJoinAndSelect('menu.user', 'user')
       .where(
@@ -704,28 +710,28 @@ export class HomeService {
             );
           }
         }),
-      )
+      );
+
+    if (cursor !== undefined) {
+      menuQuery.andWhere('menu.id > :cursor', { cursor });
+    }
+
+    const menuList = await menuQuery
+      .orderBy('menu.id', 'ASC')
+      .take(limit + 1)
       .getMany();
 
-    let menu_list: MenuSimpleResponseDto[] = this.sortMenusBySearchSimilarity(
-      menuList,
-      keyword,
-    ).map((menu) => new MenuSimpleResponseDto(menu));
+    const pagedMenuList = menuList.slice(0, limit);
+    let menu_list: MenuSimpleResponseDto[] = pagedMenuList.map(
+      (menu) => new MenuSimpleResponseDto(menu),
+    );
+    let nextCursor =
+      menuList.length > limit
+        ? pagedMenuList[pagedMenuList.length - 1].id
+        : null;
+    let has_result = menu_list.length > 0;
 
-    const searchedBrandRows = await this.menuRepository
-      .createQueryBuilder('menu')
-      .select('menu.brand', 'brand')
-      .where('menu.brand LIKE :keyword', { keyword: keywordPattern })
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .groupBy('menu.brand')
-      .orderBy('menu.brand', 'ASC')
-      .getRawMany<{ brand: string }>();
-
-    const brand_list: string[] = searchedBrandRows.map((row) => row.brand);
-
-    const has_result = menu_list.length > 0 || brand_list.length > 0;
-
-    if (!has_result) {
+    if (!has_result && cursor === undefined) {
       const alternativeMenus = await this.findAlternativeMenusByIntent(
         keyword,
         user,
@@ -733,9 +739,10 @@ export class HomeService {
       menu_list = alternativeMenus.map(
         (menu) => new MenuSimpleResponseDto(menu),
       );
+      nextCursor = null;
     }
 
-    return new SearchResponseDto(has_result, menu_list, brand_list);
+    return new SearchResponseDto(has_result, menu_list, nextCursor);
   }
 
   // 메뉴 영양성분 상세 조회
@@ -1192,6 +1199,8 @@ failure_reason enum:
           new MealResponseDto(
             meal.time,
             meal.image,
+            meal.createdAt,
+            meal.updatedAt,
             meal.mealMenus.map(
               (mealMenu) => new MenuSimpleResponseDto(mealMenu.menu),
             ),

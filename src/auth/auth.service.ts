@@ -690,7 +690,11 @@ export class AuthService {
       newUserInfo.subCode = normalizedSubCode;
     }
 
-    return new UserInfoResponseDto(user, newUserInfo);
+    const isSubscribed = await this.subscriptionService.hasActiveSubscription(
+      user.id,
+    );
+
+    return new UserInfoResponseDto(user, newUserInfo, isSubscribed);
   }
 
   async authorizeSubscriptionCode(

@@ -18,6 +18,20 @@ export class MealResponseDto {
   })
   image: string = null;
 
+  @ApiProperty({
+    type: Date,
+    description: '식사 기록 생성 시각',
+    example: '2026-05-27T12:34:56.789Z',
+  })
+  createdAt: Date;
+
+  @ApiProperty({
+    type: Date,
+    description: '식사 기록 수정 시각',
+    example: '2026-05-27T13:10:20.123Z',
+  })
+  updatedAt: Date;
+
   @ValidateNested()
   @ApiProperty({
     type: [MenuSimpleResponseDto],
@@ -43,12 +57,16 @@ export class MealResponseDto {
   constructor(
     time: number,
     image: string,
+    createdAt: Date,
+    updatedAt: Date,
     menuList: MenuSimpleResponseDto[],
     menuQunatities: number[],
     menuInputModes: number[],
   ) {
     this.time = time;
     this.image = image;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
     this.menu_list = menuList;
     this.menu_quantities = menuQunatities;
     this.menu_input_modes = menuInputModes;

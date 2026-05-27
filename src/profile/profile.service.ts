@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, Repository } from 'typeorm';
 import { UserEntity } from '../auth/entity/user/user.entity';
@@ -38,12 +38,13 @@ export class ProfileService {
   ) {}
 
   async getProfile(user: UserEntity): Promise<ProfileResponseDto> {
-    const [savedUser, userInfo] = await Promise.all([
+    const [savedUser, userInfo, isSubscribed] = await Promise.all([
       this.userRepository.findOneBy({ id: user.id }),
       this.getUserInfoOrThrow(user.id),
+      this.subscriptionService.hasActiveSubscription(user.id),
     ]);
 
-    return new ProfileResponseDto(savedUser, userInfo);
+    return new ProfileResponseDto(savedUser, userInfo, isSubscribed);
   }
 
   async updateNickname(
@@ -51,7 +52,14 @@ export class ProfileService {
     dto: UpdateNicknameRequestDto,
   ): Promise<ProfileResponseDto> {
     const savedUser = await this.userRepository.findOneBy({ id: user.id });
-    savedUser.nickname = dto.nickname.trim();
+    const nickname = dto.nickname.trim();
+    const duplicatedUser = await this.userRepository.findOneBy({ nickname });
+
+    if (duplicatedUser && duplicatedUser.id !== user.id) {
+      throw new ConflictException('Nickname already exists');
+    }
+
+    savedUser.nickname = nickname;
     await this.userRepository.save(savedUser);
     return await this.getProfile(savedUser);
   }
@@ -211,7 +219,10 @@ export class ProfileService {
       }),
     );
 
-    return new ProfileResponseDto(savedUser, updatedUserInfo);
+    const isSubscribed =
+      await this.subscriptionService.hasActiveSubscription(userId);
+
+    return new ProfileResponseDto(savedUser, updatedUserInfo, isSubscribed);
   }
 
   private async getUserInfoOrThrow(userId: number): Promise<UserInfoEntity> {

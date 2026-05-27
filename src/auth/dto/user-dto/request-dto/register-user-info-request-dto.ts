@@ -4,7 +4,6 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
-  IsEnum,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -26,7 +25,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 export class SumTo100Constraint implements ValidatorConstraintInterface {
   validate(value: number[], _args: ValidationArguments) {
     if (!Array.isArray(value)) return false;
-    return value.reduce((acc, cur) => acc + cur, 0) === 100;
+    return Math.round(value.reduce((acc, cur) => acc + cur, 0) * 10) === 1000;
   }
 
   defaultMessage(_args: ValidationArguments) {
@@ -119,14 +118,14 @@ export class RegisterUserInfoRequestDto {
 
   @ApiProperty({
     type: [Number],
-    description: '탄단지 비율',
-    example: [65, 10, 25],
+    description: '탄단지 비율. 각 값은 소수 1자리까지 허용되며 합은 100이어야 합니다.',
+    example: [65.5, 9.5, 25],
   })
   @IsNotEmpty()
   @IsArray()
   @ArrayMinSize(3) // 최소 크기 2
   @ArrayMaxSize(3) // 최대 크기 2
-  @IsInt({ each: true })
+  @IsNumber(oneDecimalNumberOptions, { each: true })
   @Validate(SumTo100Constraint)
   target_ratio: number[];
 

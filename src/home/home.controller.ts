@@ -98,7 +98,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() searchMenuRequestDto: SearchMenuRequestDto,
   ): Promise<SearchResponseDto> {
-    return await this.homeService.search(searchMenuRequestDto.input, user);
+    return await this.homeService.search(searchMenuRequestDto, user);
   }
 
   // 브랜드 검색

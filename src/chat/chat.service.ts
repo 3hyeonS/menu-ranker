@@ -46,7 +46,7 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
 
-type ChatCategory = 'feedback' | 'recommendation';
+type ChatCategory = 'feedback' | 'recommendation' | 'general';
 type ChatIntroMessageSource =
   | 'text_recommendation'
   | 'text_feedback'
@@ -305,6 +305,10 @@ export class ChatService {
 
     if (classification.chat_category === 'feedback') {
       return await this.feedback(user, userInfo, input, classification);
+    }
+
+    if (classification.chat_category === 'general') {
+      return await this.answerGeneralQuestion(user, userInfo, input);
     }
 
     const parsedIntent = await this.parseIntentWithGemini(input, userInfo);
@@ -738,6 +742,43 @@ export class ChatService {
         }),
       );
     }
+
+    return response;
+  }
+
+  private async answerGeneralQuestion(
+    user: UserEntity,
+    userInfo: UserInfoEntity,
+    input: string,
+  ): Promise<ChatRecommendResponseDto> {
+    const targetDate = this.resolveTargetDate();
+    const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
+    const mealTime = this.inferMealTimeFromClock(new Date());
+    const basis = this.buildRecommendationBasis(
+      userInfo,
+      dailyNutrition,
+      mealTime,
+      'regular',
+    );
+    const answer = await this.generateGeneralAnswerWithGemini({
+      input,
+      userInfo,
+      dailyNutrition,
+      basis,
+    });
+
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'general';
+    response.intro_message = answer.intro_message;
+    response.general_answer = answer.general_answer;
+
+    await this.chatHistoryRepository.save(
+      this.chatHistoryRepository.create({
+        input_text: input,
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
 
     return response;
   }
@@ -1912,7 +1953,7 @@ ${JSON.stringify(candidates)}
 
     // 가볍게/든든하게 같은 채팅 의도를 끼니 목표 칼로리에 반영합니다.
     if (amountPreference === 'light') {
-      targetMealCalories *= 0.82;
+      targetMealCalories *= 0.7;
     }
     if (amountPreference === 'hearty') {
       targetMealCalories *= 1.18;
@@ -2554,14 +2595,19 @@ ${JSON.stringify(candidates)}
 분류 규칙:
 - recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
 - feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
+- general: 특정 메뉴 추천이나 특정 메뉴 평가가 아니라 식단, 영양, 다이어트, 식습관, 운동 전후 식사, 칼로리/탄단지 개념 등에 대해 설명이나 상담을 요청하는 경우
 - feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
 - recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
+- general일 때는 menu_names를 빈 배열로 반환해
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 
 예시:
 "맘스터치에서 싸이버거 제외하고 메뉴 추천해줘" -> recommendation
 "오늘 점심 싸이버거 먹어도 돼?" -> feedback
 "싸이버거랑 콜라 먹었는데 괜찮아?" -> feedback
+"탄수화물은 언제 먹는 게 좋아?" -> general
+"다이어트 중 나트륨 줄이는 법 알려줘" -> general
+"단백질 하루에 얼마나 먹어야 해?" -> general
 
 입력:
 ${input}
@@ -2574,8 +2620,12 @@ ${input}
 `.trim();
 
     const data = await this.callGeminiJson(prompt);
-    const chatCategory =
-      data?.chat_category === 'feedback' ? 'feedback' : 'recommendation';
+    const chatCategory: ChatCategory =
+      data?.chat_category === 'feedback'
+        ? 'feedback'
+        : data?.chat_category === 'general'
+          ? 'general'
+          : 'recommendation';
 
     return {
       chat_category: chatCategory,
@@ -2585,6 +2635,8 @@ ${input}
               data?.menu_names,
               this.extractFeedbackMenuNamesFallback(input),
             )
+          : chatCategory === 'general'
+            ? []
           : this.normalizeFreeTextArray(data?.menu_names, []),
     };
   }
@@ -3021,6 +3073,72 @@ JSON shape:
     }
   }
 
+  private async generateGeneralAnswerWithGemini(params: {
+    input: string;
+    userInfo: UserInfoEntity;
+    dailyNutrition: DailyNutrition;
+    basis: ReturnType<ChatService['buildRecommendationBasis']>;
+  }): Promise<{ intro_message: string; general_answer: string }> {
+    const prompt = `
+사용자의 식단/영양 관련 범용 질문에 답변하는 한국어 JSON object를 작성해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+작성 규칙:
+- 특정 메뉴를 추천하거나 DB 메뉴를 고르지 말고, 사용자의 질문에 직접 답해
+- 사용자의 목표, 오늘 섭취 흐름, 남은 섭취량을 참고하되 자연스럽게 필요한 경우에만 반영
+- target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
+- intro_message는 1~2문장으로 짧게 작성
+- general_answer는 300~800자 정도로 작성
+- 2~5개의 짧은 문단으로 줄바꿈을 넣고, JSON 문자열 안의 줄바꿈은 \\n으로 포함
+- 실천 팁은 1~3개 정도만 포함
+- 과장, 의학적 단정, 진단/처방처럼 들리는 표현은 피하기
+- 질병, 약물, 임신, 섭식장애 등 고위험 상황은 전문가 상담을 권하기
+- 죄책감을 자극하지 말고, 지속 가능한 선택을 돕는 현실적인 톤으로 작성
+- 느낌표는 필요할 때만 최대 1개 사용
+
+사용자 질문:
+${params.input}
+
+사용자 정보:
+${JSON.stringify({
+  goal: this.goalToLabel(params.userInfo.goal),
+  target_calories: params.userInfo.target_calories,
+  target_ratio: this.normalizeTargetRatio(params.userInfo.target_ratio),
+  consumed_today: {
+    calories: roundToOneDecimal(params.dailyNutrition.calories),
+    carbs: roundToOneDecimal(params.dailyNutrition.carbs),
+    protein: roundToOneDecimal(params.dailyNutrition.protein),
+    fat: roundToOneDecimal(params.dailyNutrition.fat),
+  },
+  remaining_today: {
+    calories: roundToOneDecimal(params.basis.remainingCalories),
+    carbs: roundToOneDecimal(params.basis.remainingMacros.carbs),
+    protein: roundToOneDecimal(params.basis.remainingMacros.protein),
+    fat: roundToOneDecimal(params.basis.remainingMacros.fat),
+  },
+})}
+
+반환 shape:
+{
+  "intro_message": "string",
+  "general_answer": "string"
+}
+`.trim();
+
+    const data = await this.callGeminiJson(prompt);
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message) ??
+      '질문하신 내용을 현재 목표와 식사 흐름에 맞춰 정리해드릴게요.';
+    const generalAnswer =
+      this.asNonEmptyString(data?.general_answer) ??
+      '식단은 한 가지 기준만으로 판단하기보다 목표, 활동량, 오늘 섭취 흐름을 함께 보는 편이 좋습니다. 무리하게 제한하기보다는 꾸준히 반복 가능한 선택을 기준으로 조절해보세요.';
+
+    return {
+      intro_message: introMessage.slice(0, 300),
+      general_answer: generalAnswer.slice(0, 1200),
+    };
+  }
+
   private async generateIntroMessageWithGemini(params: {
     source: ChatIntroMessageSource;
     input: string;
@@ -3079,11 +3197,13 @@ JSON shape:
 - 메뉴명/브랜드/목표/오늘 섭취 흐름/사진 인식 맥락 중 중요한 것을 자연스럽게 반영
 - 추천 메뉴나 피드백 메뉴명은 가장 중요한 상위 1개만 언급
 - 나머지 분량은 그 메뉴를 고른 이유, 현재 목표와의 관계, 현실적인 조절 팁으로 채우기
+- target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - 단품/조합/다음 끼니 조절 같은 실행 가능한 팁은 1개만 포함
 - 과장, 의학적 단정, 확정적인 건강 효과 표현은 피하기
 - 죄책감을 자극하지 말고, 지속 가능한 선택을 돕는 방향으로 작성
 - 장황한 응원 문구나 반복 설명은 쓰지 않기
 - 느낌표는 필요할 때만 최대 1개 사용
+- 사용자 텍스트의 종류가 메뉴 피드백이어도 위 분량, 줄바꿈, 상위 1개 메뉴명 언급, 내부 계산 기준 미노출 규칙을 동일하게 적용
 
 사용자 텍스트의 종류:
 ${sourceLabelMap[params.source]}
@@ -3108,7 +3228,6 @@ ${JSON.stringify({
     protein: roundToOneDecimal(params.basis.remainingMacros.protein),
     fat: roundToOneDecimal(params.basis.remainingMacros.fat),
   },
-  target_meal_calories: roundToOneDecimal(params.basis.targetMealCalories),
 })}
 
 정규화 의도:

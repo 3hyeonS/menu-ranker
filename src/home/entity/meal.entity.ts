@@ -5,6 +5,8 @@ import {
   Column,
   ManyToOne,
   OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { MealMenuEntity } from './meal-menu.entity';
 
@@ -21,6 +23,20 @@ export class MealEntity {
 
   @Column({ type: 'varchar', name: 'image', nullable: true })
   image: string;
+
+  @CreateDateColumn({
+    type: 'datetime',
+    precision: 6,
+    name: 'createdAt',
+  })
+  createdAt: Date;
+
+  @UpdateDateColumn({
+    type: 'datetime',
+    precision: 6,
+    name: 'updatedAt',
+  })
+  updatedAt: Date;
 
   @OneToMany(() => MealMenuEntity, (mealMenu) => mealMenu.meal, {
     nullable: false,
