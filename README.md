@@ -32,6 +32,57 @@
 $ npm install
 ```
 
+## Vector DB setup
+
+Menu search and multimodal candidate retrieval can use a sidecar PostgreSQL
+database with pgvector. The main application database remains MySQL.
+
+Install PostgreSQL and pgvector locally, then create the vector database:
+
+```bash
+$ sudo apt update
+$ sudo apt install postgresql postgresql-contrib
+$ apt search pgvector
+```
+
+Install the pgvector package that matches your PostgreSQL version, for example:
+
+```bash
+$ sudo apt install postgresql-16-pgvector
+```
+
+Create the user and database:
+
+```bash
+$ sudo -u postgres psql
+```
+
+```sql
+CREATE USER vector_user WITH PASSWORD 'vector_password';
+CREATE DATABASE melo_vector OWNER vector_user;
+```
+
+Enable pgvector:
+
+```bash
+$ sudo -u postgres psql -d melo_vector
+```
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+Connection settings are read from `.env`. If PostgreSQL uses the default local
+port, use `5432`:
+
+```env
+VECTOR_DB_HOST=localhost
+VECTOR_DB_PORT=5432
+VECTOR_DB_USERNAME=vector_user
+VECTOR_DB_PASSWORD=vector_password
+VECTOR_DB_NAME=melo_vector
+```
+
 ## Compile and run the project
 
 ```bash
