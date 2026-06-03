@@ -410,6 +410,8 @@ export class AuthService {
 
   // 회원 탈퇴 기능
   async deleteUser(member: UserEntity): Promise<void> {
+    await this.requestAmplitudeUserDeletion(member.id);
+
     //해당 signId의 모든 refreshToken 삭제
     await this.revokeRefreshTokenBySignId(member);
 
@@ -422,6 +424,58 @@ export class AuthService {
         await this.revokeAppleTokens(member.appleKey.appleRefreshToken);
       }
       await this.userRepository.remove(member);
+    }
+  }
+
+  private async requestAmplitudeUserDeletion(userId: number): Promise<void> {
+    const amplitudeApiKey = process.env.AMPLITUDE_API_KEY;
+    const amplitudeApiSecret = process.env.AMPLITUDE_API_SECRET;
+
+    if (!amplitudeApiKey || !amplitudeApiSecret) {
+      this.logger.error('Amplitude credentials are not configured');
+      throw new InternalServerErrorException(
+        'Amplitude credentials are not configured',
+      );
+    }
+
+    const authorization = Buffer.from(
+      `${amplitudeApiKey}:${amplitudeApiSecret}`,
+    ).toString('base64');
+
+    try {
+      await firstValueFrom(
+        this.httpService.post(
+          'https://amplitude.com/api/2/deletions/users',
+          {
+            user_ids: [String(userId)],
+            requester: 'account_delete',
+            ignore_invalid_id: true,
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              Authorization: `Basic ${authorization}`,
+            },
+          },
+        ),
+      );
+    } catch (error) {
+      const amplitudeError = error as {
+        response?: {
+          status?: number;
+          data?: unknown;
+        };
+        message?: string;
+      };
+
+      this.logger.error('Amplitude deletion failed', {
+        userId,
+        status: amplitudeError.response?.status,
+        data: amplitudeError.response?.data,
+        message: amplitudeError.message,
+      });
+      throw new InternalServerErrorException('Amplitude deletion failed');
     }
   }
 
@@ -668,11 +722,9 @@ export class AuthService {
       target_calories: registerUserInfoRequestDto.target_calories,
       target_ratio: registerUserInfoRequestDto.target_ratio,
       subCode: null,
-      diet_management_status:
-        registerUserInfoRequestDto.diet_management_status,
+      diet_management_status: registerUserInfoRequestDto.diet_management_status,
       persona_type: registerUserInfoRequestDto.persona_type,
-      eating_out_freq_weekly:
-        registerUserInfoRequestDto.eating_out_freq_weekly,
+      eating_out_freq_weekly: registerUserInfoRequestDto.eating_out_freq_weekly,
       job_type: registerUserInfoRequestDto.job_type,
       lunch_location: registerUserInfoRequestDto.lunch_location ?? null,
       user: user,
