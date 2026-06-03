@@ -23,7 +23,9 @@
     "db:migration:create": "npm run db:typeorm -- migration:create src/migrations/ManualMigration",
     "db:migration:run": "npm run db:typeorm -- migration:run",
     "db:migration:revert": "npm run db:typeorm -- migration:revert",
-    "db:migration:show": "npm run db:typeorm -- migration:show"
+    "db:migration:show": "npm run db:typeorm -- migration:show",
+    "vector:index-menus": "ts-node -r tsconfig-paths/register src/vector/scripts/index-menu-vectors.ts",
+    "vector:test-search": "ts-node -r tsconfig-paths/register src/vector/scripts/test-vector-search.ts"
   },
   "dependencies": {
     "@arendajaelu/nestjs-passport-apple": "^2.0.5",
@@ -62,6 +64,7 @@
     "passport-apple-token": "^0.0.1",
     "passport-jwt": "^4.0.1",
     "passport-kakao": "^1.0.1",
+    "pg": "^8.21.0",
     "punycode": "^2.3.1",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",

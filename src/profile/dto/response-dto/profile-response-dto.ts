@@ -4,6 +4,13 @@ import { UserEntity } from '../../../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../../../auth/entity/user/userInfo.entity';
 
 export class ProfileResponseDto {
+  @ApiProperty({
+    type: Number,
+    description: '유저 id',
+    example: 1,
+  })
+  user_id: number;
+
   @ApiProperty({ example: '홍길동' })
   nickname: string;
 
@@ -83,11 +90,52 @@ export class ProfileResponseDto {
   })
   target_ratio: number[];
 
+  @ApiProperty({
+    type: [Number],
+    description: '식단 관리 상태',
+    example: [0, 2],
+    nullable: true,
+  })
+  diet_management_status: number[] | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '페르소나 타입',
+    example: 0,
+    nullable: true,
+  })
+  persona_type: number | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '주간 외식 빈도',
+    example: 3,
+    nullable: true,
+  })
+  eating_out_freq_weekly: number | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '직업 타입',
+    example: 0,
+    nullable: true,
+  })
+  job_type: number | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '점심 식사 위치',
+    example: 1,
+    nullable: true,
+  })
+  lunch_location: number | null;
+
   constructor(
     user: UserEntity,
     userInfo: UserInfoEntity,
     isSubscribed = false,
   ) {
+    this.user_id = user.id;
     this.nickname = user.nickname;
     this.name = user.name;
     this.role = user.authority.role;
@@ -101,5 +149,10 @@ export class ProfileResponseDto {
     this.target_weight = userInfo.target_weight;
     this.target_calories = userInfo.target_calories;
     this.target_ratio = userInfo.target_ratio;
+    this.diet_management_status = userInfo.diet_management_status ?? null;
+    this.persona_type = userInfo.persona_type ?? null;
+    this.eating_out_freq_weekly = userInfo.eating_out_freq_weekly ?? null;
+    this.job_type = userInfo.job_type ?? null;
+    this.lunch_location = userInfo.lunch_location ?? null;
   }
 }

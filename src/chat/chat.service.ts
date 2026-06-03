@@ -58,6 +58,34 @@ type FoodImageRecognitionFailureReason =
 type ChatClassification = {
   chat_category: ChatCategory;
   menu_names: string[];
+  context_dependent: boolean;
+  context_action:
+    | 'exclude_previous_recommendations'
+    | 'reuse_previous_conditions'
+    | 'evaluate_previous_menus'
+    | null;
+};
+
+type ChatContextSummaryItem = {
+  user_input: string;
+  chat_category: ChatCategory;
+  intro_message: string | null;
+  recommended_menu_names: string[];
+  feedback_menu_names: string[];
+  desired_brand: string | null;
+  desired_category: string | null;
+  meal_time: number | null;
+};
+
+type ChatContextSummary = {
+  messages: ChatContextSummaryItem[];
+  previous_user_input: string | null;
+  previous_category: ChatCategory | null;
+  previous_recommended_menu_names: string[];
+  previous_feedback_menu_names: string[];
+  previous_brand: string | null;
+  previous_category_name: string | null;
+  previous_meal_time: number | null;
 };
 
 type ParsedChatIntent = {
@@ -277,47 +305,41 @@ export class ChatService {
     }
 
     const userInfo = await this.getRequiredUserInfo(user.id);
-    if (this.isSimpleRecommendationRequest(input)) {
-      const parsedIntent = this.buildFallbackIntent(input);
-      const mealTime =
-        parsedIntent.meal_time ?? this.inferMealTimeFromClock(new Date());
-      const finalizedIntent: ParsedChatIntent = {
-        ...parsedIntent,
-        meal_time: mealTime,
-        keywords: [],
-      };
-      const candidateMenus = await this.getCandidateMenus(
-        user.id,
-        finalizedIntent,
-      );
+    const chatContext = await this.getRecentChatContext(user.id);
+    const classification = await this.classifyChatWithGemini(
+      input,
+      chatContext,
+    );
 
-      return await this.recommendWithPreparedContext({
+    if (classification.chat_category === 'feedback') {
+      return await this.feedback(
         user,
         userInfo,
         input,
-        intent: finalizedIntent,
-        candidateMenus,
-        skipGeneratedDescriptions: true,
-      });
-    }
-
-    const classification = await this.classifyChatWithGemini(input);
-
-    if (classification.chat_category === 'feedback') {
-      return await this.feedback(user, userInfo, input, classification);
+        this.applyChatContextToClassification(classification, chatContext),
+      );
     }
 
     if (classification.chat_category === 'general') {
       return await this.answerGeneralQuestion(user, userInfo, input);
     }
 
-    const parsedIntent = await this.parseIntentWithGemini(input, userInfo);
+    const parsedIntent = await this.parseIntentWithGemini(
+      input,
+      userInfo,
+      chatContext,
+      classification,
+    );
     const mealTime =
       parsedIntent.meal_time ?? this.inferMealTimeFromClock(new Date());
-    const finalizedIntent: ParsedChatIntent = {
-      ...parsedIntent,
-      meal_time: mealTime,
-    };
+    const finalizedIntent = this.applyChatContextToIntent(
+      {
+        ...parsedIntent,
+        meal_time: mealTime,
+      },
+      chatContext,
+      classification,
+    );
 
     const candidateMenus = await this.getCandidateMenus(
       user.id,
@@ -330,6 +352,7 @@ export class ChatService {
       input,
       intent: finalizedIntent,
       candidateMenus,
+      chatContext,
     });
   }
 
@@ -518,6 +541,7 @@ export class ChatService {
     skipGeneratedDescriptions?: boolean;
     imageUrl?: string;
     introSource?: ChatIntroMessageSource;
+    chatContext?: ChatContextSummary;
   }): Promise<ChatRecommendResponseDto> {
     const {
       user,
@@ -529,6 +553,7 @@ export class ChatService {
       skipGeneratedDescriptions = false,
       imageUrl,
       introSource = 'text_recommendation',
+      chatContext,
     } = params;
 
     const targetDate = this.resolveTargetDate();
@@ -586,7 +611,14 @@ export class ChatService {
       basis: rankingBasis,
       rankedMenus,
       recognizedCandidates,
-      fallback: this.buildIntroMessage(intent, userInfo),
+      fallback: this.buildRecommendationIntroFallback({
+        source: introSource,
+        input,
+        intent,
+        userInfo,
+        rankedMenus,
+      }),
+      chatContext,
     });
     if (imageUrl) {
       (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
@@ -710,13 +742,6 @@ export class ChatService {
     feedback.total_calories = roundToOneDecimal(combinationNutrition.calories);
     feedback.score = roundToOneDecimal(combinationScore.finalScore);
     feedback.is_appropriate = combinationScore.finalScore >= 65;
-    feedback.feedback_summary = this.buildFeedbackSummary(combinationScore);
-    feedback.feedback_reason = this.buildFeedbackReason(
-      matchedMenus.map(({ menu }) => menu),
-      combinationNutrition,
-      combinationScore,
-      userInfo,
-    );
 
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'feedback';
@@ -818,6 +843,89 @@ export class ChatService {
     );
   }
 
+  private async getRecentChatContext(
+    userId: number,
+    limit = 5,
+  ): Promise<ChatContextSummary> {
+    const chatHistoryList = await this.chatHistoryRepository.find({
+      where: {
+        user: { id: userId },
+      },
+      order: {
+        createdAt: 'DESC',
+        id: 'DESC',
+      },
+      take: limit,
+    });
+    const messages = chatHistoryList
+      .reverse()
+      .map((chatHistory) => this.toChatContextSummaryItem(chatHistory))
+      .filter((item): item is ChatContextSummaryItem => !!item);
+    const previousMessage = messages[messages.length - 1] ?? null;
+
+    return {
+      messages,
+      previous_user_input: previousMessage?.user_input ?? null,
+      previous_category: previousMessage?.chat_category ?? null,
+      previous_recommended_menu_names:
+        previousMessage?.recommended_menu_names ?? [],
+      previous_feedback_menu_names: previousMessage?.feedback_menu_names ?? [],
+      previous_brand: previousMessage?.desired_brand ?? null,
+      previous_category_name: previousMessage?.desired_category ?? null,
+      previous_meal_time: previousMessage?.meal_time ?? null,
+    };
+  }
+
+  private toChatContextSummaryItem(
+    chatHistory: ChatHistoryEntity,
+  ): ChatContextSummaryItem | null {
+    const payload = chatHistory.response_payload as
+      | ChatRecommendResponseDto
+      | undefined;
+    const chatCategory = payload?.chat_category;
+
+    if (
+      chatCategory !== 'recommendation' &&
+      chatCategory !== 'feedback' &&
+      chatCategory !== 'general'
+    ) {
+      return null;
+    }
+
+    const recommendedMenus =
+      payload.recommendations
+        ?.map((item) => item.menu_name)
+        .filter((menuName): menuName is string => !!menuName)
+        .slice(0, 10) ?? [];
+    const feedbackMenus =
+      payload.feedback?.menus
+        ?.map((item) => item.menu_name)
+        .filter((menuName): menuName is string => !!menuName)
+        .slice(0, 10) ?? [];
+    const recommendationBrands =
+      payload.recommendations
+        ?.map((item) => item.brand)
+        .filter((brand): brand is string => !!brand) ?? [];
+    const feedbackBrands =
+      payload.feedback?.menus
+        ?.map((item) => item.brand)
+        .filter((brand): brand is string => !!brand) ?? [];
+
+    return {
+      user_input: chatHistory.input_text,
+      chat_category: chatCategory,
+      intro_message: payload.intro_message ?? null,
+      recommended_menu_names: recommendedMenus,
+      feedback_menu_names: feedbackMenus,
+      desired_brand: this.inferDominantValue([
+        ...recommendationBrands,
+        ...feedbackBrands,
+      ]),
+      desired_category: null,
+      meal_time: null,
+    };
+  }
+
   async recordMealFromChat(
     user: UserEntity,
     chatMealRecordRequestDto: ChatMealRecordRequestDto,
@@ -875,44 +983,40 @@ export class ChatService {
     await this.chatHistoryRepository.save(chatHistory);
   }
 
-  private buildIntroMessage(
-    intent: ParsedChatIntent,
-    userInfo: UserInfoEntity,
-  ): string {
-    const goalTone =
-      userInfo.goal === 0
-        ? '다이어트식으로'
-        : userInfo.goal === 2
-          ? '벌크업 식단 관점에서'
-          : '균형 잡힌 식단 기준으로';
-    const brandPart = intent.desired_brand
-      ? `${intent.desired_brand}에서 `
-      : '';
-    const categoryPart = intent.desired_category
-      ? `${intent.desired_category} 중심으로 `
-      : '';
-    const focusPart = this.buildFocusPhrase(intent);
+  private buildRecommendationIntroFallback(params: {
+    source: ChatIntroMessageSource;
+    input: string;
+    intent: ParsedChatIntent;
+    userInfo: UserInfoEntity;
+    rankedMenus: RankedMenu[];
+  }): string {
+    const topMenu = params.rankedMenus[0]?.menu;
+    const topMenuName = topMenu?.name ?? '첫 번째 메뉴';
+    const isImageSource =
+      params.source === 'menu_board_recommendation' ||
+      params.source === 'food_image_feedback';
 
-    return `${focusPart}${goalTone} ${brandPart}${categoryPart}추천하는 메뉴를 정리해드렸어요!`;
-  }
+    if (isImageSource) {
+      return `사진에서 확인한 후보 중 ${topMenuName}이 가장 먼저 볼 만해요. 현재 목표와 오늘 섭취 흐름을 기준으로 다른 선택지도 함께 골랐습니다.`;
+    }
 
-  private buildFocusPhrase(intent: ParsedChatIntent): string {
-    if (intent.nutrition_focus.includes('high_protein')) {
-      return '단백질을 채우기 좋게 ';
+    if (params.intent.nutrition_focus.includes('high_protein')) {
+      return `${topMenuName}을 먼저 추천해요. 단백질을 챙기면서도 오늘 식사 흐름에서 부담이 덜한 후보들을 같이 골랐습니다.`;
     }
-    if (intent.nutrition_focus.includes('high_fat')) {
-      return '고지방 식단에 맞게 ';
+
+    if (params.intent.nutrition_focus.includes('light_meal')) {
+      return `${topMenuName}이 가볍게 시작하기 좋은 선택이에요. 남은 섭취량을 크게 흔들지 않는 메뉴 위주로 골랐습니다.`;
     }
-    if (intent.nutrition_focus.includes('low_carb')) {
-      return '저탄수 식단에 맞게 ';
+
+    if (params.intent.nutrition_focus.includes('hearty_meal')) {
+      return `${topMenuName}처럼 한 끼로 든든한 메뉴를 우선 골랐어요. 포만감과 전체 균형을 같이 봤습니다.`;
     }
-    if (intent.nutrition_focus.includes('light_meal')) {
-      return '가볍게 먹기 좋게 ';
+
+    if (params.intent.desired_category) {
+      return `${params.intent.desired_category} 중에서는 ${topMenuName}을 먼저 볼 만해요. 현재 목표에 맞춰 후보를 좁혀봤습니다.`;
     }
-    if (intent.nutrition_focus.includes('hearty_meal')) {
-      return '든든하게 먹기 좋게 ';
-    }
-    return '요청하신 조건에 맞춰 ';
+
+    return `지금은 ${topMenuName}을 먼저 추천해요. 오늘 섭취 흐름과 목표를 기준으로 무난하게 고를 수 있는 메뉴를 골랐습니다.`;
   }
 
   private resolveTargetDate(): Date {
@@ -2305,49 +2409,6 @@ ${JSON.stringify(candidates)}
     return `${menu.name}은(는) 전체 균형 점수가 높아 상위권에 선정되었습니다.`;
   }
 
-  private buildFeedbackSummary(score: ScoreBreakdown): string {
-    if (score.finalScore >= 80) {
-      return '현재 목표와 남은 섭취량 기준에서 꽤 잘 맞는 조합입니다.';
-    }
-
-    if (score.finalScore >= 65) {
-      return '현재 상황에서 무난하지만 다른 끼니 조절이 있으면 더 좋습니다.';
-    }
-
-    if (score.finalScore >= 45) {
-      return '먹을 수는 있지만 현재 목표 기준으로는 조금 아쉬운 조합입니다.';
-    }
-
-    return '현재 목표와 오늘 섭취 흐름을 보면 신중하게 조절하는 편이 좋습니다.';
-  }
-
-  private buildFeedbackReason(
-    menus: MenuEntity[],
-    nutrition: FeedbackNutrition,
-    score: ScoreBreakdown,
-    userInfo: UserInfoEntity,
-  ): string {
-    const goalLabel = this.goalToLabel(userInfo.goal);
-    const menuNames = menus.map((menu) => menu.name).join(', ');
-    const reasons = [
-      `총 ${roundToOneDecimal(nutrition.calories)}kcal, 탄수화물 ${roundToOneDecimal(nutrition.carbs)}g, 단백질 ${roundToOneDecimal(nutrition.protein)}g, 지방 ${roundToOneDecimal(nutrition.fat)}g 조합입니다.`,
-    ];
-
-    if (score.calorieScore < 55) {
-      reasons.push('현재 끼니 목표 칼로리와는 차이가 있는 편입니다.');
-    }
-
-    if (score.macroScore < 55) {
-      reasons.push('남은 탄단지 목표와의 정렬도는 높지 않습니다.');
-    }
-
-    if (score.sugarScore < 55) {
-      reasons.push('당 밀도도 함께 확인하는 것이 좋습니다.');
-    }
-
-    return `${menuNames} 조합은 ${goalLabel} 목표 기준 점수 ${roundToOneDecimal(score.finalScore)}점입니다. ${reasons.join(' ')}`;
-  }
-
   private buildFeedbackIntent(input: string): ParsedChatIntent {
     return {
       normalized_request: input,
@@ -2556,38 +2617,9 @@ ${JSON.stringify(candidates)}
     return response;
   }
 
-  private isSimpleRecommendationRequest(input: string): boolean {
-    const normalized = input.replace(/\s+/g, '');
-
-    if (
-      !/(추천|골라|뭐먹|메뉴|음식)/.test(normalized) ||
-      /(먹어도돼|괜찮|어때|피드백|평가|판단|먹었)/.test(normalized)
-    ) {
-      return false;
-    }
-
-    if (
-      /(제외|빼고|말고|만|중에서|위주|칼로리|kcal|단백질|탄수|저탄수|당|저당|지방|나트륨|카페인|디카페인|가볍|간단|든든|포만)/i.test(
-        normalized,
-      )
-    ) {
-      return false;
-    }
-
-    if (this.extractBrandKeyword(input) || this.extractCategoryKeyword(input)) {
-      return false;
-    }
-
-    const residue = normalized.replace(
-      /(지금|오늘|현재|이번|끼니|식사|밥|먹을|먹는|먹고싶은|메뉴|음식|추천|골라|뭐먹지|뭐먹을까|해줘|해주세요|줘|요|좀|하나|하나만|아무거나|괜찮은|좋은|알려줘|알려주세요)/g,
-      '',
-    );
-
-    return residue.length === 0;
-  }
-
   private async classifyChatWithGemini(
     input: string,
+    chatContext: ChatContextSummary,
   ): Promise<ChatClassification> {
     const prompt = `
 사용자 입력을 채팅 카테고리로 분류하고 JSON object만 반환해.
@@ -2599,6 +2631,10 @@ ${JSON.stringify(candidates)}
 - feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
 - recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
 - general일 때는 menu_names를 빈 배열로 반환해
+- 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
+- "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
+- "그 조건으로", "비슷한 걸로", "아까처럼"처럼 이전 조건을 유지해야 하면 context_action은 "reuse_previous_conditions"
+- "그거 먹어도 돼?", "아까 거 괜찮아?"처럼 이전 메뉴를 평가해야 하면 feedback 및 "evaluate_previous_menus"
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 
 예시:
@@ -2608,6 +2644,11 @@ ${JSON.stringify(candidates)}
 "탄수화물은 언제 먹는 게 좋아?" -> general
 "다이어트 중 나트륨 줄이는 법 알려줘" -> general
 "단백질 하루에 얼마나 먹어야 해?" -> general
+"그거 말고 다른 거 추천해줘" -> recommendation, context_dependent=true, context_action="exclude_previous_recommendations"
+"아까 거 먹어도 돼?" -> feedback, context_dependent=true, context_action="evaluate_previous_menus"
+
+최근 대화 요약:
+${JSON.stringify(chatContext)}
 
 입력:
 ${input}
@@ -2615,7 +2656,9 @@ ${input}
 반환 shape:
 {
   "chat_category": "recommendation",
-  "menu_names": []
+  "menu_names": [],
+  "context_dependent": false,
+  "context_action": null
 }
 `.trim();
 
@@ -2627,21 +2670,189 @@ ${input}
           ? 'general'
           : 'recommendation';
 
+    const contextDependent =
+      typeof data?.context_dependent === 'boolean'
+        ? data.context_dependent
+        : this.isContextDependentInput(input);
+    const contextAction =
+      this.normalizeContextAction(data?.context_action) ??
+      this.inferContextAction(input, chatCategory, contextDependent);
+
     return {
       chat_category: chatCategory,
       menu_names:
         chatCategory === 'feedback'
           ? this.normalizeFreeTextArray(
               data?.menu_names,
-              this.extractFeedbackMenuNamesFallback(input),
+              this.extractFeedbackMenuNamesFallback(input, chatContext),
             )
           : chatCategory === 'general'
             ? []
-          : this.normalizeFreeTextArray(data?.menu_names, []),
+            : this.normalizeFreeTextArray(data?.menu_names, []),
+      context_dependent: contextDependent,
+      context_action: contextAction,
     };
   }
 
-  private extractFeedbackMenuNamesFallback(input: string): string[] {
+  private normalizeContextAction(
+    value: unknown,
+  ): ChatClassification['context_action'] {
+    return value === 'exclude_previous_recommendations' ||
+      value === 'reuse_previous_conditions' ||
+      value === 'evaluate_previous_menus'
+      ? value
+      : null;
+  }
+
+  private isContextDependentInput(input: string): boolean {
+    const normalized = input.replace(/\s+/g, '');
+    return /(그거|그것|이거|이것|저거|저것|아까|방금|전에|이전|다른거|다른것|다른메뉴|비슷한|말고|빼고|제외)/.test(
+      normalized,
+    );
+  }
+
+  private inferContextAction(
+    input: string,
+    chatCategory: ChatCategory,
+    contextDependent: boolean,
+  ): ChatClassification['context_action'] {
+    if (!contextDependent) {
+      return null;
+    }
+
+    const normalized = input.replace(/\s+/g, '');
+
+    if (/(말고|빼고|제외|다른거|다른것|다른메뉴)/.test(normalized)) {
+      return 'exclude_previous_recommendations';
+    }
+
+    if (
+      chatCategory === 'feedback' &&
+      /(먹어도돼|괜찮|어때|피드백|평가|판단)/.test(normalized)
+    ) {
+      return 'evaluate_previous_menus';
+    }
+
+    if (/(비슷한|그조건|그대로|아까처럼|전에처럼)/.test(normalized)) {
+      return 'reuse_previous_conditions';
+    }
+
+    return null;
+  }
+
+  private applyChatContextToIntent(
+    intent: ParsedChatIntent,
+    chatContext: ChatContextSummary,
+    classification: ChatClassification,
+  ): ParsedChatIntent {
+    const nextIntent: ParsedChatIntent = {
+      ...intent,
+      include: {
+        brands: [...intent.include.brands],
+        categories: [...intent.include.categories],
+        menu_names: [...intent.include.menu_names],
+        keywords: [...intent.include.keywords],
+      },
+      exclude: {
+        brands: [...intent.exclude.brands],
+        categories: [...intent.exclude.categories],
+        menu_names: [...intent.exclude.menu_names],
+        keywords: [...intent.exclude.keywords],
+      },
+      keywords: [...intent.keywords],
+      nutrition_focus: [...intent.nutrition_focus],
+    };
+
+    if (!classification.context_dependent) {
+      return nextIntent;
+    }
+
+    if (classification.context_action === 'exclude_previous_recommendations') {
+      nextIntent.exclude.menu_names = this.mergeTextValues(
+        nextIntent.exclude.menu_names,
+        chatContext.previous_recommended_menu_names,
+        chatContext.previous_feedback_menu_names,
+      );
+    }
+
+    if (classification.context_action === 'reuse_previous_conditions') {
+      if (!nextIntent.desired_brand && chatContext.previous_brand) {
+        nextIntent.desired_brand = chatContext.previous_brand;
+      }
+      if (!nextIntent.desired_category && chatContext.previous_category_name) {
+        nextIntent.desired_category = chatContext.previous_category_name;
+      }
+      if (
+        nextIntent.meal_time === null &&
+        chatContext.previous_meal_time !== null
+      ) {
+        nextIntent.meal_time = chatContext.previous_meal_time;
+      }
+    }
+
+    return nextIntent;
+  }
+
+  private applyChatContextToClassification(
+    classification: ChatClassification,
+    chatContext: ChatContextSummary,
+  ): ChatClassification {
+    if (
+      classification.chat_category !== 'feedback' ||
+      classification.context_action !== 'evaluate_previous_menus'
+    ) {
+      return classification;
+    }
+
+    const contextMenuNames = this.mergeTextValues(
+      chatContext.previous_feedback_menu_names,
+      chatContext.previous_recommended_menu_names,
+    ).slice(0, 5);
+
+    if (contextMenuNames.length === 0) {
+      return classification;
+    }
+
+    const menuNames = classification.menu_names.filter(
+      (menuName) => !this.isContextPointerText(menuName),
+    );
+
+    return {
+      ...classification,
+      menu_names: menuNames.length > 0 ? menuNames : contextMenuNames,
+    };
+  }
+
+  private isContextPointerText(value: string): boolean {
+    const normalized = value.replace(/\s+/g, '');
+    return /^(그거|그것|이거|이것|저거|저것|아까|방금|전에|이전|아까거|방금거|이전거)$/.test(
+      normalized,
+    );
+  }
+
+  private mergeTextValues(...groups: string[][]): string[] {
+    const seen = new Set<string>();
+    const merged: string[] = [];
+
+    groups.flat().forEach((value) => {
+      const normalized = value.trim();
+      const key = normalized.toLowerCase();
+
+      if (!normalized || seen.has(key)) {
+        return;
+      }
+
+      seen.add(key);
+      merged.push(normalized);
+    });
+
+    return merged;
+  }
+
+  private extractFeedbackMenuNamesFallback(
+    input: string,
+    chatContext?: ChatContextSummary,
+  ): string[] {
     const normalized = input
       .replace(/먹어도\s*돼|괜찮아|어때|피드백|평가|판단|먹었는데/g, ' ')
       .replace(/[^\w가-힣\s]/g, ' ')
@@ -2649,6 +2860,12 @@ ${input}
       .trim();
 
     if (!normalized) {
+      if (chatContext && this.isContextDependentInput(input)) {
+        return [
+          ...chatContext.previous_feedback_menu_names,
+          ...chatContext.previous_recommended_menu_names,
+        ].slice(0, 5);
+      }
       return [];
     }
 
@@ -2662,6 +2879,8 @@ ${input}
   private async parseIntentWithGemini(
     input: string,
     userInfo: UserInfoEntity,
+    chatContext?: ChatContextSummary,
+    classification?: ChatClassification,
   ): Promise<ParsedChatIntent> {
     // Gemini 호출이 실패해도 서비스가 동작하도록 규칙 기반 fallback 스키마를 먼저 준비합니다.
     const fallback = this.buildFallbackIntent(input);
@@ -2689,11 +2908,21 @@ ${input}
 - exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
 - nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
 - caffeine_allowed: "카페인 없는", "디카페인", "카페인 빼고"는 false, 명확하지 않으면 null
+- 최근 대화 요약이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 걸로"처럼 이전 대화를 가리키면 최근 대화의 조건/메뉴를 반영해 normalized_request, include, exclude를 채워
+- context_action이 "exclude_previous_recommendations"이면 이전 추천 메뉴명은 exclude.menu_names에 넣어
+- context_action이 "reuse_previous_conditions"이면 이전 요청의 브랜드/카테고리/끼니 맥락은 유지하고, 현재 입력에서 바꾼 조건만 덮어써
+- context_action이 "evaluate_previous_menus"이면 추천 intent가 아니라 피드백용 메뉴명을 유지해야 하므로 이전 메뉴명을 참고해
 
 사용자 프로필:
 goal=${this.goalToLabel(userInfo.goal)}
 target_calories=${userInfo.target_calories}
 target_ratio=${JSON.stringify(this.normalizeTargetRatio(userInfo.target_ratio))}
+
+최근 대화 요약:
+${JSON.stringify(chatContext ?? null)}
+
+채팅 분류:
+${JSON.stringify(classification ?? null)}
 
 입력 문장:
 ${input}
@@ -3152,6 +3381,7 @@ ${JSON.stringify({
     feedback?: ChatFeedbackResponseDto;
     matchedMenus?: Array<{ inputMenuName: string; menu: MenuEntity }>;
     extractedItems?: unknown[];
+    chatContext?: ChatContextSummary;
   }): Promise<string> {
     const sourceLabelMap: Record<ChatIntroMessageSource, string> = {
       text_recommendation: '사용자 텍스트 기반 메뉴 추천',
@@ -3160,12 +3390,15 @@ ${JSON.stringify({
       food_image_feedback: '음식 사진 기반 메뉴 피드백',
     };
 
+    const isImageSource =
+      params.source === 'menu_board_recommendation' ||
+      params.source === 'food_image_feedback';
     const rankedMenuPayload = params.rankedMenus?.map(
       ({ menu, score }, index) => ({
         rank: index + 1,
         menu_id: menu.id,
         menu: menu.name,
-        brand: menu.brand,
+        brand: isImageSource ? null : menu.brand,
         category: menu.category,
         calories: roundNullableToOneDecimal(menu.calories) ?? 0,
         score: roundToOneDecimal(score.finalScore),
@@ -3178,25 +3411,28 @@ ${JSON.stringify({
         input_menu_name: inputMenuName,
         menu_id: menu.id,
         menu: menu.name,
-        brand: menu.brand,
+        brand: isImageSource ? null : menu.brand,
         category: menu.category,
         calories: roundNullableToOneDecimal(menu.calories) ?? 0,
       }),
     );
+    const promptPayloadReplacer = (key: string, value: unknown) =>
+      isImageSource && key === 'brand' ? undefined : value;
 
     const prompt = `
 사용자에게 채팅 응답의 첫 문장 intro_message를 한국어 JSON object로 작성해줘.
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
 
 작성 규칙:
-- intro_message는 180~400자 정도의 자연스러운 한국어 답변
-- 한 문장으로 길게 쓰지 말고, 2~4개의 짧은 문단으로 줄바꿈을 넣어 작성
+- intro_message는 90~200자 정도의 자연스러운 한국어 답변
+- 한 문장으로 길게 쓰지 말고, 1~2개의 짧은 문단으로 줄바꿈을 넣어 작성
 - JSON 문자열 안에 줄바꿈은 \\n으로 포함
 - 사용자가 "먹어도 돼?", "괜찮아?"처럼 물으면 먼저 명확하게 답하고, 그 뒤 조건과 조절법을 설명
+- "안녕하세요", "안녕하세요!", "반가워요" 같은 인사 문구로 시작하지 않기
 - 딱딱한 템플릿처럼 쓰지 말고, 실제 코치가 말하듯 현실적인 톤으로 작성
-- 메뉴명/브랜드/목표/오늘 섭취 흐름/사진 인식 맥락 중 중요한 것을 자연스럽게 반영
+- 메뉴명/목표/오늘 섭취 흐름/사진 인식 맥락 중 중요한 것을 자연스럽게 반영
 - 추천 메뉴나 피드백 메뉴명은 가장 중요한 상위 1개만 언급
-- 나머지 분량은 그 메뉴를 고른 이유, 현재 목표와의 관계, 현실적인 조절 팁으로 채우기
+- 나머지 분량은 현재 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - 단품/조합/다음 끼니 조절 같은 실행 가능한 팁은 1개만 포함
 - 과장, 의학적 단정, 확정적인 건강 효과 표현은 피하기
@@ -3204,6 +3440,8 @@ ${JSON.stringify({
 - 장황한 응원 문구나 반복 설명은 쓰지 않기
 - 느낌표는 필요할 때만 최대 1개 사용
 - 사용자 텍스트의 종류가 메뉴 피드백이어도 위 분량, 줄바꿈, 상위 1개 메뉴명 언급, 내부 계산 기준 미노출 규칙을 동일하게 적용
+- 사용자 텍스트의 종류가 이미지 기반이면 특정 브랜드명을 절대 언급하지 않기
+- 이미지 기반 답변에서 "보내주신 사진은 {브랜드}의 {메뉴}로 보이네요"처럼 브랜드를 추정하거나 단정하는 표현 금지
 
 사용자 텍스트의 종류:
 ${sourceLabelMap[params.source]}
@@ -3211,39 +3449,48 @@ ${sourceLabelMap[params.source]}
 사용자 입력:
 ${params.input}
 
+최근 대화 요약:
+${JSON.stringify(params.chatContext ?? null, promptPayloadReplacer)}
+
 사용자 정보:
-${JSON.stringify({
-  goal: this.goalToLabel(params.userInfo.goal),
-  target_calories: params.userInfo.target_calories,
-  target_ratio: this.normalizeTargetRatio(params.userInfo.target_ratio),
-  consumed_today: {
-    calories: roundToOneDecimal(params.dailyNutrition.calories),
-    carbs: roundToOneDecimal(params.dailyNutrition.carbs),
-    protein: roundToOneDecimal(params.dailyNutrition.protein),
-    fat: roundToOneDecimal(params.dailyNutrition.fat),
+${JSON.stringify(
+  {
+    goal: this.goalToLabel(params.userInfo.goal),
+    target_calories: params.userInfo.target_calories,
+    target_ratio: this.normalizeTargetRatio(params.userInfo.target_ratio),
+    consumed_today: {
+      calories: roundToOneDecimal(params.dailyNutrition.calories),
+      carbs: roundToOneDecimal(params.dailyNutrition.carbs),
+      protein: roundToOneDecimal(params.dailyNutrition.protein),
+      fat: roundToOneDecimal(params.dailyNutrition.fat),
+    },
+    remaining_today: {
+      calories: roundToOneDecimal(params.basis.remainingCalories),
+      carbs: roundToOneDecimal(params.basis.remainingMacros.carbs),
+      protein: roundToOneDecimal(params.basis.remainingMacros.protein),
+      fat: roundToOneDecimal(params.basis.remainingMacros.fat),
+    },
   },
-  remaining_today: {
-    calories: roundToOneDecimal(params.basis.remainingCalories),
-    carbs: roundToOneDecimal(params.basis.remainingMacros.carbs),
-    protein: roundToOneDecimal(params.basis.remainingMacros.protein),
-    fat: roundToOneDecimal(params.basis.remainingMacros.fat),
-  },
-})}
+  promptPayloadReplacer,
+)}
 
 정규화 의도:
-${JSON.stringify(params.intent ?? null)}
+${JSON.stringify(params.intent ?? null, promptPayloadReplacer)}
 
 알고리즘 추천 메뉴 랭크:
-${JSON.stringify(rankedMenuPayload ?? null)}
+${JSON.stringify(rankedMenuPayload ?? null, promptPayloadReplacer)}
 
 사진/텍스트에서 추출한 후보 랭크:
-${JSON.stringify(params.recognizedCandidates ?? params.extractedItems ?? null)}
+${JSON.stringify(
+  params.recognizedCandidates ?? params.extractedItems ?? null,
+  promptPayloadReplacer,
+)}
 
 피드백 메뉴 랭크:
-${JSON.stringify(matchedMenuPayload ?? null)}
+${JSON.stringify(matchedMenuPayload ?? null, promptPayloadReplacer)}
 
 피드백 결과:
-${JSON.stringify(params.feedback ?? null)}
+${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
 
 반환 shape:
 {
@@ -3259,7 +3506,7 @@ ${JSON.stringify(params.feedback ?? null)}
         return params.fallback;
       }
 
-      return introMessage.slice(0, 600);
+      return introMessage.slice(0, 300);
     } catch {
       return params.fallback;
     }

@@ -11,4 +11,34 @@ export class CreateInquiryRequestDto {
   @IsString()
   @MaxLength(5000)
   content: string;
+
+  @ApiProperty({
+    type: String,
+    description: '앱 버전',
+    example: '1.2.3',
+  })
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(50)
+  app_version: string;
+
+  @ApiProperty({
+    type: String,
+    description: '운영체제 이름',
+    example: 'iOS',
+  })
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(50)
+  os_name: string;
+
+  @ApiProperty({
+    type: String,
+    description: '운영체제 버전',
+    example: '17.5.1',
+  })
+  @IsNotEmpty()
+  @IsString()
+  @MaxLength(50)
+  os_version: string;
 }

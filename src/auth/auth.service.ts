@@ -668,6 +668,13 @@ export class AuthService {
       target_calories: registerUserInfoRequestDto.target_calories,
       target_ratio: registerUserInfoRequestDto.target_ratio,
       subCode: null,
+      diet_management_status:
+        registerUserInfoRequestDto.diet_management_status,
+      persona_type: registerUserInfoRequestDto.persona_type,
+      eating_out_freq_weekly:
+        registerUserInfoRequestDto.eating_out_freq_weekly,
+      job_type: registerUserInfoRequestDto.job_type,
+      lunch_location: registerUserInfoRequestDto.lunch_location ?? null,
       user: user,
     });
 

@@ -28,19 +28,4 @@ export class ChatFeedbackResponseDto {
     example: true,
   })
   is_appropriate: boolean;
-
-  @ApiProperty({
-    type: String,
-    description: '조합 한 줄 피드백',
-    example: '현재 목표와 남은 칼로리 기준에서 무난한 조합입니다.',
-  })
-  feedback_summary: string;
-
-  @ApiProperty({
-    type: String,
-    description: '조합 상세 피드백',
-    example:
-      '두 메뉴를 합산하면 현재 끼니 목표 칼로리와 크게 벗어나지 않아 무난합니다.',
-  })
-  feedback_reason: string;
 }

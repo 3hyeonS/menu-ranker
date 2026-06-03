@@ -151,6 +151,9 @@ export class ProfileService {
     await this.profileInquiryRepository.save(
       this.profileInquiryRepository.create({
         content: dto.content.trim(),
+        app_version: dto.app_version.trim(),
+        os_name: dto.os_name.trim(),
+        os_version: dto.os_version.trim(),
         user,
       }),
     );

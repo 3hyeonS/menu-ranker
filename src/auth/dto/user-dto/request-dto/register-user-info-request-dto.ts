@@ -13,6 +13,7 @@ import {
   Max,
   Min,
   Validate,
+  ValidateIf,
   ValidationArguments,
   ValidatorConstraint,
   ValidatorConstraintInterface,
@@ -20,6 +21,7 @@ import {
 import { oneDecimalNumberOptions } from '../../../../utils/number.util';
 
 const CURRENT_YEAR = new Date().getFullYear();
+const WORKER_JOB_TYPE = 0;
 
 @ValidatorConstraint({ name: 'sumTo100', async: false })
 export class SumTo100Constraint implements ValidatorConstraintInterface {
@@ -142,4 +144,60 @@ export class RegisterUserInfoRequestDto {
   @IsOptional()
   @IsString()
   subCode?: string;
+
+  @ApiProperty({
+    type: [Number],
+    description: '식단 관리 상태',
+    example: [0, 2],
+  })
+  @IsNotEmpty()
+  @IsArray()
+  @IsInt({ each: true })
+  diet_management_status: number[];
+
+  @ApiProperty({
+    type: Number,
+    description: '페르소나 타입',
+    example: 0,
+  })
+  @IsNotEmpty()
+  @IsInt()
+  persona_type: number;
+
+  @ApiProperty({
+    type: Number,
+    description: '주간 외식 빈도',
+    example: 3,
+  })
+  @IsNotEmpty()
+  @IsInt()
+  @Min(0)
+  eating_out_freq_weekly: number;
+
+  @ApiProperty({
+    type: Number,
+    description: `직업 타입. ${WORKER_JOB_TYPE}이면 직장인으로 판단해 lunch_location을 받습니다.`,
+    example: WORKER_JOB_TYPE,
+  })
+  @IsNotEmpty()
+  @IsInt()
+  job_type: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      '점심 식사 위치. job_type이 직장인이 아닌 경우 요청값이 있어도 null로 처리됩니다.',
+    example: 1,
+    nullable: true,
+    required: false,
+  })
+  @Transform(({ value, obj }) =>
+    obj?.job_type === WORKER_JOB_TYPE ? value : null,
+  )
+  @ValidateIf((dto: RegisterUserInfoRequestDto) =>
+    dto.job_type === WORKER_JOB_TYPE,
+  )
+  @IsNotEmpty()
+  @IsInt()
+  lunch_location: number | null;
 }

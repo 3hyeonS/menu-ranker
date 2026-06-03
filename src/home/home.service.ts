@@ -25,6 +25,8 @@ import { DeleteMealRequestDto } from './dto/request-dto/delete-meal-request-dto'
 import { DateRequestDto } from './dto/request-dto/date-request-dto';
 import { MealRecordResponseDto } from './dto/response-dto/meal-record-response-dto';
 import { MealResponseDto } from './dto/response-dto/meal-response-dto';
+import { MealRecordedDatesRequestDto } from './dto/request-dto/meal-recorded-dates-request-dto';
+import { MealRecordedDatesResponseDto } from './dto/response-dto/meal-recorded-dates-response-dto';
 import { RegisterMenuRequestDto } from './dto/request-dto/register-menu-request-dto';
 import { SearchBrandResponseDto } from './dto/response-dto/search-brand-response-dto';
 import { ModifyMenuRequestDto } from './dto/request-dto/modify-menu-request-dto';
@@ -1209,6 +1211,70 @@ failure_reason enum:
           ),
       ),
     );
+  }
+
+  async getMealRecordedDates(
+    user: UserEntity,
+    dto: MealRecordedDatesRequestDto,
+  ): Promise<MealRecordedDatesResponseDto> {
+    const startOfRange = this.parseDateOnly(dto.startDate, false);
+    const endOfRange = this.parseDateOnly(dto.endDate, true);
+
+    if (startOfRange > endOfRange) {
+      throw new BadRequestException(
+        'startDate must be before or equal to endDate',
+      );
+    }
+
+    const rows = await this.mealRepository
+      .createQueryBuilder('meal')
+      .select('DATE(meal.date)', 'recordedDate')
+      .where('meal.userId = :userId', { userId: user.id })
+      .andWhere('meal.date BETWEEN :startOfRange AND :endOfRange', {
+        startOfRange,
+        endOfRange,
+      })
+      .groupBy('DATE(meal.date)')
+      .orderBy('DATE(meal.date)', 'ASC')
+      .getRawMany<{ recordedDate: string | Date }>();
+
+    return new MealRecordedDatesResponseDto(
+      rows.map((row) => this.formatDateOnly(row.recordedDate)),
+    );
+  }
+
+  private parseDateOnly(date: string, endOfDay: boolean): Date {
+    const [year, month, day] = date.split('-').map(Number);
+    const parsedDate = new Date(
+      year,
+      month - 1,
+      day,
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0,
+    );
+
+    if (
+      parsedDate.getFullYear() !== year ||
+      parsedDate.getMonth() !== month - 1 ||
+      parsedDate.getDate() !== day
+    ) {
+      throw new BadRequestException('Invalid date');
+    }
+
+    return parsedDate;
+  }
+
+  private formatDateOnly(date: string | Date): string {
+    if (typeof date === 'string') {
+      return date.slice(0, 10);
+    }
+
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   // 브랜드 검색

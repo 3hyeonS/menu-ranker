@@ -84,6 +84,46 @@ export class UserInfoResponseDto {
   subCode: string | null;
 
   @ApiProperty({
+    type: [Number],
+    description: '식단 관리 상태',
+    example: [0, 2],
+    nullable: true,
+  })
+  diet_management_status: number[] | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '페르소나 타입',
+    example: 0,
+    nullable: true,
+  })
+  persona_type: number | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '주간 외식 빈도',
+    example: 3,
+    nullable: true,
+  })
+  eating_out_freq_weekly: number | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '직업 타입',
+    example: 0,
+    nullable: true,
+  })
+  job_type: number | null;
+
+  @ApiProperty({
+    type: Number,
+    description: '점심 식사 위치',
+    example: 1,
+    nullable: true,
+  })
+  lunch_location: number | null;
+
+  @ApiProperty({
     type: Boolean,
     description: '활성 구독 여부',
     example: true,
@@ -108,6 +148,11 @@ export class UserInfoResponseDto {
     this.target_calories = userInfo.target_calories;
     this.target_ratio = userInfo.target_ratio;
     this.subCode = userInfo.subCode;
+    this.diet_management_status = userInfo.diet_management_status ?? null;
+    this.persona_type = userInfo.persona_type ?? null;
+    this.eating_out_freq_weekly = userInfo.eating_out_freq_weekly ?? null;
+    this.job_type = userInfo.job_type ?? null;
+    this.lunch_location = userInfo.lunch_location ?? null;
     this.is_subscribed = isSubscribed;
   }
 }

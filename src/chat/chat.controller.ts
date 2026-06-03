@@ -154,10 +154,6 @@ export class ChatController {
                   total_calories: 744,
                   score: 63.2,
                   is_appropriate: false,
-                  feedback_summary:
-                    '먹을 수는 있지만 현재 목표 기준으로는 조금 아쉬운 조합입니다.',
-                  feedback_reason:
-                    '싸이버거, 콜라 조합은 감량 목표 기준 점수 63.2점입니다. 총 744kcal 조합이라 오늘 남은 섭취 흐름 기준으로는 다소 부담이 있는 편입니다.',
                 },
               },
             },

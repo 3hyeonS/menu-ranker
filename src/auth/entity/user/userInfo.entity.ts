@@ -60,6 +60,21 @@ export class UserInfoEntity {
   @Column({ type: 'varchar', name: 'subCode', nullable: true })
   subCode: string;
 
+  @Column({ type: 'json', name: 'diet_management_status', nullable: true })
+  diet_management_status: number[];
+
+  @Column({ type: 'int', name: 'persona_type', nullable: true })
+  persona_type: number;
+
+  @Column({ type: 'int', name: 'eating_out_freq_weekly', nullable: true })
+  eating_out_freq_weekly: number;
+
+  @Column({ type: 'int', name: 'job_type', nullable: true })
+  job_type: number;
+
+  @Column({ type: 'int', name: 'lunch_location', nullable: true })
+  lunch_location: number | null;
+
   @OneToOne(() => UserEntity, (user) => user.userInfo, {
     nullable: false,
     onUpdate: 'CASCADE',

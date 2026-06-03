@@ -37,6 +37,8 @@ import { RegisterMealRequestDto } from './dto/request-dto/register-meal-request-
 import { DeleteMealRequestDto } from './dto/request-dto/delete-meal-request-dto';
 import { DateRequestDto } from './dto/request-dto/date-request-dto';
 import { MealRecordResponseDto } from './dto/response-dto/meal-record-response-dto';
+import { MealRecordedDatesRequestDto } from './dto/request-dto/meal-recorded-dates-request-dto';
+import { MealRecordedDatesResponseDto } from './dto/response-dto/meal-recorded-dates-response-dto';
 import { RegisterMenuRequestDto } from './dto/request-dto/register-menu-request-dto';
 import { SearchBrandResponseDto } from './dto/response-dto/search-brand-response-dto';
 import { ModifyMenuRequestDto } from './dto/request-dto/modify-menu-request-dto';
@@ -578,6 +580,38 @@ export class HomeController {
     @Body() dateRequestDto: DateRequestDto,
   ): Promise<MealRecordResponseDto> {
     return await this.homeService.getMealRecord(user, dateRequestDto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '특정 기간 내 식사 기록 날짜 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '특정 기간 내 식사 기록 날짜 조회 성공',
+    message: 'Meal recorded dates returned successfully',
+    model: MealRecordedDatesResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Meal recorded dates returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/getMealRecordedDates')
+  async getMealRecordedDates(
+    @GetUser() user: UserEntity,
+    @Body() dto: MealRecordedDatesRequestDto,
+  ): Promise<MealRecordedDatesResponseDto> {
+    return await this.homeService.getMealRecordedDates(user, dto);
   }
 
   // 영양성분 등록

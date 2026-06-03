@@ -72,6 +72,21 @@ $ sudo -u postgres psql -d melo_vector
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
+Create the vector search schema:
+
+```bash
+$ PGPASSWORD=vector_password psql \
+  -h localhost \
+  -p 5432 \
+  -U vector_user \
+  -d melo_vector \
+  -f scripts/vector-db/001_create_menu_vector_index.sql
+```
+
+The first schema uses `vector(768)`, which matches the planned text embedding
+dimension. If the embedding model changes, update the vector dimensions before
+indexing menus.
+
 Connection settings are read from `.env`. If PostgreSQL uses the default local
 port, use `5432`:
 
@@ -81,6 +96,78 @@ VECTOR_DB_PORT=5432
 VECTOR_DB_USERNAME=vector_user
 VECTOR_DB_PASSWORD=vector_password
 VECTOR_DB_NAME=melo_vector
+```
+
+Embedding settings:
+
+```env
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+VECTOR_EMBEDDING_DIMENSION=768
+```
+
+Install the PostgreSQL driver before importing `VectorModule` into runtime
+modules:
+
+```bash
+$ npm install pg
+```
+
+Index MySQL menu rows into pgvector:
+
+```bash
+$ npm run vector:index-menus
+```
+
+Optional batch controls:
+
+```env
+VECTOR_INDEX_BATCH_SIZE=100
+VECTOR_INDEX_START_AFTER_ID=0
+VECTOR_INDEX_STOP_AFTER_ID=1000
+VECTOR_INDEX_SKIP_EXISTING=true
+VECTOR_INDEX_RETRY_COUNT=2
+VECTOR_INDEX_RETRY_DELAY_MS=1000
+VECTOR_INDEX_THROTTLE_MS=0
+```
+
+For the first full indexing run, increase the stop id gradually:
+
+```bash
+$ VECTOR_INDEX_BATCH_SIZE=50 \
+  VECTOR_INDEX_START_AFTER_ID=0 \
+  VECTOR_INDEX_STOP_AFTER_ID=1000 \
+  VECTOR_INDEX_SKIP_EXISTING=true \
+  npm run vector:index-menus
+```
+
+If the process stops midway, restart with the last printed `cursor` as
+`VECTOR_INDEX_START_AFTER_ID`. With `VECTOR_INDEX_SKIP_EXISTING=true`, already
+indexed menu ids are skipped before calling the embedding API.
+
+Test vector candidate retrieval:
+
+```bash
+$ VECTOR_TEST_QUERY="버거킹 왔는데 가볍게 먹을만한 메뉴 추천해줘" \
+  VECTOR_TEST_LIMIT=10 \
+  npm run vector:test-search
+```
+
+You can use the same command with food-image description text:
+
+```bash
+$ VECTOR_TEST_QUERY="바삭한 튀김옷을 입은 닭고기 패티와 양상추, 소스가 들어간 햄버거" \
+  VECTOR_TEST_LIMIT=10 \
+  npm run vector:test-search
+```
+
+Optional filters:
+
+```env
+VECTOR_TEST_USER_ID=1
+VECTOR_TEST_BRAND=버거킹
+VECTOR_TEST_CATEGORY=버거
+VECTOR_TEST_MAX_CALORIES=500
+VECTOR_TEST_MIN_PROTEIN=20
 ```
 
 ## Compile and run the project
