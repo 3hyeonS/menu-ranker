@@ -202,6 +202,11 @@ type GeminiDescription = {
   recommendation_reason: string;
 };
 
+type ChatTimingLogger = {
+  mark: (stage: string, extra?: Record<string, unknown>) => void;
+  end: (extra?: Record<string, unknown>) => void;
+};
+
 @Injectable()
 export class ChatService {
   private readonly mealTimeLabelMap = ['아침', '점심', '저녁', '간식', '야식'];
@@ -240,6 +245,50 @@ export class ChatService {
 
   private maskSecret(value?: string): string {
     return value ? `${value.slice(0, 8)}...(${value.length})` : 'NOT_SET';
+  }
+
+  private createChatTimingLogger(
+    flow: string,
+    base: Record<string, unknown> = {},
+  ): ChatTimingLogger {
+    const enabled = ['1', 'true', 'yes', 'y'].includes(
+      (process.env.CHAT_TIMING_LOG_ENABLED ?? '').toLowerCase(),
+    );
+    const startedAt = Date.now();
+    let previousAt = startedAt;
+
+    if (!enabled) {
+      return {
+        mark: () => undefined,
+        end: () => undefined,
+      };
+    }
+
+    return {
+      mark: (stage, extra = {}) => {
+        const now = Date.now();
+        console.log('[CHAT_TIMING]', {
+          flow,
+          stage,
+          elapsedMs: now - startedAt,
+          deltaMs: now - previousAt,
+          ...base,
+          ...extra,
+        });
+        previousAt = now;
+      },
+      end: (extra = {}) => {
+        const now = Date.now();
+        console.log('[CHAT_TIMING]', {
+          flow,
+          stage: 'completed',
+          elapsedMs: now - startedAt,
+          deltaMs: now - previousAt,
+          ...base,
+          ...extra,
+        });
+      },
+    };
   }
 
   private logGeminiError(context: string, error: unknown): void {
@@ -313,13 +362,22 @@ export class ChatService {
       throw new BadRequestException('input must not be empty');
     }
 
+    const timing = this.createChatTimingLogger('recommend', {
+      userId: user.id,
+      inputLength: input.length,
+    });
     const userInfo = await this.getRequiredUserInfo(user.id);
+    timing.mark('user_info_loaded');
     const chatContext = await this.getRecentChatContext(user.id);
+    timing.mark('chat_context_loaded');
     const analysis = await this.analyzeChatWithGemini(
       input,
       userInfo,
       chatContext,
     );
+    timing.mark('gemini_analyze_completed', {
+      chatCategory: analysis.classification.chat_category,
+    });
     const classification = analysis.classification;
 
     if (classification.chat_category === 'feedback') {
@@ -351,16 +409,26 @@ export class ChatService {
       user.id,
       finalizedIntent,
       input,
+      timing,
     );
+    timing.mark('candidate_menus_loaded', {
+      candidateCount: candidateMenus.length,
+    });
 
-    return await this.recommendWithPreparedContext({
+    const response = await this.recommendWithPreparedContext({
       user,
       userInfo,
       input,
       intent: finalizedIntent,
       candidateMenus,
       chatContext,
+      timing,
     });
+    timing.end({
+      recommendationCount: response.recommendations?.length ?? 0,
+    });
+
+    return response;
   }
 
   async recommendFromMenuBoard(
@@ -554,6 +622,7 @@ export class ChatService {
     imageUrl?: string;
     introSource?: ChatIntroMessageSource;
     chatContext?: ChatContextSummary;
+    timing?: ChatTimingLogger;
   }): Promise<ChatRecommendResponseDto> {
     const {
       user,
@@ -566,10 +635,12 @@ export class ChatService {
       imageUrl,
       introSource = 'text_recommendation',
       chatContext,
+      timing,
     } = params;
 
     const targetDate = this.resolveTargetDate();
     const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
+    timing?.mark('daily_nutrition_loaded');
     const mealTime =
       intent.meal_time ?? this.inferMealTimeFromClock(new Date());
     const rankingBasis = this.buildRecommendationBasis(
@@ -582,6 +653,10 @@ export class ChatService {
     let filteredCandidateMenus = this.shouldSkipIntentFilters()
       ? candidateMenus
       : this.applyIntentFilters(candidateMenus, intent);
+    timing?.mark('intent_filter_completed', {
+      filteredCount: filteredCandidateMenus.length,
+      skipped: this.shouldSkipIntentFilters(),
+    });
 
     if (!this.shouldSkipIntentFilters() && filteredCandidateMenus.length === 0) {
       filteredCandidateMenus = this.applyIntentFilters(
@@ -601,6 +676,9 @@ export class ChatService {
       }))
       .sort((a, b) => b.score.finalScore - a.score.finalScore)
       .slice(0, this.getGeminiRerankCandidateLimit());
+    timing?.mark('score_menu_completed', {
+      scoredCount: localRankedMenus.length,
+    });
     const rankedMenus = await this.selectFinalRankedMenus({
       input,
       intent,
@@ -608,6 +686,10 @@ export class ChatService {
       basis: rankingBasis,
       localRankedMenus,
       introSource,
+      timing,
+    });
+    timing?.mark('final_ranked_menus_selected', {
+      rankedCount: rankedMenus.length,
     });
 
     const fallbackIntro = this.buildRecommendationIntroFallback({
@@ -630,6 +712,7 @@ export class ChatService {
       includeDescriptions: !skipGeneratedDescriptions,
       chatContext,
     });
+    timing?.mark('gemini_presentation_completed');
     const generatedDescriptions = presentation.descriptions;
 
     const descriptionMap = new Map(
@@ -1915,8 +1998,17 @@ ${JSON.stringify(candidates)}
     userId: number,
     intent: ParsedChatIntent,
     input: string,
+    timing?: ChatTimingLogger,
   ): Promise<MenuEntity[]> {
-    const vectorMenus = await this.getVectorCandidateMenus(userId, intent, input);
+    const vectorMenus = await this.getVectorCandidateMenus(
+      userId,
+      intent,
+      input,
+      timing,
+    );
+    timing?.mark('vector_candidates_loaded', {
+      vectorCandidateCount: vectorMenus.length,
+    });
 
     if (vectorMenus.length >= this.getVectorSearchMinResult()) {
       return vectorMenus;
@@ -1924,18 +2016,27 @@ ${JSON.stringify(candidates)}
 
     if (vectorMenus.length > 0) {
       const sqlMenus = await this.getSqlCandidateMenus(userId, intent);
+      timing?.mark('sql_fallback_candidates_loaded', {
+        sqlCandidateCount: sqlMenus.length,
+      });
       return this.mergeMenusById(vectorMenus, sqlMenus);
     }
 
-    return await this.getSqlCandidateMenus(userId, intent);
+    const sqlMenus = await this.getSqlCandidateMenus(userId, intent);
+    timing?.mark('sql_candidates_loaded', {
+      sqlCandidateCount: sqlMenus.length,
+    });
+    return sqlMenus;
   }
 
   private async getVectorCandidateMenus(
     userId: number,
     intent: ParsedChatIntent,
     input: string,
+    timing?: ChatTimingLogger,
   ): Promise<MenuEntity[]> {
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
+      timing?.mark('vector_search_skipped');
       return [];
     }
 
@@ -1957,13 +2058,20 @@ ${JSON.stringify(candidates)}
           minProtein: intent.nutrition_constraints.min_protein,
         },
       );
+      timing?.mark('vector_search_completed', {
+        resultCount: vectorResults.length,
+      });
       const menuIds = vectorResults.map((result) => result.menuId);
 
       if (menuIds.length === 0) {
         return [];
       }
 
-      return await this.getMenusByIds(userId, menuIds);
+      const menus = await this.getMenusByIds(userId, menuIds);
+      timing?.mark('vector_mysql_detail_loaded', {
+        menuCount: menus.length,
+      });
+      return menus;
     } catch (error) {
       console.warn('[CHAT] vector candidate search failed, fallback to mysql', {
         message: error instanceof Error ? error.message : String(error),
@@ -4320,6 +4428,7 @@ ${JSON.stringify(menusPayload)}
     basis: ReturnType<ChatService['buildRecommendationBasis']>;
     localRankedMenus: RankedMenu[];
     introSource: ChatIntroMessageSource;
+    timing?: ChatTimingLogger;
   }): Promise<RankedMenu[]> {
     const localTopMenus = params.localRankedMenus.slice(0, 10);
 
@@ -4328,10 +4437,14 @@ ${JSON.stringify(menusPayload)}
       params.localRankedMenus.length <= 10 ||
       !this.isGeminiMenuRerankEnabled()
     ) {
+      params.timing?.mark('gemini_rerank_skipped');
       return localTopMenus;
     }
 
     const selectedMenuIds = await this.selectFinalMenuIdsWithGemini(params);
+    params.timing?.mark('gemini_rerank_completed', {
+      selectedCount: selectedMenuIds.length,
+    });
 
     if (selectedMenuIds.length === 0) {
       return localTopMenus;
