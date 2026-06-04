@@ -68,6 +68,11 @@ type ChatClassification = {
     | null;
 };
 
+type ChatAnalysis = {
+  classification: ChatClassification;
+  intent: ParsedChatIntent;
+};
+
 type ChatContextSummaryItem = {
   user_input: string;
   chat_category: ChatCategory;
@@ -310,10 +315,12 @@ export class ChatService {
 
     const userInfo = await this.getRequiredUserInfo(user.id);
     const chatContext = await this.getRecentChatContext(user.id);
-    const classification = await this.classifyChatWithGemini(
+    const analysis = await this.analyzeChatWithGemini(
       input,
+      userInfo,
       chatContext,
     );
+    const classification = analysis.classification;
 
     if (classification.chat_category === 'feedback') {
       return await this.feedback(
@@ -328,12 +335,7 @@ export class ChatService {
       return await this.answerGeneralQuestion(user, userInfo, input);
     }
 
-    const parsedIntent = await this.parseIntentWithGemini(
-      input,
-      userInfo,
-      chatContext,
-      classification,
-    );
+    const parsedIntent = analysis.intent;
     const mealTime =
       parsedIntent.meal_time ?? this.inferMealTimeFromClock(new Date());
     const finalizedIntent = this.applyChatContextToIntent(
@@ -608,14 +610,27 @@ export class ChatService {
       introSource,
     });
 
-    const generatedDescriptions = skipGeneratedDescriptions
-      ? []
-      : await this.generateDescriptionsWithGemini(
-          input,
-          intent,
-          rankingBasis,
-          rankedMenus,
-        );
+    const fallbackIntro = this.buildRecommendationIntroFallback({
+      source: introSource,
+      input,
+      intent,
+      userInfo,
+      rankedMenus,
+    });
+    const presentation = await this.generateRecommendationPresentationWithGemini({
+      source: introSource,
+      input,
+      userInfo,
+      intent,
+      dailyNutrition,
+      basis: rankingBasis,
+      rankedMenus,
+      recognizedCandidates,
+      fallbackIntro,
+      includeDescriptions: !skipGeneratedDescriptions,
+      chatContext,
+    });
+    const generatedDescriptions = presentation.descriptions;
 
     const descriptionMap = new Map(
       generatedDescriptions.map((description) => [
@@ -626,24 +641,7 @@ export class ChatService {
 
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'recommendation';
-    response.intro_message = await this.generateIntroMessageWithGemini({
-      source: introSource,
-      input,
-      userInfo,
-      intent,
-      dailyNutrition,
-      basis: rankingBasis,
-      rankedMenus,
-      recognizedCandidates,
-      fallback: this.buildRecommendationIntroFallback({
-        source: introSource,
-        input,
-        intent,
-        userInfo,
-        rankedMenus,
-      }),
-      chatContext,
-    });
+    response.intro_message = presentation.intro_message;
     if (imageUrl) {
       (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
     }
@@ -2982,6 +2980,177 @@ ${JSON.stringify(candidates)}
     return response;
   }
 
+  private async analyzeChatWithGemini(
+    input: string,
+    userInfo: UserInfoEntity,
+    chatContext: ChatContextSummary,
+  ): Promise<ChatAnalysis> {
+    const fallbackIntent = this.buildFallbackIntent(input);
+    const prompt = `
+사용자 입력을 채팅 카테고리와 메뉴 추천 의도로 동시에 분석하고 JSON object만 반환해.
+반드시 JSON만 반환하고 마크다운, 설명, 코드펜스는 금지.
+
+채팅 분류:
+- recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
+- feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
+- general: 특정 메뉴 추천이나 특정 메뉴 평가가 아니라 식단, 영양, 다이어트, 식습관, 운동 전후 식사, 칼로리/탄단지 개념 등에 대해 설명이나 상담을 요청하는 경우
+
+맥락 규칙:
+- feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
+- recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
+- general일 때는 menu_names를 빈 배열로 반환해
+- 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
+- "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
+- "그 조건으로", "비슷한 걸로", "아까처럼"처럼 이전 조건을 유지해야 하면 context_action은 "reuse_previous_conditions"
+- "그거 먹어도 돼?", "아까 거 괜찮아?"처럼 이전 메뉴를 평가해야 하면 feedback 및 "evaluate_previous_menus"
+
+추천 의도 규칙:
+- meal_time: 0(아침), 1(점심), 2(저녁), 3(간식), 4(야식), 불명확하면 null
+- desired_brand, desired_category: 문자열 또는 null
+- nutrition_focus: 다음 값만 사용 ["high_protein","high_fat","low_carb","low_sugar","light_meal","hearty_meal"]
+- amount_preference: "light" | "regular" | "hearty" | null
+- keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
+- normalized_request: 사용자의 의도를 한 문장으로 정리
+- include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
+- exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
+- nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
+- caffeine_allowed: "카페인 없는", "디카페인", "카페인 빼고"는 false, 명확하지 않으면 null
+- context_action이 "exclude_previous_recommendations"이면 이전 추천 메뉴명은 exclude.menu_names에 넣어
+- context_action이 "reuse_previous_conditions"이면 이전 요청의 브랜드/카테고리/끼니 맥락은 유지하고, 현재 입력에서 바꾼 조건만 덮어써
+
+사용자 프로필:
+goal=${this.goalToLabel(userInfo.goal)}
+target_calories=${userInfo.target_calories}
+target_ratio=${JSON.stringify(this.normalizeTargetRatio(userInfo.target_ratio))}
+
+최근 대화 요약:
+${JSON.stringify(chatContext)}
+
+입력:
+${input}
+
+반환 shape:
+{
+  "chat_category": "recommendation",
+  "menu_names": [],
+  "context_dependent": false,
+  "context_action": null,
+  "intent": {
+    "normalized_request": "string",
+    "meal_time": null,
+    "desired_brand": null,
+    "desired_category": null,
+    "nutrition_focus": [],
+    "amount_preference": "regular",
+    "keywords": [],
+    "include": {
+      "brands": [],
+      "categories": [],
+      "menu_names": [],
+      "keywords": []
+    },
+    "exclude": {
+      "brands": [],
+      "categories": [],
+      "menu_names": [],
+      "keywords": []
+    },
+    "nutrition_constraints": {
+      "max_calories": null,
+      "min_calories": null,
+      "min_protein": null,
+      "max_carbs": null,
+      "max_sugars": null,
+      "max_fat": null,
+      "max_sodium": null,
+      "caffeine_allowed": null
+    }
+  }
+}
+`.trim();
+
+    const data = await this.callGeminiJson(prompt);
+    const chatCategory: ChatCategory =
+      data?.chat_category === 'feedback'
+        ? 'feedback'
+        : data?.chat_category === 'general'
+          ? 'general'
+          : 'recommendation';
+    const contextDependent =
+      typeof data?.context_dependent === 'boolean'
+        ? data.context_dependent
+        : this.isContextDependentInput(input);
+    const contextAction =
+      this.normalizeContextAction(data?.context_action) ??
+      this.inferContextAction(input, chatCategory, contextDependent);
+    const classification: ChatClassification = {
+      chat_category: chatCategory,
+      menu_names:
+        chatCategory === 'feedback'
+          ? this.normalizeFreeTextArray(
+              data?.menu_names,
+              this.extractFeedbackMenuNamesFallback(input, chatContext),
+            )
+          : chatCategory === 'general'
+            ? []
+            : this.normalizeFreeTextArray(data?.menu_names, []),
+      context_dependent: contextDependent,
+      context_action: contextAction,
+    };
+    const intentSource = data?.intent ?? {};
+    const intent: ParsedChatIntent = {
+      normalized_request:
+        this.asNonEmptyString(intentSource.normalized_request) ??
+        fallbackIntent.normalized_request,
+      meal_time:
+        typeof intentSource.meal_time === 'number' &&
+        intentSource.meal_time >= 0 &&
+        intentSource.meal_time <= 4
+          ? intentSource.meal_time
+          : fallbackIntent.meal_time,
+      desired_brand:
+        this.asNonEmptyString(intentSource.desired_brand) ??
+        fallbackIntent.desired_brand,
+      desired_category:
+        this.normalizeCategoryKeyword(
+          this.asNonEmptyString(intentSource.desired_category),
+        ) ?? fallbackIntent.desired_category,
+      nutrition_focus: this.normalizeStringArray(
+        intentSource.nutrition_focus,
+        [
+          'high_protein',
+          'high_fat',
+          'low_carb',
+          'low_sugar',
+          'light_meal',
+          'hearty_meal',
+        ],
+        fallbackIntent.nutrition_focus,
+      ),
+      amount_preference:
+        this.normalizeAmountPreference(intentSource.amount_preference) ??
+        fallbackIntent.amount_preference,
+      keywords: this.normalizeKeywordArray(
+        intentSource.keywords,
+        fallbackIntent.keywords,
+      ),
+      include: this.normalizeIntentConditionGroup(
+        intentSource.include,
+        fallbackIntent.include,
+      ),
+      exclude: this.normalizeIntentConditionGroup(
+        intentSource.exclude,
+        fallbackIntent.exclude,
+      ),
+      nutrition_constraints: this.normalizeNutritionConstraints(
+        intentSource.nutrition_constraints,
+        fallbackIntent.nutrition_constraints,
+      ),
+    };
+
+    return { classification, intent };
+  }
+
   private async classifyChatWithGemini(
     input: string,
     chatContext: ChatContextSummary,
@@ -3889,6 +4058,159 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
       return introMessage.slice(0, 300);
     } catch {
       return params.fallback;
+    }
+  }
+
+  private async generateRecommendationPresentationWithGemini(params: {
+    source: ChatIntroMessageSource;
+    input: string;
+    userInfo: UserInfoEntity;
+    dailyNutrition: DailyNutrition;
+    basis: ReturnType<ChatService['buildRecommendationBasis']>;
+    rankedMenus: RankedMenu[];
+    fallbackIntro: string;
+    includeDescriptions: boolean;
+    intent?: ParsedChatIntent;
+    recognizedCandidates?: MenuRecognitionCandidate[];
+    chatContext?: ChatContextSummary;
+  }): Promise<{ intro_message: string; descriptions: GeminiDescription[] }> {
+    const sourceLabelMap: Record<ChatIntroMessageSource, string> = {
+      text_recommendation: '사용자 텍스트 기반 메뉴 추천',
+      text_feedback: '사용자 텍스트 기반 메뉴 피드백',
+      menu_board_recommendation: '메뉴판 사진 기반 메뉴 추천',
+      food_image_feedback: '음식 사진 기반 메뉴 피드백',
+    };
+    const isImageSource =
+      params.source === 'menu_board_recommendation' ||
+      params.source === 'food_image_feedback';
+    const promptPayloadReplacer = (key: string, value: unknown) =>
+      isImageSource && key === 'brand' ? undefined : value;
+    const menusPayload = params.rankedMenus.map(({ menu, score }, index) => ({
+      rank: index + 1,
+      menu_id: menu.id,
+      menu: menu.name,
+      brand: isImageSource ? null : menu.brand,
+      category: menu.category,
+      amount: this.formatAmount(menu),
+      calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+      carbs: roundToOneDecimal(this.getEffectiveCarbs(menu)),
+      protein: roundNullableToOneDecimal(menu.protein) ?? 0,
+      fat: roundToOneDecimal(this.getEffectiveFat(menu)),
+      sugars: roundNullableToOneDecimal(menu.sugars) ?? 0,
+      score: roundToOneDecimal(score.finalScore),
+      local_reason: score.localReason,
+    }));
+    const prompt = `
+추천 응답에 사용할 intro_message와 메뉴별 설명을 한국어 JSON object로 작성해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+intro_message 작성 규칙:
+- 90~200자 정도의 자연스러운 한국어 답변
+- 한 문장으로 길게 쓰지 말고, 1~2개의 짧은 문단으로 줄바꿈을 넣어 작성
+- JSON 문자열 안에 줄바꿈은 \\n으로 포함
+- "안녕하세요", "반가워요" 같은 인사 문구로 시작하지 않기
+- 추천 메뉴명은 가장 중요한 상위 1개만 언급
+- 나머지는 현재 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
+- target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
+- 과장, 의학적 단정, 확정적인 건강 효과 표현은 피하기
+- 죄책감을 자극하지 말고, 지속 가능한 선택을 돕는 방향으로 작성
+- 느낌표는 필요할 때만 최대 1개 사용
+- 사용자 텍스트의 종류가 이미지 기반이면 특정 브랜드명을 절대 언급하지 않기
+
+descriptions 작성 규칙:
+- include_descriptions가 false면 descriptions는 빈 배열로 반환
+- include_descriptions가 true면 후보 메뉴 각각에 대해 작성
+- one_line_summary: 메뉴당 1문장, 35자 내외
+- recommendation_reason: 메뉴당 1~2문장, 과장 없이 영양/상황 적합성을 설명
+- 입력된 local_reason을 참고하되 더 자연스럽게 다듬어
+- 후보 메뉴의 rank 순서를 유지해
+
+사용자 텍스트의 종류:
+${sourceLabelMap[params.source]}
+
+사용자 입력:
+${params.input}
+
+최근 대화 요약:
+${JSON.stringify(params.chatContext ?? null, promptPayloadReplacer)}
+
+사용자 정보:
+${JSON.stringify(
+  {
+    goal: this.goalToLabel(params.userInfo.goal),
+    target_calories: params.userInfo.target_calories,
+    target_ratio: this.normalizeTargetRatio(params.userInfo.target_ratio),
+    consumed_today: {
+      calories: roundToOneDecimal(params.dailyNutrition.calories),
+      carbs: roundToOneDecimal(params.dailyNutrition.carbs),
+      protein: roundToOneDecimal(params.dailyNutrition.protein),
+      fat: roundToOneDecimal(params.dailyNutrition.fat),
+    },
+    remaining_today: {
+      calories: roundToOneDecimal(params.basis.remainingCalories),
+      carbs: roundToOneDecimal(params.basis.remainingMacros.carbs),
+      protein: roundToOneDecimal(params.basis.remainingMacros.protein),
+      fat: roundToOneDecimal(params.basis.remainingMacros.fat),
+    },
+  },
+  promptPayloadReplacer,
+)}
+
+정규화 의도:
+${JSON.stringify(params.intent ?? null, promptPayloadReplacer)}
+
+사진/텍스트에서 추출한 후보 랭크:
+${JSON.stringify(params.recognizedCandidates ?? null, promptPayloadReplacer)}
+
+include_descriptions:
+${params.includeDescriptions}
+
+후보 메뉴:
+${JSON.stringify(menusPayload, promptPayloadReplacer)}
+
+반환 shape:
+{
+  "intro_message": "string",
+  "descriptions": [
+    {
+      "menu_id": 1,
+      "one_line_summary": "string",
+      "recommendation_reason": "string"
+    }
+  ]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt);
+      const introMessage =
+        this.asNonEmptyString(data?.intro_message) ?? params.fallbackIntro;
+      const descriptions = Array.isArray(data?.descriptions)
+        ? data.descriptions
+            .map((item) => ({
+              menu_id: Number(item.menu_id),
+              one_line_summary:
+                this.asNonEmptyString(item.one_line_summary) ?? '',
+              recommendation_reason:
+                this.asNonEmptyString(item.recommendation_reason) ?? '',
+            }))
+            .filter(
+              (item) =>
+                Number.isFinite(item.menu_id) &&
+                item.one_line_summary.length > 0 &&
+                item.recommendation_reason.length > 0,
+            )
+        : [];
+
+      return {
+        intro_message: introMessage.slice(0, 300),
+        descriptions: params.includeDescriptions ? descriptions : [],
+      };
+    } catch {
+      return {
+        intro_message: params.fallbackIntro,
+        descriptions: [],
+      };
     }
   }
 
