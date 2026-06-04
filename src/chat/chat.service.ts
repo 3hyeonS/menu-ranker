@@ -572,10 +572,16 @@ export class ChatService {
       intent.amount_preference,
     );
 
-    const filteredCandidateMenus = this.applyIntentFilters(
-      candidateMenus,
-      intent,
-    );
+    let filteredCandidateMenus = this.shouldSkipIntentFilters()
+      ? candidateMenus
+      : this.applyIntentFilters(candidateMenus, intent);
+
+    if (!this.shouldSkipIntentFilters() && filteredCandidateMenus.length === 0) {
+      filteredCandidateMenus = this.applyIntentFilters(
+        candidateMenus,
+        this.relaxSoftIncludeConditions(intent),
+      );
+    }
 
     if (filteredCandidateMenus.length === 0) {
       throw new BadRequestException('No menus available for recommendation');
@@ -1930,7 +1936,8 @@ ${JSON.stringify(candidates)}
         new Brackets((qb) => {
           categoryFilters.forEach((category, index) => {
             const parameterName = `category${index}`;
-            const condition = `menu.category LIKE :${parameterName}`;
+            const condition =
+              `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName} OR menu.brand LIKE :${parameterName})`;
 
             if (index === 0) {
               qb.where(condition, { [parameterName]: `%${category}%` });
@@ -2063,6 +2070,12 @@ ${JSON.stringify(candidates)}
     return Math.max(1, Math.floor(parsed));
   }
 
+  private shouldSkipIntentFilters(): boolean {
+    return ['1', 'true', 'yes', 'y'].includes(
+      (process.env.CHAT_SKIP_INTENT_FILTERS ?? '').toLowerCase(),
+    );
+  }
+
   private isGeminiMenuRerankEnabled(): boolean {
     const value = process.env.GEMINI_MENU_RERANK_ENABLED;
 
@@ -2124,7 +2137,7 @@ ${JSON.stringify(candidates)}
       (include.brands.length === 0 ||
         this.matchesAnyTerm(menu.brand, include.brands)) &&
       (include.categories.length === 0 ||
-        this.matchesAnyTerm(menu.category, include.categories)) &&
+        this.matchesAnyMenuText(menu, include.categories)) &&
       (include.menu_names.length === 0 ||
         this.matchesAnyMenuText(menu, include.menu_names, 'name')) &&
       this.matchesAllMenuText(menu, include.keywords)
@@ -2137,10 +2150,22 @@ ${JSON.stringify(candidates)}
   ): boolean {
     return (
       this.matchesAnyTerm(menu.brand, exclude.brands) ||
-      this.matchesAnyTerm(menu.category, exclude.categories) ||
+      this.matchesAnyMenuText(menu, exclude.categories) ||
       this.matchesAnyMenuText(menu, exclude.menu_names, 'name') ||
       this.matchesAnyMenuText(menu, exclude.keywords)
     );
+  }
+
+  private relaxSoftIncludeConditions(intent: ParsedChatIntent): ParsedChatIntent {
+    return {
+      ...intent,
+      include: {
+        brands: [...intent.include.brands],
+        categories: [],
+        menu_names: [],
+        keywords: [],
+      },
+    };
   }
 
   private matchesNutritionConstraints(
