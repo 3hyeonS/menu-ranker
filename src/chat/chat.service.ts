@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -35,6 +36,7 @@ import { ChatFoodImageRecognizedMenuResponseDto } from './dto/response-dto/chat-
 import { ChatFoodImagePositionResponseDto } from './dto/response-dto/chat-food-image-position-response-dto';
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
+import { MenuVectorService } from '../vector/menu-vector.service';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -217,6 +219,8 @@ export class ChatService {
     @InjectRepository(ChatHistoryEntity)
     private readonly chatHistoryRepository: Repository<ChatHistoryEntity>,
     private readonly httpService: HttpService,
+    @Optional()
+    private readonly menuVectorService?: MenuVectorService,
   ) {
     this.s3 = new S3Client({
       region: process.env.AWS_REGION,
@@ -344,6 +348,7 @@ export class ChatService {
     const candidateMenus = await this.getCandidateMenus(
       user.id,
       finalizedIntent,
+      input,
     );
 
     return await this.recommendWithPreparedContext({
@@ -576,13 +581,21 @@ export class ChatService {
       throw new BadRequestException('No menus available for recommendation');
     }
 
-    const rankedMenus = filteredCandidateMenus
+    const localRankedMenus = filteredCandidateMenus
       .map((menu) => ({
         menu,
         score: this.scoreMenu(menu, intent, userInfo, rankingBasis),
       }))
       .sort((a, b) => b.score.finalScore - a.score.finalScore)
-      .slice(0, 10);
+      .slice(0, this.getGeminiRerankCandidateLimit());
+    const rankedMenus = await this.selectFinalRankedMenus({
+      input,
+      intent,
+      userInfo,
+      basis: rankingBasis,
+      localRankedMenus,
+      introSource,
+    });
 
     const generatedDescriptions = skipGeneratedDescriptions
       ? []
@@ -1777,6 +1790,94 @@ ${JSON.stringify(candidates)}
   private async getCandidateMenus(
     userId: number,
     intent: ParsedChatIntent,
+    input: string,
+  ): Promise<MenuEntity[]> {
+    const vectorMenus = await this.getVectorCandidateMenus(userId, intent, input);
+
+    if (vectorMenus.length >= this.getVectorSearchMinResult()) {
+      return vectorMenus;
+    }
+
+    if (vectorMenus.length > 0) {
+      const sqlMenus = await this.getSqlCandidateMenus(userId, intent);
+      return this.mergeMenusById(vectorMenus, sqlMenus);
+    }
+
+    return await this.getSqlCandidateMenus(userId, intent);
+  }
+
+  private async getVectorCandidateMenus(
+    userId: number,
+    intent: ParsedChatIntent,
+    input: string,
+  ): Promise<MenuEntity[]> {
+    if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
+      return [];
+    }
+
+    try {
+      const vectorResults = await this.menuVectorService.searchMenusByText(
+        this.buildVectorRecommendationQuery(input, intent),
+        {
+          userId,
+          limit: this.getVectorCandidateLimit(),
+          brand: this.getSingleVectorFilter([
+            intent.desired_brand,
+            ...intent.include.brands,
+          ]),
+          category: this.getSingleVectorFilter([
+            intent.desired_category,
+            ...intent.include.categories,
+          ]),
+          maxCalories: intent.nutrition_constraints.max_calories,
+          minProtein: intent.nutrition_constraints.min_protein,
+        },
+      );
+      const menuIds = vectorResults.map((result) => result.menuId);
+
+      if (menuIds.length === 0) {
+        return [];
+      }
+
+      return await this.getMenusByIds(userId, menuIds);
+    } catch (error) {
+      console.warn('[CHAT] vector candidate search failed, fallback to mysql', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      return [];
+    }
+  }
+
+  private async getMenusByIds(
+    userId: number,
+    menuIds: number[],
+  ): Promise<MenuEntity[]> {
+    if (menuIds.length === 0) {
+      return [];
+    }
+
+    const menus = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where('menu.id IN (:...menuIds)', { menuIds })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .getMany();
+    const menuMap = new Map(menus.map((menu) => [menu.id, menu]));
+
+    return menuIds
+      .map((menuId) => menuMap.get(menuId))
+      .filter((menu): menu is MenuEntity => !!menu);
+  }
+
+  private async getSqlCandidateMenus(
+    userId: number,
+    intent: ParsedChatIntent,
   ): Promise<MenuEntity[]> {
     // 공용 메뉴 + 사용자가 직접 등록한 메뉴를 함께 추천 후보로 사용합니다.
     const builder = this.menuRepository
@@ -1861,6 +1962,125 @@ ${JSON.stringify(candidates)}
       )
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .getMany();
+  }
+
+  private buildVectorRecommendationQuery(
+    input: string,
+    intent: ParsedChatIntent,
+  ): string {
+    const parts = [
+      input,
+      intent.normalized_request
+        ? `정규화 요청: ${intent.normalized_request}`
+        : null,
+      intent.desired_brand ? `브랜드: ${intent.desired_brand}` : null,
+      intent.desired_category ? `카테고리: ${intent.desired_category}` : null,
+      intent.amount_preference
+        ? `식사량 선호: ${this.toAmountPreferenceText(intent.amount_preference)}`
+        : null,
+      intent.nutrition_focus.length > 0
+        ? `영양 포커스: ${intent.nutrition_focus.join(', ')}`
+        : null,
+      intent.keywords.length > 0
+        ? `키워드: ${intent.keywords.join(', ')}`
+        : null,
+      intent.include.menu_names.length > 0
+        ? `포함 메뉴: ${intent.include.menu_names.join(', ')}`
+        : null,
+      intent.include.keywords.length > 0
+        ? `포함 키워드: ${intent.include.keywords.join(', ')}`
+        : null,
+    ];
+
+    return parts.filter((value): value is string => !!value).join('\n');
+  }
+
+  private toAmountPreferenceText(
+    amountPreference: ParsedChatIntent['amount_preference'],
+  ): string {
+    switch (amountPreference) {
+      case 'light':
+        return '가볍게 먹기, 부담 적은 메뉴, 저칼로리';
+      case 'hearty':
+        return '든든하게 먹기, 포만감 있는 메뉴';
+      case 'regular':
+        return '일반적인 한 끼';
+      default:
+        return '';
+    }
+  }
+
+  private getSingleVectorFilter(values: Array<string | null>): string | null {
+    const uniqueValues = Array.from(
+      new Set(
+        values
+          .map((value) => value?.trim())
+          .filter((value): value is string => !!value),
+      ),
+    );
+
+    return uniqueValues.length === 1 ? uniqueValues[0] : null;
+  }
+
+  private mergeMenusById(
+    primaryMenus: MenuEntity[],
+    fallbackMenus: MenuEntity[],
+  ): MenuEntity[] {
+    const menuMap = new Map<number, MenuEntity>();
+
+    [...primaryMenus, ...fallbackMenus].forEach((menu) => {
+      if (!menuMap.has(menu.id)) {
+        menuMap.set(menu.id, menu);
+      }
+    });
+
+    return Array.from(menuMap.values());
+  }
+
+  private isVectorSearchEnabled(): boolean {
+    return ['1', 'true', 'yes', 'y'].includes(
+      (process.env.VECTOR_SEARCH_ENABLED ?? '').toLowerCase(),
+    );
+  }
+
+  private getVectorCandidateLimit(): number {
+    const parsed = Number(process.env.VECTOR_CANDIDATE_LIMIT ?? 500);
+
+    if (!Number.isFinite(parsed)) {
+      return 500;
+    }
+
+    return Math.max(10, Math.min(Math.floor(parsed), 2000));
+  }
+
+  private getVectorSearchMinResult(): number {
+    const parsed = Number(process.env.VECTOR_SEARCH_MIN_RESULT ?? 30);
+
+    if (!Number.isFinite(parsed)) {
+      return 30;
+    }
+
+    return Math.max(1, Math.floor(parsed));
+  }
+
+  private isGeminiMenuRerankEnabled(): boolean {
+    const value = process.env.GEMINI_MENU_RERANK_ENABLED;
+
+    if (value === undefined) {
+      return true;
+    }
+
+    return ['1', 'true', 'yes', 'y'].includes(value.toLowerCase());
+  }
+
+  private getGeminiRerankCandidateLimit(): number {
+    const parsed = Number(process.env.GEMINI_MENU_RERANK_CANDIDATE_LIMIT ?? 30);
+
+    if (!Number.isFinite(parsed)) {
+      return 30;
+    }
+
+    return Math.max(10, Math.min(Math.floor(parsed), 50));
   }
 
   private async getAllCandidateMenus(userId: number): Promise<MenuEntity[]> {
@@ -3607,6 +3827,159 @@ ${JSON.stringify(menusPayload)}
       if (error instanceof ServiceUnavailableException) {
         return [];
       }
+      return [];
+    }
+  }
+
+  private async selectFinalRankedMenus(params: {
+    input: string;
+    intent: ParsedChatIntent;
+    userInfo: UserInfoEntity;
+    basis: ReturnType<ChatService['buildRecommendationBasis']>;
+    localRankedMenus: RankedMenu[];
+    introSource: ChatIntroMessageSource;
+  }): Promise<RankedMenu[]> {
+    const localTopMenus = params.localRankedMenus.slice(0, 10);
+
+    if (
+      params.introSource !== 'text_recommendation' ||
+      params.localRankedMenus.length <= 10 ||
+      !this.isGeminiMenuRerankEnabled()
+    ) {
+      return localTopMenus;
+    }
+
+    const selectedMenuIds = await this.selectFinalMenuIdsWithGemini(params);
+
+    if (selectedMenuIds.length === 0) {
+      return localTopMenus;
+    }
+
+    const rankedMenuMap = new Map(
+      params.localRankedMenus.map((rankedMenu) => [
+        rankedMenu.menu.id,
+        rankedMenu,
+      ]),
+    );
+    const finalMenus: RankedMenu[] = [];
+
+    selectedMenuIds.forEach((menuId) => {
+      const rankedMenu = rankedMenuMap.get(menuId);
+
+      if (
+        rankedMenu &&
+        !finalMenus.some((selected) => selected.menu.id === menuId)
+      ) {
+        finalMenus.push(rankedMenu);
+      }
+    });
+
+    params.localRankedMenus.forEach((rankedMenu) => {
+      if (
+        finalMenus.length < 10 &&
+        !finalMenus.some((selected) => selected.menu.id === rankedMenu.menu.id)
+      ) {
+        finalMenus.push(rankedMenu);
+      }
+    });
+
+    return finalMenus.slice(0, 10);
+  }
+
+  private async selectFinalMenuIdsWithGemini(params: {
+    input: string;
+    intent: ParsedChatIntent;
+    userInfo: UserInfoEntity;
+    basis: ReturnType<ChatService['buildRecommendationBasis']>;
+    localRankedMenus: RankedMenu[];
+  }): Promise<number[]> {
+    const candidateLimit = this.getGeminiRerankCandidateLimit();
+    const candidates = params.localRankedMenus
+      .slice(0, candidateLimit)
+      .map(({ menu, score }, index) => ({
+        local_rank: index + 1,
+        menu_id: menu.id,
+        menu: menu.name,
+        brand: menu.brand,
+        category: menu.category,
+        calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+        carbs: roundToOneDecimal(this.getEffectiveCarbs(menu)),
+        protein: roundNullableToOneDecimal(menu.protein) ?? 0,
+        fat: roundToOneDecimal(this.getEffectiveFat(menu)),
+        sugars: roundNullableToOneDecimal(menu.sugars) ?? 0,
+        sodium: roundNullableToOneDecimal(menu.sodium) ?? 0,
+        internal_score: roundToOneDecimal(score.finalScore),
+        score_breakdown: {
+          calorie: score.calorieScore,
+          macro: score.macroScore,
+          goal: score.goalScore,
+          satiety: score.satietyScore,
+          sugar: score.sugarScore,
+          intent: score.intentScore,
+        },
+        local_reason: score.localReason,
+      }));
+    const prompt = `
+아래 후보 메뉴 중 사용자 문맥에 가장 잘 맞는 최종 추천 메뉴를 골라 한국어 JSON object로 반환해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+선택 규칙:
+- candidate_menus 안에 있는 menu_id만 사용
+- 최종 추천은 최대 10개
+- 내부 점수는 영양/목표/의도 적합도를 계산한 중요한 참고값이야
+- 사용자의 표현, 장소, 가볍게/든든하게 같은 문맥을 함께 고려해 순서를 조정해
+- 내부 점수가 현저히 낮은 메뉴를 특별한 이유 없이 상위로 올리지 마
+- 사용자가 특정 브랜드/카테고리를 말했으면 그 문맥을 우선해
+- 다양성을 위해 거의 같은 메뉴가 여러 개면 더 적합한 것만 상위에 둬
+- 설명 문장은 작성하지 말고 menu_id 배열만 반환
+
+사용자 입력:
+${params.input}
+
+정규화 의도:
+${JSON.stringify(params.intent)}
+
+사용자 정보:
+${JSON.stringify({
+  goal: this.goalToLabel(params.userInfo.goal),
+  target_calories: params.userInfo.target_calories,
+  target_ratio: this.normalizeTargetRatio(params.userInfo.target_ratio),
+})}
+
+추천 기준:
+${JSON.stringify({
+  remaining_calories: roundToOneDecimal(params.basis.remainingCalories),
+  remaining_macros: {
+    carbs: roundToOneDecimal(params.basis.remainingMacros.carbs),
+    protein: roundToOneDecimal(params.basis.remainingMacros.protein),
+    fat: roundToOneDecimal(params.basis.remainingMacros.fat),
+  },
+})}
+
+candidate_menus:
+${JSON.stringify(candidates)}
+
+반환 shape:
+{
+  "selected_menu_ids": [1, 2, 3]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt);
+      const selectedMenuIds = Array.isArray(data?.selected_menu_ids)
+        ? data.selected_menu_ids
+            .map((menuId) => Number(menuId))
+            .filter((menuId) => Number.isFinite(menuId))
+        : [];
+      const candidateMenuIdSet = new Set(
+        candidates.map((candidate) => candidate.menu_id),
+      );
+
+      return selectedMenuIds
+        .filter((menuId) => candidateMenuIdSet.has(menuId))
+        .slice(0, 10);
+    } catch {
       return [];
     }
   }

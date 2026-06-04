@@ -13,6 +13,7 @@ import { JwtStrategy } from '../auth/jwt.startegy';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { ChatHistoryEntity } from './entity/chat-history.entity';
+import { VectorModule } from '../vector/vector.module';
 
 // .env 파일 로드
 dotenv.config();
@@ -30,6 +31,7 @@ dotenv.config();
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
     HttpModule,
+    VectorModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, JwtStrategy],

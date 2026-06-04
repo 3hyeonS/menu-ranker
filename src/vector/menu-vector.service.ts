@@ -51,7 +51,7 @@ export class MenuVectorService {
 
     this.assertEmbeddingDimension(embedding);
 
-    await this.vectorDataSource.query(
+    await this.query(
       `
       INSERT INTO menu_vector_index (
         menu_id,
@@ -120,7 +120,7 @@ export class MenuVectorService {
   }
 
   async markMenuDeleted(menuId: number): Promise<void> {
-    await this.vectorDataSource.query(
+    await this.query(
       `
       UPDATE menu_vector_index
       SET is_deleted = 1, source_updated_at = now()
@@ -131,7 +131,7 @@ export class MenuVectorService {
   }
 
   async deleteMenu(menuId: number): Promise<void> {
-    await this.vectorDataSource.query(
+    await this.query(
       'DELETE FROM menu_vector_index WHERE menu_id = $1',
       [menuId],
     );
@@ -142,7 +142,7 @@ export class MenuVectorService {
       return new Set();
     }
 
-    const rows = await this.vectorDataSource.query(
+    const rows = await this.query(
       `
       SELECT menu_id AS "menuId"
       FROM menu_vector_index
@@ -201,7 +201,7 @@ export class MenuVectorService {
       conditions.push(`protein >= $${params.length}`);
     }
 
-    const rows = await this.vectorDataSource.query(
+    const rows = await this.query(
       `
       SELECT
         menu_id AS "menuId",
@@ -237,5 +237,13 @@ export class MenuVectorService {
 
   private toVectorLiteral(embedding: number[]): string {
     return `[${embedding.join(',')}]`;
+  }
+
+  private async query<T = any>(sql: string, params?: unknown[]): Promise<T> {
+    if (!this.vectorDataSource.isInitialized) {
+      await this.vectorDataSource.initialize();
+    }
+
+    return await this.vectorDataSource.query(sql, params);
   }
 }
