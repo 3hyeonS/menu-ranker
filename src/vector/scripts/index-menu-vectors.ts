@@ -5,18 +5,10 @@ import mysqlDataSource from '../../config/typeorm.datasource';
 import { MenuEntity } from '../../home/entity/menu.entity';
 import { EmbeddingService } from '../embedding.service';
 import { MenuVectorService } from '../menu-vector.service';
+import { createVectorDataSourceOptions } from '../vector-db-options';
 
 const createVectorDataSource = (): DataSource =>
-  new DataSource({
-    type: 'postgres',
-    host: process.env.VECTOR_DB_HOST ?? 'localhost',
-    port: Number(process.env.VECTOR_DB_PORT ?? 5432),
-    username: process.env.VECTOR_DB_USERNAME ?? 'vector_user',
-    password: process.env.VECTOR_DB_PASSWORD ?? 'vector_password',
-    database: process.env.VECTOR_DB_NAME ?? 'melo_vector',
-    synchronize: false,
-    logging: false,
-  });
+  new DataSource(createVectorDataSourceOptions());
 
 const getNumberOption = (
   name: string,
