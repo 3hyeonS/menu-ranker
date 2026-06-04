@@ -3196,8 +3196,9 @@ JSON shape:
         desired_brand:
           this.asNonEmptyString(data.desired_brand) ?? fallback.desired_brand,
         desired_category:
-          this.asNonEmptyString(data.desired_category) ??
-          fallback.desired_category,
+          this.normalizeCategoryKeyword(
+            this.asNonEmptyString(data.desired_category),
+          ) ?? fallback.desired_category,
         nutrition_focus: this.normalizeStringArray(
           data.nutrition_focus,
           [
@@ -3440,15 +3441,29 @@ JSON shape:
   }
 
   private extractCategoryKeyword(input: string): string | null {
-    const knownCategories = [
-      '샌드위치',
-      '버거',
-      '도시락',
-      '샐러드',
-      '치킨',
-      '라면',
+    return this.normalizeCategoryKeyword(input);
+  }
+
+  private normalizeCategoryKeyword(input: string | null): string | null {
+    if (!input) {
+      return null;
+    }
+
+    const compact = input.replace(/\s+/g, '').toLowerCase();
+    const categoryAliases: Array<{ category: string; aliases: string[] }> = [
+      { category: '버거', aliases: ['햄버거', '버거', '버거류', '버거종류'] },
+      { category: '샌드위치', aliases: ['샌드위치', '샌드위치류'] },
+      { category: '도시락', aliases: ['도시락', '도시락류'] },
+      { category: '샐러드', aliases: ['샐러드', '샐러드류'] },
+      { category: '치킨', aliases: ['치킨', '치킨류'] },
+      { category: '라면', aliases: ['라면', '라멘', '면류'] },
     ];
-    return knownCategories.find((category) => input.includes(category)) ?? null;
+
+    return (
+      categoryAliases.find(({ aliases }) =>
+        aliases.some((alias) => compact.includes(alias)),
+      )?.category ?? null
+    );
   }
 
   private inferMealTimeFromClock(now: Date): number {
@@ -4258,18 +4273,48 @@ ${JSON.stringify(candidates)}
     const source = value as Partial<
       Record<keyof IntentConditionGroup, unknown>
     >;
+    const brands = this.normalizeFreeTextArray(source.brands, fallback.brands);
+    const rawCategories = this.normalizeFreeTextArray(
+      source.categories,
+      fallback.categories,
+    );
+    const rawMenuNames = this.normalizeFreeTextArray(
+      source.menu_names,
+      fallback.menu_names,
+    );
+    const rawKeywords = this.normalizeFreeTextArray(
+      source.keywords,
+      fallback.keywords,
+    );
+    const categories = Array.from(
+      new Set(
+        [
+          ...rawCategories
+            .map(
+              (category) => this.normalizeCategoryKeyword(category) ?? category,
+            )
+            .filter((category) => category.length >= 2),
+          ...rawMenuNames
+            .map((menuName) => this.normalizeCategoryKeyword(menuName))
+            .filter((category): category is string => !!category),
+          ...rawKeywords
+            .map((keyword) => this.normalizeCategoryKeyword(keyword))
+            .filter((category): category is string => !!category),
+        ],
+      ),
+    );
+    const menuNames = rawMenuNames.filter(
+      (menuName) => !this.normalizeCategoryKeyword(menuName),
+    );
+    const keywords = rawKeywords.filter(
+      (keyword) => !this.normalizeCategoryKeyword(keyword),
+    );
 
     return {
-      brands: this.normalizeFreeTextArray(source.brands, fallback.brands),
-      categories: this.normalizeFreeTextArray(
-        source.categories,
-        fallback.categories,
-      ),
-      menu_names: this.normalizeFreeTextArray(
-        source.menu_names,
-        fallback.menu_names,
-      ),
-      keywords: this.normalizeFreeTextArray(source.keywords, fallback.keywords),
+      brands,
+      categories,
+      menu_names: menuNames,
+      keywords,
     };
   }
 
