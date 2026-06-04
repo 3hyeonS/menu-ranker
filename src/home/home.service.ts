@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -50,6 +51,7 @@ import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutriti
 import { NutritionLabelRecognition } from './types/nutrition-label-recognition.type';
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
+import { MenuVectorService } from '../vector/menu-vector.service';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -263,6 +265,8 @@ export class HomeService {
     @InjectRepository(BrandAddEntity)
     private brandAddRepository: Repository<BrandAddEntity>,
     private httpService: HttpService,
+    @Optional()
+    private readonly menuVectorService?: MenuVectorService,
   ) {
     this.s3 = new S3Client({
       region: process.env.AWS_REGION,
@@ -865,32 +869,11 @@ export class HomeService {
       throw new BadRequestException('image file must be an image');
     }
 
-    const menus = await this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoin('menu.user', 'user')
-      .select([
-        'menu.id AS id',
-        'menu.name AS name',
-        'menu.brand AS brand',
-        'menu.category AS category',
-        'menu.weight AS weight',
-      ])
-      .where(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
-            userId: user.id,
-          });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .orderBy('menu.id', 'ASC')
-      .getRawMany<{
-        id: number;
-        name: string;
-        brand: string | null;
-        category: string | null;
-        weight: number | null;
-      }>();
+    const detectedFoodNames = await this.detectFoodNamesFromImage(file);
+    const menus = await this.getFoodImageRecognitionCandidateMenus(
+      user.id,
+      detectedFoodNames,
+    );
 
     if (menus.length === 0) {
       throw new NotFoundException('No menus available for recognition');
@@ -944,6 +927,230 @@ failure_reason enum:
       ...recognized,
       image_url: imageUrl,
     });
+  }
+
+  private async detectFoodNamesFromImage(
+    file: Express.Multer.File,
+  ): Promise<string[]> {
+    const prompt = `
+음식 사진을 보고, 사진에 실제로 포함된 음식명을 JSON object로 반환해.
+
+규칙:
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- 음식명은 최대한 구체적으로 작성해
+- 같은 음식이 여러 개 보여도 food_names에는 중복 없이 한 번만 넣어
+- 확실하지 않은 음식은 제외해
+- 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
+- 사진 문제로 실패한 경우 recognition_status는 "failed", food_names는 빈 배열로 반환해
+- 음식은 보이지만 이름을 특정하기 어렵다면 failure_reason은 "NO_MATCHING_MENU"로 반환해
+
+반환 shape:
+{
+  "recognition_status": "recognized",
+  "failure_reason": null,
+  "food_names": ["싸이버거", "감자튀김"]
+}
+
+failure_reason enum:
+- LOW_IMAGE_QUALITY
+- FOOD_TOO_SMALL
+- TOO_BLURRY
+- POOR_LIGHTING
+- FOOD_OCCLUDED
+- NO_FOOD_DETECTED
+- NO_MATCHING_MENU
+`.trim();
+    const data = await this.callGeminiJsonWithImage(
+      prompt,
+      file,
+      'Food image recognition is unavailable',
+    );
+
+    this.assertFoodImageRecognizable(data);
+
+    const foodNames = Array.isArray(data?.food_names) ? data.food_names : [];
+    const normalizedFoodNames = foodNames
+      .map((foodName) =>
+        typeof foodName === 'string' ? foodName.trim() : '',
+      )
+      .filter((foodName) => foodName.length >= 2);
+
+    return Array.from(
+      new Set<string>(normalizedFoodNames),
+    ).slice(0, 10);
+  }
+
+  private async getFoodImageRecognitionCandidateMenus(
+    userId: number,
+    foodNames: string[],
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      brand: string | null;
+      category: string | null;
+      weight: number | null;
+    }>
+  > {
+    const vectorMenus = await this.getVectorFoodImageCandidateMenus(
+      userId,
+      foodNames,
+    );
+
+    if (vectorMenus.length > 0) {
+      return vectorMenus;
+    }
+
+    return await this.getAllFoodImageRecognitionCandidateMenus(userId);
+  }
+
+  private async getVectorFoodImageCandidateMenus(
+    userId: number,
+    foodNames: string[],
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      brand: string | null;
+      category: string | null;
+      weight: number | null;
+    }>
+  > {
+    if (
+      !this.isVectorSearchEnabled() ||
+      !this.menuVectorService ||
+      foodNames.length === 0
+    ) {
+      return [];
+    }
+
+    try {
+      const vectorResults = await this.menuVectorService.searchMenusByText(
+        `음식 사진 인식 결과: ${foodNames.join(', ')}`,
+        {
+          userId,
+          limit: this.getFoodImageVectorCandidateLimit(),
+        },
+      );
+
+      return await this.getFoodImageRecognitionMenusByIds(
+        userId,
+        vectorResults.map((result) => result.menuId),
+      );
+    } catch (error) {
+      console.warn('[HOME] vector food image search failed, fallback to mysql', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      return [];
+    }
+  }
+
+  private async getFoodImageRecognitionMenusByIds(
+    userId: number,
+    menuIds: number[],
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      brand: string | null;
+      category: string | null;
+      weight: number | null;
+    }>
+  > {
+    if (menuIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select([
+        'menu.id AS id',
+        'menu.name AS name',
+        'menu.brand AS brand',
+        'menu.category AS category',
+        'menu.weight AS weight',
+      ])
+      .where('menu.id IN (:...menuIds)', { menuIds })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .getRawMany<{
+        id: number;
+        name: string;
+        brand: string | null;
+        category: string | null;
+        weight: number | null;
+      }>();
+    const menuMap = new Map(rows.map((menu) => [Number(menu.id), menu]));
+
+    return menuIds
+      .map((menuId) => menuMap.get(menuId))
+      .filter((menu): menu is NonNullable<typeof menu> => !!menu)
+      .map((menu) => ({
+        ...menu,
+        id: Number(menu.id),
+        weight: this.asNullableNumber(menu.weight),
+      }));
+  }
+
+  private async getAllFoodImageRecognitionCandidateMenus(
+    userId: number,
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      brand: string | null;
+      category: string | null;
+      weight: number | null;
+    }>
+  > {
+    return await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select([
+        'menu.id AS id',
+        'menu.name AS name',
+        'menu.brand AS brand',
+        'menu.category AS category',
+        'menu.weight AS weight',
+      ])
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+            userId,
+          });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .orderBy('menu.id', 'ASC')
+      .getRawMany<{
+        id: number;
+        name: string;
+        brand: string | null;
+        category: string | null;
+        weight: number | null;
+      }>();
+  }
+
+  private isVectorSearchEnabled(): boolean {
+    return ['1', 'true', 'yes', 'y'].includes(
+      (process.env.VECTOR_SEARCH_ENABLED ?? '').toLowerCase(),
+    );
+  }
+
+  private getFoodImageVectorCandidateLimit(): number {
+    const parsed = Number(process.env.FOOD_IMAGE_VECTOR_CANDIDATE_LIMIT ?? 100);
+
+    if (!Number.isFinite(parsed)) {
+      return 100;
+    }
+
+    return Math.max(10, Math.min(Math.floor(parsed), 500));
   }
 
   // 영양성분표 사진 인식

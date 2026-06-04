@@ -17,6 +17,7 @@ import { MealEntity } from './entity/meal.entity';
 import { MealMenuEntity } from './entity/meal-menu.entity';
 import { WeightStepsEntity } from './entity/weight-steps.entity';
 import { BrandAddEntity } from './entity/brand-add.entity';
+import { VectorModule } from '../vector/vector.module';
 
 // .env 파일 로드
 dotenv.config();
@@ -37,6 +38,7 @@ dotenv.config();
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
     HttpModule,
+    VectorModule,
   ],
   controllers: [HomeController],
   providers: [HomeService, JwtStrategy],

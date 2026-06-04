@@ -383,7 +383,11 @@ export class ChatService {
     }
 
     const recognizedCandidates =
-      await this.recognizeMenuBoardCandidatesWithGemini(file, availableMenus);
+      await this.recognizeMenuBoardCandidatesWithGemini(
+        user.id,
+        file,
+        availableMenus,
+      );
     const candidateIds = recognizedCandidates.map((candidate) => candidate.id);
 
     if (candidateIds.length === 0) {
@@ -460,6 +464,7 @@ export class ChatService {
     }
 
     const recognizedFoods = await this.recognizeFoodImageMenusWithGemini(
+      user.id,
       file,
       availableMenus,
     );
@@ -1106,6 +1111,7 @@ export class ChatService {
   }
 
   private async recognizeMenuBoardCandidatesWithGemini(
+    userId: number,
     file: Express.Multer.File,
     menus: MenuRecognitionCandidate[],
   ): Promise<MenuRecognitionCandidate[]> {
@@ -1130,14 +1136,23 @@ export class ChatService {
 
     const data = await this.callGeminiJsonWithImage(prompt, file);
     const recognition = this.normalizeMenuBoardRecognition(data);
-    const candidatePool = this.buildRecognitionCandidatePool(
-      recognition.recognizedTexts,
-      menus,
-      recognition,
-      this.rematchCandidateLimit,
-      15,
-      34,
-    );
+    const vectorCandidatePool = await this.getVectorRecognitionCandidates({
+      userId,
+      texts: recognition.recognizedTexts,
+      context: recognition,
+      limit: this.rematchCandidateLimit,
+    });
+    const candidatePool =
+      vectorCandidatePool.length > 0
+        ? vectorCandidatePool
+        : this.buildRecognitionCandidatePool(
+            recognition.recognizedTexts,
+            menus,
+            recognition,
+            this.rematchCandidateLimit,
+            15,
+            34,
+          );
     const rematchedCandidates = await this.rematchMenuBoardCandidatesWithGemini(
       recognition,
       candidatePool,
@@ -1149,6 +1164,7 @@ export class ChatService {
   }
 
   private async recognizeFoodImageMenusWithGemini(
+    userId: number,
     file: Express.Multer.File,
     menus: MenuRecognitionCandidate[],
   ): Promise<RecognizedFoodImageMenu[]> {
@@ -1202,17 +1218,27 @@ failure_reason enum:
     const predictions = detectedFoods
       .map((value) => this.normalizeFoodImagePrediction(value))
       .filter((food): food is FoodImagePrediction => food !== null);
-    const candidatePool = this.buildRecognitionCandidatePool(
-      predictions.map((food) => food.foodName),
-      menus,
-      {
-        inferredBrand: null,
-        inferredCategory: null,
-      },
-      this.rematchCandidateLimit,
-      15,
-      32,
-    );
+    const foodImageContext = {
+      inferredBrand: null,
+      inferredCategory: null,
+    };
+    const vectorCandidatePool = await this.getVectorRecognitionCandidates({
+      userId,
+      texts: predictions.map((food) => food.foodName),
+      context: foodImageContext,
+      limit: this.rematchCandidateLimit,
+    });
+    const candidatePool =
+      vectorCandidatePool.length > 0
+        ? vectorCandidatePool
+        : this.buildRecognitionCandidatePool(
+            predictions.map((food) => food.foodName),
+            menus,
+            foodImageContext,
+            this.rematchCandidateLimit,
+            15,
+            32,
+          );
     const rematchedFoods = await this.rematchFoodImageMenusWithGemini(
       file,
       predictions,
@@ -1324,6 +1350,100 @@ failure_reason enum:
     });
 
     return Array.from(matchedById.values()).slice(0, limit);
+  }
+
+  private async getVectorRecognitionCandidates(params: {
+    userId: number;
+    texts: string[];
+    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>;
+    limit: number;
+  }): Promise<MenuRecognitionCandidate[]> {
+    const texts = params.texts
+      .map((text) => text.trim())
+      .filter((text) => text.length >= 2);
+
+    if (
+      !this.isVectorSearchEnabled() ||
+      !this.menuVectorService ||
+      texts.length === 0
+    ) {
+      return [];
+    }
+
+    try {
+      const vectorResults = await this.menuVectorService.searchMenusByText(
+        this.buildVectorRecognitionQuery(texts, params.context),
+        {
+          userId: params.userId,
+          limit: params.limit,
+          brand: params.context.inferredBrand,
+          category: params.context.inferredCategory,
+        },
+      );
+      const menuIds = vectorResults.map((result) => result.menuId);
+
+      return await this.getRecognitionCandidatesByIds(params.userId, menuIds);
+    } catch (error) {
+      console.warn('[CHAT] vector recognition search failed, fallback to local', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      return [];
+    }
+  }
+
+  private buildVectorRecognitionQuery(
+    texts: string[],
+    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+  ): string {
+    const expandedTexts = this.expandRecognitionTexts(texts);
+    const parts = [
+      `인식된 음식/메뉴 텍스트: ${expandedTexts.join(', ')}`,
+      context.inferredBrand ? `추정 브랜드: ${context.inferredBrand}` : null,
+      context.inferredCategory
+        ? `추정 카테고리: ${context.inferredCategory}`
+        : null,
+    ];
+
+    return parts.filter((value): value is string => !!value).join('\n');
+  }
+
+  private async getRecognitionCandidatesByIds(
+    userId: number,
+    menuIds: number[],
+  ): Promise<MenuRecognitionCandidate[]> {
+    if (menuIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select([
+        'menu.id AS id',
+        'menu.name AS name',
+        'menu.brand AS brand',
+        'menu.category AS category',
+      ])
+      .where('menu.id IN (:...menuIds)', { menuIds })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .getRawMany<MenuRecognitionCandidate>();
+    const candidates = rows.map((candidate) => ({
+      ...candidate,
+      id: Number(candidate.id),
+    }));
+    const candidateMap = new Map(
+      candidates.map((candidate) => [candidate.id, candidate]),
+    );
+
+    return menuIds
+      .map((menuId) => candidateMap.get(menuId))
+      .filter((candidate): candidate is MenuRecognitionCandidate => !!candidate);
   }
 
   private buildRecognitionCandidatePool(
