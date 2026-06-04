@@ -869,10 +869,10 @@ export class HomeService {
       throw new BadRequestException('image file must be an image');
     }
 
-    const detectedFoodNames = await this.detectFoodNamesFromImage(file);
+    const foodImageDescription = await this.describeFoodImage(file);
     const menus = await this.getFoodImageRecognitionCandidateMenus(
       user.id,
-      detectedFoodNames,
+      foodImageDescription,
     );
 
     if (menus.length === 0) {
@@ -896,6 +896,9 @@ export class HomeService {
 
 후보 메뉴:
 ${JSON.stringify(menus)}
+
+1차 사진 분석:
+${JSON.stringify(foodImageDescription)}
 
 반환 shape:
 {
@@ -929,26 +932,30 @@ failure_reason enum:
     });
   }
 
-  private async detectFoodNamesFromImage(
-    file: Express.Multer.File,
-  ): Promise<string[]> {
+  private async describeFoodImage(file: Express.Multer.File): Promise<{
+    foodNames: string[];
+    visualDescription: string | null;
+  }> {
     const prompt = `
-음식 사진을 보고, 사진에 실제로 포함된 음식명을 JSON object로 반환해.
+음식 사진을 보고, 사진에 실제로 포함된 음식명과 시각적 특징을 JSON object로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- 음식명은 최대한 구체적으로 작성해
+- 음식명은 알 수 있는 범위에서 최대한 구체적으로 작성해
+- 정확한 메뉴명을 모르더라도 "양념된 구운 돼지고기", "숯불에 구운 고기", "구운 마늘"처럼 보이는 특징을 food_names에 넣어
+- visual_description에는 주요 식재료, 조리 방식, 양념 여부, 보이는 구성 요소를 1~3문장으로 설명해
 - 같은 음식이 여러 개 보여도 food_names에는 중복 없이 한 번만 넣어
-- 확실하지 않은 음식은 제외해
+- 확실하지 않은 경우에도 사진에서 보이는 범용 음식 설명은 남겨
 - 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
-- 사진 문제로 실패한 경우 recognition_status는 "failed", food_names는 빈 배열로 반환해
-- 음식은 보이지만 이름을 특정하기 어렵다면 failure_reason은 "NO_MATCHING_MENU"로 반환해
+- 사진 문제로 실패한 경우에만 recognition_status는 "failed", food_names는 빈 배열로 반환해
+- 음식은 보이지만 정확한 메뉴명을 특정하기 어려운 경우에는 실패로 처리하지 말고 범용 설명을 반환해
 
 반환 shape:
 {
   "recognition_status": "recognized",
   "failure_reason": null,
-  "food_names": ["싸이버거", "감자튀김"]
+  "food_names": ["양념된 구운 고기", "구운 마늘"],
+  "visual_description": "불판 위에 양념된 고기와 소금구이처럼 보이는 고기, 구운 마늘이 함께 보입니다."
 }
 
 failure_reason enum:
@@ -958,7 +965,6 @@ failure_reason enum:
 - POOR_LIGHTING
 - FOOD_OCCLUDED
 - NO_FOOD_DETECTED
-- NO_MATCHING_MENU
 `.trim();
     const data = await this.callGeminiJsonWithImage(
       prompt,
@@ -966,7 +972,20 @@ failure_reason enum:
       'Food image recognition is unavailable',
     );
 
-    this.assertFoodImageRecognizable(data);
+    const failureReason = this.asFoodImageRecognitionFailureReason(
+      data?.failure_reason,
+    );
+    const isFailed = data?.recognition_status === 'failed';
+
+    if (
+      isFailed &&
+      failureReason &&
+      failureReason !== 'NO_MATCHING_MENU'
+    ) {
+      throw new BadRequestException(
+        FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES[failureReason],
+      );
+    }
 
     const foodNames = Array.isArray(data?.food_names) ? data.food_names : [];
     const normalizedFoodNames = foodNames
@@ -975,14 +994,30 @@ failure_reason enum:
       )
       .filter((foodName) => foodName.length >= 2);
 
-    return Array.from(
-      new Set<string>(normalizedFoodNames),
-    ).slice(0, 10);
+    const visualDescription =
+      typeof data?.visual_description === 'string' &&
+      data.visual_description.trim().length > 0
+        ? data.visual_description.trim()
+        : null;
+
+    if (normalizedFoodNames.length === 0 && !visualDescription) {
+      throw new BadRequestException(
+        FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
+      );
+    }
+
+    return {
+      foodNames: Array.from(new Set<string>(normalizedFoodNames)).slice(0, 10),
+      visualDescription,
+    };
   }
 
   private async getFoodImageRecognitionCandidateMenus(
     userId: number,
-    foodNames: string[],
+    description: {
+      foodNames: string[];
+      visualDescription: string | null;
+    },
   ): Promise<
     Array<{
       id: number;
@@ -994,7 +1029,7 @@ failure_reason enum:
   > {
     const vectorMenus = await this.getVectorFoodImageCandidateMenus(
       userId,
-      foodNames,
+      description,
     );
 
     if (vectorMenus.length > 0) {
@@ -1006,7 +1041,10 @@ failure_reason enum:
 
   private async getVectorFoodImageCandidateMenus(
     userId: number,
-    foodNames: string[],
+    description: {
+      foodNames: string[];
+      visualDescription: string | null;
+    },
   ): Promise<
     Array<{
       id: number;
@@ -1019,14 +1057,14 @@ failure_reason enum:
     if (
       !this.isVectorSearchEnabled() ||
       !this.menuVectorService ||
-      foodNames.length === 0
+      (description.foodNames.length === 0 && !description.visualDescription)
     ) {
       return [];
     }
 
     try {
       const vectorResults = await this.menuVectorService.searchMenusByText(
-        `음식 사진 인식 결과: ${foodNames.join(', ')}`,
+        this.buildFoodImageVectorQuery(description),
         {
           userId,
           limit: this.getFoodImageVectorCandidateLimit(),
@@ -1044,6 +1082,22 @@ failure_reason enum:
 
       return [];
     }
+  }
+
+  private buildFoodImageVectorQuery(description: {
+    foodNames: string[];
+    visualDescription: string | null;
+  }): string {
+    return [
+      description.foodNames.length > 0
+        ? `음식 후보명: ${description.foodNames.join(', ')}`
+        : null,
+      description.visualDescription
+        ? `시각적 특징: ${description.visualDescription}`
+        : null,
+    ]
+      .filter((value): value is string => !!value)
+      .join('\n');
   }
 
   private async getFoodImageRecognitionMenusByIds(
