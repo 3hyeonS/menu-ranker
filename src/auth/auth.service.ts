@@ -453,7 +453,7 @@ export class AuthService {
           'https://amplitude.com/api/2/deletions/users',
           {
             user_ids: [amplitudeUserId],
-            requester: 'account_delete',
+            requester: 'oioigl1002@gmail.com',
             ignore_invalid_id: true,
           },
           {
