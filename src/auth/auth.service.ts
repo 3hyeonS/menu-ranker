@@ -454,7 +454,7 @@ export class AuthService {
           {
             user_ids: [amplitudeUserId],
             requester: 'oioigl1002@gmail.com',
-            ignore_invalid_id: true,
+            ignore_invalid_id: 'True',
           },
           {
             headers: {
