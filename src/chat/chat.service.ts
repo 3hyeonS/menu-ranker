@@ -4498,21 +4498,8 @@ ${JSON.stringify(menusPayload)}
         brand: menu.brand,
         category: menu.category,
         calories: roundNullableToOneDecimal(menu.calories) ?? 0,
-        carbs: roundToOneDecimal(this.getEffectiveCarbs(menu)),
         protein: roundNullableToOneDecimal(menu.protein) ?? 0,
-        fat: roundToOneDecimal(this.getEffectiveFat(menu)),
-        sugars: roundNullableToOneDecimal(menu.sugars) ?? 0,
-        sodium: roundNullableToOneDecimal(menu.sodium) ?? 0,
         internal_score: roundToOneDecimal(score.finalScore),
-        score_breakdown: {
-          calorie: score.calorieScore,
-          macro: score.macroScore,
-          goal: score.goalScore,
-          satiety: score.satietyScore,
-          sugar: score.sugarScore,
-          intent: score.intentScore,
-        },
-        local_reason: score.localReason,
       }));
     const prompt = `
 아래 후보 메뉴 중 사용자 문맥에 가장 잘 맞는 최종 추천 메뉴를 골라 한국어 JSON object로 반환해줘.
@@ -4521,7 +4508,8 @@ ${JSON.stringify(menusPayload)}
 선택 규칙:
 - candidate_menus 안에 있는 menu_id만 사용
 - 최종 추천은 최대 10개
-- 내부 점수는 영양/목표/의도 적합도를 계산한 중요한 참고값이야
+- internal_score는 칼로리, 탄단지, 목표, 포만감, 당류, 의도 매칭을 종합한 내부 점수야
+- 세부 점수는 생략되어 있으니 internal_score를 중요한 기준으로 참고해
 - 사용자의 표현, 장소, 가볍게/든든하게 같은 문맥을 함께 고려해 순서를 조정해
 - 내부 점수가 현저히 낮은 메뉴를 특별한 이유 없이 상위로 올리지 마
 - 사용자가 특정 브랜드/카테고리를 말했으면 그 문맥을 우선해

@@ -65,6 +65,10 @@ export class AuthService {
     return `멜로유저${userId}`;
   }
 
+  private buildAmplitudeUserId(userId: number): string {
+    return `melo_user_${userId}`;
+  }
+
   // userAuth controller
   // 카카오 정보 회원 가입
   async signUpWithKakao(
@@ -430,6 +434,7 @@ export class AuthService {
   private async requestAmplitudeUserDeletion(userId: number): Promise<void> {
     const amplitudeApiKey = process.env.AMPLITUDE_API_KEY;
     const amplitudeApiSecret = process.env.AMPLITUDE_API_SECRET;
+    const amplitudeUserId = this.buildAmplitudeUserId(userId);
 
     if (!amplitudeApiKey || !amplitudeApiSecret) {
       this.logger.error('Amplitude credentials are not configured');
@@ -447,7 +452,7 @@ export class AuthService {
         this.httpService.post(
           'https://amplitude.com/api/2/deletions/users',
           {
-            user_ids: [String(userId)],
+            user_ids: [amplitudeUserId],
             requester: 'account_delete',
             ignore_invalid_id: true,
           },
@@ -471,6 +476,7 @@ export class AuthService {
 
       this.logger.error('Amplitude deletion failed', {
         userId,
+        amplitudeUserId,
         status: amplitudeError.response?.status,
         data: amplitudeError.response?.data,
         message: amplitudeError.message,
