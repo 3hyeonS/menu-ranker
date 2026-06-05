@@ -673,59 +673,88 @@ export class HomeService {
 
     const keywordPattern = `%${keyword}%`;
     const keywordTokens = this.toSearchTokens(keyword);
+    const buildSearchQuery = () => {
+      const menuQuery = this.menuRepository
+        .createQueryBuilder('menu')
+        .leftJoinAndSelect('menu.user', 'user')
+        .where(
+          new Brackets((qb) => {
+            qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+              userId: user.id,
+            });
+          }),
+        )
+        .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+        .andWhere(
+          new Brackets((qb) => {
+            qb.where('menu.name LIKE :keyword', {
+              keyword: keywordPattern,
+            }).orWhere('menu.brand = :brandKeyword', {
+              brandKeyword: keyword,
+            });
 
-    const menuQuery = this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoinAndSelect('menu.user', 'user')
-      .where(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
-            userId: user.id,
-          });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .andWhere(
-        new Brackets((qb) => {
-          qb.where('menu.name LIKE :keyword', {
-            keyword: keywordPattern,
-          }).orWhere('menu.brand = :brandKeyword', {
-            brandKeyword: keyword,
-          });
+            if (keywordTokens.length > 1) {
+              qb.orWhere(
+                new Brackets((tokenQb) => {
+                  keywordTokens.forEach((token, index) => {
+                    tokenQb.andWhere(
+                      new Brackets((fieldQb) => {
+                        fieldQb
+                          .where(`menu.name LIKE :searchToken${index}`, {
+                            [`searchToken${index}`]: `%${token}%`,
+                          })
+                          .orWhere(`menu.brand LIKE :searchToken${index}`, {
+                            [`searchToken${index}`]: `%${token}%`,
+                          })
+                          .orWhere(`menu.category LIKE :searchToken${index}`, {
+                            [`searchToken${index}`]: `%${token}%`,
+                          });
+                      }),
+                    );
+                  });
+                }),
+              );
+            }
+          }),
+        );
 
-          if (keywordTokens.length > 1) {
-            qb.orWhere(
-              new Brackets((tokenQb) => {
-                keywordTokens.forEach((token, index) => {
-                  tokenQb.andWhere(
-                    new Brackets((fieldQb) => {
-                      fieldQb
-                        .where(`menu.name LIKE :searchToken${index}`, {
-                          [`searchToken${index}`]: `%${token}%`,
-                        })
-                        .orWhere(`menu.brand LIKE :searchToken${index}`, {
-                          [`searchToken${index}`]: `%${token}%`,
-                        })
-                        .orWhere(`menu.category LIKE :searchToken${index}`, {
-                          [`searchToken${index}`]: `%${token}%`,
-                        });
-                    }),
-                  );
+      if (cursor !== undefined) {
+        menuQuery.andWhere('menu.id > :cursor', { cursor });
+      }
+
+      return menuQuery;
+    };
+
+    const exactMenus =
+      cursor === undefined
+        ? await this.menuRepository
+            .createQueryBuilder('menu')
+            .leftJoinAndSelect('menu.user', 'user')
+            .where(
+              new Brackets((qb) => {
+                qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+                  userId: user.id,
                 });
               }),
-            );
-          }
-        }),
-      );
-
-    if (cursor !== undefined) {
-      menuQuery.andWhere('menu.id > :cursor', { cursor });
-    }
-
-    const menuList = await menuQuery
-      .orderBy('menu.id', 'ASC')
-      .take(limit + 1)
-      .getMany();
+            )
+            .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+            .andWhere('menu.name = :exactKeyword', { exactKeyword: keyword })
+            .orderBy('menu.id', 'ASC')
+            .take(limit)
+            .getMany()
+        : [];
+    const remainingLimit = Math.max(limit - exactMenus.length, 0);
+    const menuList =
+      remainingLimit > 0
+        ? [
+            ...exactMenus,
+            ...(await buildSearchQuery()
+              .andWhere('menu.name != :exactKeyword', { exactKeyword: keyword })
+              .orderBy('menu.id', 'ASC')
+              .take(remainingLimit + 1)
+              .getMany()),
+          ]
+        : exactMenus;
 
     const pagedMenuList = menuList.slice(0, limit);
     let menu_list: MenuSimpleResponseDto[] = pagedMenuList.map(
