@@ -62,6 +62,10 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_FOOD_DETECTED: 'no food detected in image',
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
+const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = [
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+];
 
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
@@ -2200,61 +2204,133 @@ failure_reason enum:
     unavailableMessage = 'Nutrition label recognition is unavailable',
   ): Promise<any> {
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
-    const baseUrl =
-      process.env.GEMINI_BASE_URL ??
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const primaryModel =
+      process.env.GEMINI_IMAGE_MODEL ??
+      process.env.GEMINI_MODEL ??
+      'gemini-2.5-flash';
+    const fallbackModels = [
+      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS
+        ?.split(',')
+        .map((model) => model.trim()) ?? []),
+      process.env.GEMINI_IMAGE_FALLBACK_MODEL,
+      ...DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS,
+    ];
+    const baseUrlOverride =
+      process.env.GEMINI_IMAGE_BASE_URL ?? process.env.GEMINI_BASE_URL;
 
     if (!apiKey) {
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${baseUrl}?key=${apiKey}`,
-          {
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: prompt },
-                  {
-                    inline_data: {
-                      mime_type: file.mimetype,
-                      data: file.buffer.toString('base64'),
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: 'application/json',
-            },
-          },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            timeout: 30000,
-          },
+    const attempts = Array.from(
+      new Set(
+        [primaryModel, ...fallbackModels].filter(
+          (model): model is string =>
+            typeof model === 'string' && model.trim().length > 0,
         ),
-      );
+      ),
+    );
 
-      const text = response.data?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
-        .join('')
-        ?.trim();
+    for (const [index, model] of attempts.entries()) {
+      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
 
-      if (!text) {
-        throw new Error('Gemini returned empty content');
+      try {
+        return await this.postGeminiImageJson(prompt, file, apiKey, baseUrl);
+      } catch (error) {
+        if (
+          index === attempts.length - 1 ||
+          !this.shouldRetryGeminiWithFallback(error)
+        ) {
+          break;
+        }
       }
-
-      return JSON.parse(this.stripCodeFence(text));
-    } catch (error) {
-      throw new ServiceUnavailableException(unavailableMessage);
     }
+
+    throw new ServiceUnavailableException(unavailableMessage);
+  }
+
+  private async postGeminiImageJson(
+    prompt: string,
+    file: Express.Multer.File,
+    apiKey: string,
+    baseUrl: string,
+  ): Promise<any> {
+    const response = await firstValueFrom(
+      this.httpService.post(
+        `${baseUrl}?key=${apiKey}`,
+        {
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: file.mimetype,
+                    data: file.buffer.toString('base64'),
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000,
+        },
+      ),
+    );
+
+    const text = response.data?.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text ?? '')
+      .join('')
+      ?.trim();
+
+    if (!text) {
+      throw new Error('Gemini returned empty content');
+    }
+
+    return JSON.parse(this.stripCodeFence(text));
+  }
+
+  private shouldRetryGeminiWithFallback(error: unknown): boolean {
+    const geminiError = error as {
+      code?: string;
+      response?: {
+        status?: number;
+        data?: {
+          error?: {
+            status?: string;
+          };
+        };
+      };
+    };
+    const httpStatus = geminiError.response?.status;
+    const errorStatus = geminiError.response?.data?.error?.status;
+
+    return (
+      httpStatus === 404 ||
+      httpStatus === 429 ||
+      httpStatus === 500 ||
+      httpStatus === 503 ||
+      httpStatus === 504 ||
+      errorStatus === 'NOT_FOUND' ||
+      errorStatus === 'RESOURCE_EXHAUSTED' ||
+      geminiError.code === 'ECONNABORTED'
+    );
+  }
+
+  private buildGeminiBaseUrl(model: string, baseUrlOverride?: string): string {
+    return (
+      baseUrlOverride ??
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+    );
   }
 
   // 인식용 음식 사진 S3 업로드

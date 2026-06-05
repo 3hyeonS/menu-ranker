@@ -48,6 +48,10 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
 const DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX = '(식약처_음식)';
+const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = [
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
+];
 
 type ChatCategory = 'feedback' | 'recommendation' | 'general';
 type ChatIntroMessageSource =
@@ -337,10 +341,12 @@ export class ChatService {
     const errorStatus = geminiError.response?.data?.error?.status;
 
     return (
+      httpStatus === 404 ||
       httpStatus === 429 ||
       httpStatus === 500 ||
       httpStatus === 503 ||
       httpStatus === 504 ||
+      errorStatus === 'NOT_FOUND' ||
       errorStatus === 'RESOURCE_EXHAUSTED' ||
       geminiError.code === 'ECONNABORTED'
     );
@@ -4661,8 +4667,13 @@ ${JSON.stringify(candidates)}
       process.env.GEMINI_IMAGE_MODEL ??
       process.env.GEMINI_MODEL ??
       'gemini-2.5-flash';
-    const fallbackModel =
-      process.env.GEMINI_IMAGE_FALLBACK_MODEL ?? 'gemini-2.0-flash-lite';
+    const fallbackModels = [
+      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS
+        ?.split(',')
+        .map((model) => model.trim()) ?? []),
+      process.env.GEMINI_IMAGE_FALLBACK_MODEL,
+      ...DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS,
+    ];
     const baseUrlOverride =
       process.env.GEMINI_IMAGE_BASE_URL ?? process.env.GEMINI_BASE_URL;
 
@@ -4676,7 +4687,7 @@ ${JSON.stringify(candidates)}
 
     const attempts = Array.from(
       new Set(
-        [primaryModel, fallbackModel].filter(
+        [primaryModel, ...fallbackModels].filter(
           (model): model is string =>
             typeof model === 'string' && model.trim().length > 0,
         ),
