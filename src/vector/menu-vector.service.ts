@@ -14,6 +14,7 @@ export type MenuVectorSearchOptions = {
   limit: number;
   brand?: string | null;
   category?: string | null;
+  namePrefix?: string | null;
   maxCalories?: number | null;
   minProtein?: number | null;
 };
@@ -189,6 +190,11 @@ export class MenuVectorService {
     if (options.category) {
       params.push(`%${options.category}%`);
       conditions.push(`category ILIKE $${params.length}`);
+    }
+
+    if (options.namePrefix) {
+      params.push(`${options.namePrefix}%`);
+      conditions.push(`name LIKE $${params.length}`);
     }
 
     if (options.maxCalories !== null && options.maxCalories !== undefined) {

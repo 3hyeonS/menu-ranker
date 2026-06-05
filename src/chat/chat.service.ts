@@ -47,6 +47,7 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_FOOD_DETECTED: 'no food detected in image',
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
+const DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX = '(식약처_음식)';
 
 type ChatCategory = 'feedback' | 'recommendation' | 'general';
 type ChatIntroMessageSource =
@@ -2053,6 +2054,9 @@ ${JSON.stringify(candidates)}
             intent.desired_category,
             ...intent.include.categories,
           ]),
+          namePrefix: this.shouldUseDefaultRecommendationMenuScope(intent)
+            ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
+            : null,
           maxCalories: intent.nutrition_constraints.max_calories,
           minProtein: intent.nutrition_constraints.min_protein,
         },
@@ -2136,6 +2140,12 @@ ${JSON.stringify(candidates)}
       ),
     );
 
+    if (this.shouldUseDefaultRecommendationMenuScope(intent)) {
+      builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
+        defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
+      });
+    }
+
     // 브랜드가 지정된 경우 우선 브랜드 필터를 걸어 관련 메뉴만 남깁니다.
     if (brandFilters.length > 0) {
       builder.andWhere(
@@ -2194,6 +2204,17 @@ ${JSON.stringify(candidates)}
       )
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .getMany();
+  }
+
+  private shouldUseDefaultRecommendationMenuScope(
+    intent: ParsedChatIntent,
+  ): boolean {
+    return (
+      !intent.desired_brand &&
+      !intent.desired_category &&
+      intent.include.brands.length === 0 &&
+      intent.include.categories.length === 0
+    );
   }
 
   private buildVectorRecommendationQuery(
