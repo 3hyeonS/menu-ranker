@@ -709,7 +709,7 @@ export class ChatService {
       rankedMenus,
       recognizedCandidates,
       fallbackIntro,
-      includeDescriptions: !skipGeneratedDescriptions,
+      includeDescriptions: false,
       chatContext,
     });
     timing?.mark('gemini_presentation_completed');
@@ -742,10 +742,9 @@ export class ChatService {
       item.data_source = menu.data_source;
       item.score = roundToOneDecimal(score.finalScore);
       item.rank = index + 1;
-      item.one_line_summary =
-        generated?.one_line_summary ?? this.buildFallbackSummary(menu, score);
+      item.one_line_summary = generated?.one_line_summary ?? 'summary';
       item.recommendation_reason =
-        generated?.recommendation_reason ?? score.localReason;
+        generated?.recommendation_reason ?? 'reason';
 
       return item;
     });
