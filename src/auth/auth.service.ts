@@ -30,6 +30,13 @@ import { UserInfoEntity } from './entity/user/userInfo.entity';
 import { UserGoalEntity } from './entity/user/userGoal.entity';
 import { SubscriptionService } from './subscription.service';
 
+const AUTO_ADMIN_EMAILS = new Set([
+  'psa0020@kakao.com',
+  '425269@naver.com',
+  'oioigl@naver.com',
+  'lordsong5974@naver.com',
+]);
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -69,6 +76,12 @@ export class AuthService {
     return `melo_user_${userId}`;
   }
 
+  private resolveSignUpRoleByEmail(email: string): 'USER' | 'ADMIN' {
+    return AUTO_ADMIN_EMAILS.has(email.trim().toLowerCase())
+      ? 'ADMIN'
+      : 'USER';
+  }
+
   // userAuth controller
   // 카카오 정보 회원 가입
   async signUpWithKakao(
@@ -96,12 +109,15 @@ export class AuthService {
     }
 
     // 새 사용자 생성 로직
+    const signUpRole = this.resolveSignUpRoleByEmail(kakaoEmail);
     const newUser = await this.userRepository.save({
       nickname: '멜로유저',
       name: kakaoUserNickname,
       email: kakaoEmail,
       signWith: await this.signWithRepository.findOneBy({ platform: 'KAKAO' }),
-      authority: await this.authorityRepository.findOneBy({ role: 'USER' }),
+      authority: await this.authorityRepository.findOneBy({
+        role: signUpRole,
+      }),
     });
     newUser.nickname = this.buildDefaultNickname(newUser.id);
     await this.userRepository.save(newUser);
@@ -292,12 +308,15 @@ export class AuthService {
     appleRefreshToken: string,
   ): Promise<UserEntity> {
     // 새 사용자 생성 로직
+    const signUpRole = this.resolveSignUpRoleByEmail(email);
     const newUser = await this.userRepository.save({
       nickname: '멜로유저',
       name,
       email: email,
       signWith: await this.signWithRepository.findOneBy({ platform: 'APPLE' }),
-      authority: await this.authorityRepository.findOneBy({ role: 'USER' }),
+      authority: await this.authorityRepository.findOneBy({
+        role: signUpRole,
+      }),
     });
     newUser.nickname = this.buildDefaultNickname(newUser.id);
     await this.userRepository.save(newUser);

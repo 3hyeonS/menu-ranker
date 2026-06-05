@@ -4593,7 +4593,10 @@ ${JSON.stringify(candidates)}
     }
   }
 
-  private async callGeminiJson(prompt: string): Promise<any> {
+  private async callGeminiJson(
+    prompt: string,
+    options: { context?: string; timeoutMs?: number } = {},
+  ): Promise<any> {
     // Gemini 공통 호출부: JSON 응답 강제와 에러 변환을 한곳에서 처리합니다.
     const apiKey = process.env.GEMINI_API_KEY;
     const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
@@ -4635,7 +4638,7 @@ ${JSON.stringify(candidates)}
             headers: {
               'Content-Type': 'application/json',
             },
-            timeout: 20000,
+            timeout: options.timeoutMs ?? this.getGeminiTextTimeoutMs(),
           },
         ),
       );
@@ -4651,11 +4654,21 @@ ${JSON.stringify(candidates)}
 
       return JSON.parse(this.stripCodeFence(text));
     } catch (error) {
-      this.logGeminiError('text-json', error);
+      this.logGeminiError(options.context ?? 'text-json', error);
       throw new ServiceUnavailableException(
         'Gemini recommendation pipeline is unavailable',
       );
     }
+  }
+
+  private getGeminiTextTimeoutMs(): number {
+    const parsed = Number(process.env.GEMINI_TEXT_TIMEOUT_MS ?? 45000);
+
+    if (!Number.isFinite(parsed)) {
+      return 45000;
+    }
+
+    return Math.min(Math.max(parsed, 5000), 120000);
   }
 
   private async callGeminiJsonWithImage(
