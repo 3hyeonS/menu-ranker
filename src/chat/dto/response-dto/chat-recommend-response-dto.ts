@@ -6,7 +6,7 @@ export class ChatRecommendResponseDto {
   @ApiProperty({
     type: String,
     description:
-      '채팅 분류  \nfeedback: 피드백  \nrecommendation: 추천  \ngeneral: 범용 식단/영양 질문',
+      '채팅 분류  \nfeedback: 피드백  \nrecommendation: 추천  \ngeneral: 범용 일반 질문',
     example: 'recommendation',
   })
   chat_category: 'feedback' | 'recommendation' | 'general';
@@ -35,7 +35,7 @@ export class ChatRecommendResponseDto {
 
   @ApiProperty({
     type: String,
-    description: '범용 식단/영양 질문으로 분류된 경우 Gemini가 생성한 답변',
+    description: '범용 일반 질문으로 분류된 경우 Gemini가 생성한 답변',
     required: false,
     example:
       '탄수화물은 운동량과 하루 식사 흐름에 맞춰 나눠 먹는 쪽이 현실적입니다. 감량 중이라도 완전히 끊기보다는 활동량이 많은 시간대나 운동 전후에 배치하면 식욕 조절과 컨디션 유지에 도움이 될 수 있어요.',

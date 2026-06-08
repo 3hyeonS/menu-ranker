@@ -49,7 +49,7 @@ export class ChatController {
   @ApiOperation({
     summary: '채팅형 메뉴 피드백/추천/범용 질문',
     description:
-      '입력값을 Gemini로 피드백/추천/범용 질문으로 분류. 피드백은 입력 메뉴를 DB 메뉴와 매핑한 뒤 현재 유저 목표와 식사기록 기준으로 판단하고, 추천은 기존 메뉴 추천 로직을 사용. 범용 질문은 메뉴 DB 랭킹 없이 사용자 정보와 오늘 섭취 흐름을 참고해 답변',
+      '입력값을 Gemini로 피드백/추천/범용 질문으로 분류. 피드백은 입력 메뉴를 DB 메뉴와 매핑한 뒤 현재 유저 목표와 식사기록 기준으로 판단하고, 추천은 기존 메뉴 추천 로직을 사용. 범용 질문은 메뉴 DB 랭킹 없이 질문에 직접 답변',
   })
   @ApiExtraModels(
     ResponseDto,
@@ -159,7 +159,7 @@ export class ChatController {
             },
           },
           general: {
-            summary: '범용 식단/영양 질문으로 분류된 경우',
+            summary: '범용 일반 질문으로 분류된 경우',
             value: {
               message: 'Menu recommendations generated successfully',
               statusCode: 201,
