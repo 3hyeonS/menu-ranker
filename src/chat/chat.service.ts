@@ -167,6 +167,11 @@ type DailyNutrition = {
   fat: number;
 };
 
+type DailyMealSnapshot = {
+  nutrition: DailyNutrition;
+  recentMenuNames: string[];
+};
+
 type MacroAmounts = {
   carbs: number;
   protein: number;
@@ -233,6 +238,13 @@ type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
 type GenericMenuCandidate = {
   name: string;
   reason: string | null;
+};
+
+type GenericMenuCandidateUserContext = {
+  goal: string;
+  remainingCalories: number;
+  remainingMacros: MacroAmounts;
+  recentMenuSummary: string;
 };
 
 type GeminiDescription = {
@@ -466,9 +478,14 @@ export class ChatService {
 
     const candidateMenus =
       comparisonMenuNames.length >= 2
-        ? await this.getComparisonCandidateMenus(user.id, comparisonMenuNames)
+        ? await this.getComparisonCandidateMenus(
+            user.id,
+            comparisonMenuNames,
+            timing,
+          )
         : await this.getCandidateMenus(
             user.id,
+            userInfo,
             recommendationIntent,
             input,
             timing,
@@ -1232,6 +1249,13 @@ export class ChatService {
     userId: number,
     date: Date,
   ): Promise<DailyNutrition> {
+    return (await this.getDailyMealSnapshot(userId, date)).nutrition;
+  }
+
+  private async getDailyMealSnapshot(
+    userId: number,
+    date: Date,
+  ): Promise<DailyMealSnapshot> {
     // 오늘 먹은 식사 기록을 전부 가져와 누적 칼로리/탄단지를 계산합니다.
     const startOfDay = new Date(date);
     const endOfDay = new Date(date);
@@ -1249,9 +1273,13 @@ export class ChatService {
           menu: true,
         },
       },
+      order: {
+        date: 'DESC',
+        id: 'DESC',
+      },
     });
 
-    return meals.reduce(
+    const nutrition = meals.reduce(
       (acc, meal) => {
         meal.mealMenus.forEach((mealMenu) => {
           const quantity = mealMenu.quantity ?? 0;
@@ -1264,6 +1292,20 @@ export class ChatService {
       },
       { calories: 0, carbs: 0, protein: 0, fat: 0 },
     );
+    const recentMenuNames = Array.from(
+      new Set(
+        meals
+          .flatMap((meal) =>
+            meal.mealMenus.map((mealMenu) => mealMenu.menu?.name?.trim()),
+          )
+          .filter((name): name is string => !!name),
+      ),
+    ).slice(0, 5);
+
+    return {
+      nutrition,
+      recentMenuNames,
+    };
   }
 
   private async getAvailableMenuRecognitionCandidates(
@@ -2121,6 +2163,7 @@ ${JSON.stringify(candidates)}
 
   private async getCandidateMenus(
     userId: number,
+    userInfo: UserInfoEntity,
     intent: ParsedChatIntent,
     input: string,
     timing?: ChatTimingLogger,
@@ -2128,12 +2171,13 @@ ${JSON.stringify(candidates)}
     const geminiGeneratedMenus =
       await this.getGeminiGeneratedGenericCandidateMenus(
         userId,
+        userInfo,
         intent,
         input,
         timing,
       );
 
-    if (geminiGeneratedMenus.length >= this.getVectorSearchMinResult()) {
+    if (geminiGeneratedMenus.length > 0) {
       return geminiGeneratedMenus;
     }
 
@@ -2223,6 +2267,7 @@ ${JSON.stringify(candidates)}
 
   private async getGeminiGeneratedGenericCandidateMenus(
     userId: number,
+    userInfo: UserInfoEntity,
     intent: ParsedChatIntent,
     input: string,
     timing?: ChatTimingLogger,
@@ -2233,8 +2278,17 @@ ${JSON.stringify(candidates)}
     }
 
     try {
+      const userContext = await this.buildGenericMenuCandidateUserContext(
+        userId,
+        userInfo,
+        intent,
+      );
       const genericCandidates =
-        await this.generateGenericMenuCandidatesWithGemini(input, intent);
+        await this.generateGenericMenuCandidatesWithGemini(
+          input,
+          intent,
+          userContext,
+        );
       timing?.mark('gemini_generic_candidates_generated', {
         generatedCount: genericCandidates.length,
       });
@@ -2274,9 +2328,41 @@ ${JSON.stringify(candidates)}
     );
   }
 
+  private async buildGenericMenuCandidateUserContext(
+    userId: number,
+    userInfo: UserInfoEntity,
+    intent: ParsedChatIntent,
+  ): Promise<GenericMenuCandidateUserContext> {
+    const targetDate = this.resolveTargetDate();
+    const snapshot = await this.getDailyMealSnapshot(userId, targetDate);
+    const mealTime =
+      intent.meal_time ?? this.inferMealTimeFromClock(new Date());
+    const basis = this.buildRecommendationBasis(
+      userInfo,
+      snapshot.nutrition,
+      mealTime,
+      intent.amount_preference,
+    );
+
+    return {
+      goal: this.goalToLabel(userInfo.goal),
+      remainingCalories: roundToOneDecimal(basis.remainingCalories),
+      remainingMacros: {
+        carbs: roundToOneDecimal(basis.remainingMacros.carbs),
+        protein: roundToOneDecimal(basis.remainingMacros.protein),
+        fat: roundToOneDecimal(basis.remainingMacros.fat),
+      },
+      recentMenuSummary:
+        snapshot.recentMenuNames.length > 0
+          ? snapshot.recentMenuNames.join(', ')
+          : '오늘 기록된 식사 없음',
+    };
+  }
+
   private async generateGenericMenuCandidatesWithGemini(
     input: string,
     intent: ParsedChatIntent,
+    userContext: GenericMenuCandidateUserContext,
   ): Promise<GenericMenuCandidate[]> {
     const prompt = `
 브랜드가 명시되지 않은 메뉴 추천 요청에 대해, 먼저 추천할 만한 일반 음식 후보명을 JSON object로 만들어줘.
@@ -2286,16 +2372,21 @@ ${JSON.stringify(candidates)}
 - 브랜드명, 매장명, 제조사명, 편의점 제품명, 영양음료 제품명은 제외해
 - 사용자가 특정 카테고리를 말했으면 그 범위 안에서 일반 음식명으로 후보를 만들어
 - "가볍게", "든든하게", "배달음식", "다이어트식" 같은 맥락을 반영해
+- 사용자 목표, 오늘 남은 칼로리, 남은 탄수화물/단백질/지방, 최근 먹은 메뉴 요약을 반영해
 - 우리 DB와 매칭하기 쉽도록 너무 추상적인 표현 대신 실제 음식명으로 작성해
-- 후보는 8~15개
+- 후보는 12~15개
 - name은 2~20자 정도의 자연스러운 한국어 음식명
 - reason은 짧게 1문장 이내
+- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야. reason에 남은 칼로리나 남은 탄단지 수치를 직접 노출하지 마
 
 사용자 입력:
 ${input}
 
 정규화 의도:
 ${JSON.stringify(intent)}
+
+사용자 식사 정보:
+${JSON.stringify(userContext)}
 
 반환 shape:
 {
@@ -2336,21 +2427,38 @@ ${JSON.stringify(intent)}
       );
     }
 
-    const vectorResults = await this.menuVectorService.searchMenusByText(
-      this.buildGenericCandidateVectorQuery(genericCandidates, intent),
-      {
-        userId,
-        limit: this.getGeminiGenericMenuMatchedMenuLimit(),
-        namePrefix: DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX,
-        maxCalories: intent.nutrition_constraints.max_calories,
-        minProtein: intent.nutrition_constraints.min_protein,
+    const menuVectorService = this.menuVectorService;
+    const matchedMenus = await this.mapWithConcurrency(
+      genericCandidates,
+      this.getGeminiGenericMenuVectorConcurrency(),
+      async (candidate) => {
+        const vectorResults = await menuVectorService.searchMenusByText(
+          this.buildSingleGenericCandidateVectorQuery(candidate, intent),
+          {
+            userId,
+            limit: this.getGeminiGenericMenuPerCandidateLimit(),
+            namePrefix: DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX,
+            maxCalories: intent.nutrition_constraints.max_calories,
+            minProtein: intent.nutrition_constraints.min_protein,
+          },
+        );
+        const menuIds = vectorResults.map((result) => result.menuId);
+        const vectorMenus = await this.getMenusByIds(userId, menuIds);
+        const matchedMenu = this.findMostSimilarMenuAboveThreshold(
+          candidate.name,
+          vectorMenus,
+          25,
+        );
+
+        return matchedMenu;
       },
     );
-    const menuIds = vectorResults.map((result) => result.menuId);
 
-    return await this.getMenusByIds(
-      userId,
-      menuIds,
+    return this.mergeMenusById(
+      matchedMenus.filter((menu): menu is MenuEntity => !!menu),
+    ).slice(
+      0,
+      this.getGeminiGenericMenuMatchedMenuLimit(),
     );
   }
 
@@ -2385,6 +2493,25 @@ ${JSON.stringify(intent)}
     return [
       `추천 후보 음식명: ${candidates.map((candidate) => candidate.name).join(', ')}`,
       reasons.length > 0 ? `후보 이유: ${reasons.join(' / ')}` : null,
+      intent.desired_category ? `카테고리: ${intent.desired_category}` : null,
+      intent.amount_preference
+        ? `식사량 선호: ${this.toAmountPreferenceText(intent.amount_preference)}`
+        : null,
+      intent.nutrition_focus.length > 0
+        ? `영양 포커스: ${intent.nutrition_focus.join(', ')}`
+        : null,
+    ]
+      .filter((value): value is string => !!value)
+      .join('\n');
+  }
+
+  private buildSingleGenericCandidateVectorQuery(
+    candidate: GenericMenuCandidate,
+    intent: ParsedChatIntent,
+  ): string {
+    return [
+      `추천 후보 음식명: ${candidate.name}`,
+      candidate.reason ? `후보 이유: ${candidate.reason}` : null,
       intent.desired_category ? `카테고리: ${intent.desired_category}` : null,
       intent.amount_preference
         ? `식사량 선호: ${this.toAmountPreferenceText(intent.amount_preference)}`
@@ -2618,6 +2745,28 @@ ${JSON.stringify(intent)}
     return Array.from(menuMap.values());
   }
 
+  private async mapWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T, index: number) => Promise<R>,
+  ): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (nextIndex < items.length) {
+          const currentIndex = nextIndex;
+          nextIndex += 1;
+          results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+        }
+      }),
+    );
+
+    return results;
+  }
+
   private isVectorSearchEnabled(): boolean {
     return ['1', 'true', 'yes', 'y'].includes(
       (process.env.VECTOR_SEARCH_ENABLED ?? '').toLowerCase(),
@@ -2644,26 +2793,60 @@ ${JSON.stringify(intent)}
     return Math.max(1, Math.floor(parsed));
   }
 
+  private getComparisonVectorCandidateLimit(): number {
+    const parsed = Number(process.env.VECTOR_COMPARISON_CANDIDATE_LIMIT ?? 20);
+
+    if (!Number.isFinite(parsed)) {
+      return 20;
+    }
+
+    return Math.max(5, Math.min(Math.floor(parsed), 50));
+  }
+
   private getGeminiGenericMenuCandidateLimit(): number {
-    const parsed = Number(process.env.GEMINI_GENERIC_MENU_CANDIDATE_LIMIT ?? 8);
+    const parsed = Number(process.env.GEMINI_GENERIC_MENU_CANDIDATE_LIMIT ?? 12);
+
+    if (!Number.isFinite(parsed)) {
+      return 12;
+    }
+
+    return Math.max(10, Math.min(Math.floor(parsed), 20));
+  }
+
+  private getGeminiGenericMenuMatchedMenuLimit(): number {
+    const parsed = Number(
+      process.env.GEMINI_GENERIC_MENU_MATCHED_MENU_LIMIT ?? 12,
+    );
+
+    if (!Number.isFinite(parsed)) {
+      return 12;
+    }
+
+    return Math.max(10, Math.min(Math.floor(parsed), 30));
+  }
+
+  private getGeminiGenericMenuPerCandidateLimit(): number {
+    const parsed = Number(
+      process.env.GEMINI_GENERIC_MENU_PER_CANDIDATE_LIMIT ?? 8,
+    );
 
     if (!Number.isFinite(parsed)) {
       return 8;
     }
 
-    return Math.max(5, Math.min(Math.floor(parsed), 20));
+    return Math.max(3, Math.min(Math.floor(parsed), 20));
   }
 
-  private getGeminiGenericMenuMatchedMenuLimit(): number {
+  private getGeminiGenericMenuVectorConcurrency(): number {
     const parsed = Number(
-      process.env.GEMINI_GENERIC_MENU_MATCHED_MENU_LIMIT ?? 60,
+      process.env.GEMINI_GENERIC_MENU_VECTOR_CONCURRENCY ?? 4,
     );
 
     if (!Number.isFinite(parsed)) {
-      return 60;
+      return 4;
     }
 
-    return Math.max(20, Math.min(Math.floor(parsed), 300));
+    return Math.max(1, Math.min(Math.floor(parsed), 8));
   }
 
   private shouldSkipIntentFilters(): boolean {
@@ -2708,11 +2891,19 @@ ${JSON.stringify(intent)}
   private async getComparisonCandidateMenus(
     userId: number,
     menuNames: string[],
+    timing?: ChatTimingLogger,
   ): Promise<MenuEntity[]> {
+    const vectorMatchedMenus =
+      await this.getComparisonCandidateMenusByVector(userId, menuNames, timing);
+
+    if (vectorMatchedMenus.length >= menuNames.length) {
+      return vectorMatchedMenus;
+    }
+
     const candidateMenus = await this.getAllCandidateMenus(userId);
 
     if (candidateMenus.length === 0) {
-      return [];
+      return vectorMatchedMenus;
     }
 
     const matchedMenus = menuNames
@@ -2721,7 +2912,65 @@ ${JSON.stringify(intent)}
       )
       .filter((menu): menu is MenuEntity => !!menu);
 
-    return this.mergeMenusById(matchedMenus, []);
+    timing?.mark('comparison_local_match_completed', {
+      matchedCount: matchedMenus.length,
+    });
+
+    return this.mergeMenusById(vectorMatchedMenus, matchedMenus);
+  }
+
+  private async getComparisonCandidateMenusByVector(
+    userId: number,
+    menuNames: string[],
+    timing?: ChatTimingLogger,
+  ): Promise<MenuEntity[]> {
+    if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
+      timing?.mark('comparison_vector_match_skipped');
+      return [];
+    }
+
+    const matchedMenus: MenuEntity[] = [];
+
+    try {
+      for (const menuName of menuNames) {
+        const vectorResults = await this.menuVectorService.searchMenusByText(
+          this.buildComparisonVectorQuery(menuName),
+          {
+            userId,
+            limit: this.getComparisonVectorCandidateLimit(),
+          },
+        );
+        const vectorMenuIds = vectorResults.map((result) => result.menuId);
+        const vectorMenus = await this.getMenusByIds(userId, vectorMenuIds);
+        const matchedMenu = this.findMostSimilarMenuAboveThreshold(
+          menuName,
+          vectorMenus,
+          30,
+        );
+
+        if (matchedMenu) {
+          matchedMenus.push(matchedMenu);
+        }
+      }
+
+      const uniqueMatchedMenus = this.mergeMenusById(matchedMenus, []);
+      timing?.mark('comparison_vector_match_completed', {
+        matchedCount: uniqueMatchedMenus.length,
+      });
+
+      return uniqueMatchedMenus;
+    } catch (error) {
+      console.warn('[CHAT] comparison vector match failed, fallback to local', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      timing?.mark('comparison_vector_match_failed');
+
+      return [];
+    }
+  }
+
+  private buildComparisonVectorQuery(menuName: string): string {
+    return `비교 대상 음식명: ${menuName}`;
   }
 
   private applyIntentFilters(
@@ -3404,20 +3653,30 @@ ${JSON.stringify(intent)}
     const searchable = this.normalizeComparableText(
       `${menu.name} ${menu.brand ?? ''} ${menu.category ?? ''}`,
     );
+    const compactInput = this.normalizeMenuMatchText(inputMenuName);
+    const compactMenuName = this.normalizeMenuMatchText(menu.name);
+    const compactSearchable = this.normalizeMenuMatchText(
+      `${menu.name} ${menu.brand ?? ''} ${menu.category ?? ''}`,
+    );
 
     if (!input) {
       return 0;
     }
 
-    if (menuName === input) {
+    if (menuName === input || compactMenuName === compactInput) {
       return 100;
     }
 
-    if (menuName.includes(input) || input.includes(menuName)) {
+    if (
+      menuName.includes(input) ||
+      input.includes(menuName) ||
+      compactMenuName.includes(compactInput) ||
+      compactInput.includes(compactMenuName)
+    ) {
       return 82;
     }
 
-    if (searchable.includes(input)) {
+    if (searchable.includes(input) || compactSearchable.includes(compactInput)) {
       return 72;
     }
 
@@ -3426,16 +3685,32 @@ ${JSON.stringify(intent)}
     const overlapCount = Array.from(inputTokens).filter((token) =>
       menuTokens.has(token),
     ).length;
+    const tokenScore =
+      inputTokens.size > 0 ? (overlapCount / inputTokens.size) * 60 : 0;
+    const characterScore = Math.max(
+      this.calculateCharacterDiceScore(compactInput, compactMenuName) * 72,
+      this.calculateCharacterDiceScore(compactInput, compactSearchable) * 60,
+    );
 
-    return inputTokens.size > 0 ? (overlapCount / inputTokens.size) * 60 : 0;
+    return Math.max(tokenScore, characterScore);
   }
 
   private normalizeComparableText(value: string): string {
     return value
       .toLowerCase()
+      .replace(/계란/g, '달걀')
+      .replace(/후라이/g, '프라이')
       .replace(/[^\w가-힣\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  private normalizeMenuMatchText(value: string): string {
+    return this.normalizeComparableText(value).replace(/\s+/g, '');
+  }
+
+  private normalizeComparisonMenuKey(value: string): string {
+    return this.normalizeMenuMatchText(value);
   }
 
   private buildKeywordsFromCandidates(
@@ -3959,24 +4234,38 @@ ${input}
   }
 
   private normalizeComparisonMenuNames(...groups: string[][]): string[] {
-    return this.mergeTextValues(
-      ...groups.map((group) =>
-        group.flatMap((value) =>
-          value
-            .split(/\s*(?:랑|하고|과|와|,|vs|VS)\s*/)
-            .map((part) =>
-              part
-                .replace(/\s*(?:중(?:에서|에)?)$/g, '')
-                .replace(
-                  /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*$/g,
-                  '',
-                )
-                .trim(),
-            )
-            .filter((part) => part.length >= 2),
-        ),
-      ),
-    );
+    const seen = new Set<string>();
+    const normalizedNames: string[] = [];
+
+    groups
+      .flatMap((group) => group)
+      .flatMap((value) =>
+        value
+          .split(/\s*(?:이랑|랑|하고|과|와|,|vs|VS)\s*/)
+          .map((part) =>
+            part
+              .replace(/\s*(?:중(?:에서|에)?)$/g, '')
+              .replace(
+                /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*$/g,
+                '',
+              )
+              .replace(/\s*(?:이|가|을|를)$/g, '')
+              .trim(),
+          )
+          .filter((part) => part.length >= 2),
+      )
+      .forEach((name) => {
+        const key = this.normalizeComparisonMenuKey(name);
+
+        if (!key || seen.has(key)) {
+          return;
+        }
+
+        seen.add(key);
+        normalizedNames.push(name);
+      });
+
+    return normalizedNames;
   }
 
   private isMenuComparisonRequest(input: string): boolean {
