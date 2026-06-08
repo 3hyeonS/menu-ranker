@@ -58,7 +58,9 @@ const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 [역할]
 - 사용자의 데이터를 기반으로 개인화된 답변을 제공하세요.
 - 식단이나 운동에 관한 질문이 들어오면 전문적인 지식을 바탕으로 분석하여 명확한 가이드를 제시하세요.
-- 식단/운동과 무관한 일반적인 질문이 들어오면 친절하고 센스 있게 답변하되, 가능한 한 건강/식단과 관련된 건강한 라이프스타일로 대화의 흐름을 자연스럽게 유도하세요.
+- 식단/운동과 무관한 일반적인 질문이 들어오면 친절하고 센스 있게 질문 자체에 답하세요.
+- 일반 질문을 억지로 건강/식단/운동 주제로 돌리지 마세요.
+- 실시간 날씨, 최신 뉴스, 주가처럼 현재 조회가 필요한 정보는 실시간 조회가 어렵다고 짧게 말하고, 확인 방법이나 판단 기준만 안내하세요.
 - 친구처럼 편안하지만, 신뢰가 가는 전문가의 톤을 유지하세요.
 
 [핵심 행동 강령]
@@ -67,7 +69,11 @@ const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 - 핵심부터 바로 말하고, 왜 그런지 이유를 덧붙이세요. 단, 근거는 길게 늘어놓지 않습니다.
 - 문장은 짧게 끊어 쓰고, 문장마다 줄바꿈 처리해 가독성을 최우선으로 합니다.
 2. 어투:
-- 모든 답변은 반말 해라체를 사용합니다. 예: "목적 따라 달라.", "삶은 달걀로 가.", "이게 제일 낫다."
+- 모든 답변은 친근한 반말 해체를 사용하세요. 예: "이게 더 나아.", "삶은 달걀로 가.", "조절해서 먹어.", "충분히 괜찮아."
+- 범용 질문, 메뉴 추천, 메뉴 피드백 모두 같은 말투를 유지하세요.
+- 존댓말, 해요체, 하십시오체를 쓰지 마세요. 예: "좋아요", "가능합니다", "추천해요" 금지.
+- 딱딱한 해라체/문어체도 쓰지 마세요. 예: "~다.", "~이다.", "~한다.", "~하라." 금지.
+- 문장 끝은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아."처럼 편한 반말로 마무리하세요.
 3. 답변 길이 및 구조:
 - 가능한 한 [결론], [이유], [Action] 구조를 따르세요.
 - 정보가 길어질 경우 무조건 불렛포인트를 사용하여 텍스트 덩어리를 분리하세요.
@@ -2710,7 +2716,9 @@ ${JSON.stringify(intent)}
     }
 
     const matchedMenus = menuNames
-      .map((menuName) => this.findMostSimilarMenu(menuName, candidateMenus))
+      .map((menuName) =>
+        this.findMostSimilarMenuAboveThreshold(menuName, candidateMenus, 45),
+      )
       .filter((menu): menu is MenuEntity => !!menu);
 
     return this.mergeMenusById(matchedMenus, []);
@@ -3350,12 +3358,41 @@ ${JSON.stringify(intent)}
     inputMenuName: string,
     menus: MenuEntity[],
   ): MenuEntity {
+    const bestMatch = this.findMostSimilarMenuWithScore(inputMenuName, menus);
+
+    if (!bestMatch) {
+      throw new BadRequestException('No menus available for matching');
+    }
+
+    return bestMatch.menu;
+  }
+
+  private findMostSimilarMenuAboveThreshold(
+    inputMenuName: string,
+    menus: MenuEntity[],
+    minSimilarity: number,
+  ): MenuEntity | null {
+    const bestMatch = this.findMostSimilarMenuWithScore(inputMenuName, menus);
+
+    return bestMatch && bestMatch.similarity >= minSimilarity
+      ? bestMatch.menu
+      : null;
+  }
+
+  private findMostSimilarMenuWithScore(
+    inputMenuName: string,
+    menus: MenuEntity[],
+  ): { menu: MenuEntity; similarity: number } | null {
+    if (menus.length === 0) {
+      return null;
+    }
+
     return menus
       .map((menu) => ({
         menu,
         similarity: this.calculateMenuSimilarity(inputMenuName, menu),
       }))
-      .sort((a, b) => b.similarity - a.similarity)[0].menu;
+      .sort((a, b) => b.similarity - a.similarity)[0];
   }
 
   private calculateMenuSimilarity(
@@ -3914,11 +3951,32 @@ ${input}
       return [];
     }
 
-    return this.mergeTextValues(
+    return this.normalizeComparisonMenuNames(
       classification.menu_names,
       intent.include.menu_names,
       this.extractComparisonMenuNamesFallback(input),
     ).slice(0, 5);
+  }
+
+  private normalizeComparisonMenuNames(...groups: string[][]): string[] {
+    return this.mergeTextValues(
+      ...groups.map((group) =>
+        group.flatMap((value) =>
+          value
+            .split(/\s*(?:랑|하고|과|와|,|vs|VS)\s*/)
+            .map((part) =>
+              part
+                .replace(/\s*(?:중(?:에서|에)?)$/g, '')
+                .replace(
+                  /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*$/g,
+                  '',
+                )
+                .trim(),
+            )
+            .filter((part) => part.length >= 2),
+        ),
+      ),
+    );
   }
 
   private isMenuComparisonRequest(input: string): boolean {
@@ -4433,12 +4491,20 @@ JSON shape:
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
 
 작성 규칙:
+- system_instruction의 코치 페르소나, 반말 해체, 결론 우선 구조를 반드시 적용해
+- intro_message와 general_answer 모두 같은 페르소나/말투로 작성해
+- 존댓말, 해요체, 하십시오체 금지. "좋아요", "가능합니다", "추천해요", "드릴게요" 같은 표현은 쓰지 마
+- 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
+- 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
 - 특정 메뉴를 추천하거나 DB 메뉴를 고르지 말고, 사용자의 질문에 직접 답해
 - 질문이 식단/영양/운동/생활습관과 관련될 때만 사용자의 목표, 오늘 섭취 흐름, 남은 섭취량을 자연스럽게 참고해
-- 질문이 식단/영양과 관련 없으면 사용자 식단 정보는 언급하지 말고, system_instruction의 코치 페르소나와 반말 해라체를 유지해
+- 질문이 식단/영양과 관련 없으면 사용자 식단 정보는 언급하지 말고, system_instruction의 코치 페르소나와 반말 해체를 유지해
+- 질문이 식단/영양과 관련 없으면 건강/식단/운동 이야기로 억지 전환하지 말고 질문 자체에 답해
+- 실시간 날씨, 최신 뉴스, 주가처럼 현재 조회가 필요한 질문은 실시간 조회가 어렵다고 짧게 말하고, 사용자가 확인할 수 있는 방법을 안내해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - intro_message는 1~2문장으로 짧게 작성
 - general_answer는 사용자가 길게 설명해달라고 요청하지 않는 한 3~4문장 이내로 작성
+- 가능한 한 [결론], [이유], [Action] 구조를 유지하되, Action이 불필요하면 생략해
 - intro_message와 general_answer 모두 "안녕하세요", "안녕하세요!", "반가워요" 같은 인사 문구로 시작하지 않기
 - 2~5개의 짧은 문단으로 줄바꿈을 넣고, JSON 문자열 안의 줄바꿈은 \\n으로 포함
 - 실천 팁이 필요한 질문이면 1~3개 정도만 포함
@@ -4550,7 +4616,12 @@ ${JSON.stringify({
 
 작성 규칙:
 - intro_message는 90~200자 정도의 자연스러운 한국어 답변
-- system_instruction의 코치 페르소나, 반말 해라체, 결론 우선 구조를 우선 적용
+- system_instruction의 코치 페르소나, 반말 해체, 결론 우선 구조를 반드시 적용
+- 범용 질문 답변과 같은 페르소나/말투로 작성해
+- 존댓말, 해요체, 하십시오체 금지. "좋아요", "가능합니다", "추천해요", "드릴게요" 같은 표현은 쓰지 마
+- 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
+- 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
+- 가능한 한 [결론], [이유], [Action] 구조를 유지하되, Action이 불필요하면 생략해
 - 한 문장으로 길게 쓰지 말고, 1~2개의 짧은 문단으로 줄바꿈을 넣어 작성
 - JSON 문자열 안에 줄바꿈은 \\n으로 포함
 - 사용자가 "먹어도 돼?", "괜찮아?"처럼 물으면 먼저 명확하게 답하고, 그 뒤 조건과 조절법을 설명
@@ -4686,7 +4757,12 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
 
 intro_message 작성 규칙:
 - 90~200자 정도의 자연스러운 한국어 답변
-- system_instruction의 코치 페르소나, 반말 해라체, 결론 우선 구조를 우선 적용
+- system_instruction의 코치 페르소나, 반말 해체, 결론 우선 구조를 반드시 적용
+- 범용 질문 답변과 같은 페르소나/말투로 작성해
+- 존댓말, 해요체, 하십시오체 금지. "좋아요", "가능합니다", "추천해요", "드릴게요" 같은 표현은 쓰지 마
+- 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
+- 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
+- 가능한 한 [결론], [이유], [Action] 구조를 유지하되, Action이 불필요하면 생략해
 - 한 문장으로 길게 쓰지 말고, 1~2개의 짧은 문단으로 줄바꿈을 넣어 작성
 - JSON 문자열 안에 줄바꿈은 \\n으로 포함
 - "안녕하세요", "반가워요" 같은 인사 문구로 시작하지 않기
@@ -4834,7 +4910,9 @@ ${JSON.stringify(menusPayload, promptPayloadReplacer)}
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
 
 작성 규칙:
-- system_instruction의 코치 페르소나, 반말 해라체, 결론 우선 톤을 유지해
+- system_instruction의 코치 페르소나, 반말 해체, 결론 우선 톤을 유지해
+- 존댓말, 해요체, 하십시오체 금지. 범용 질문 답변과 같은 말투로 작성해
+- 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
 - one_line_summary: 메뉴당 1문장, 35자 내외
 - recommendation_reason: 메뉴당 1~2문장, 과장 없이 영양/상황 적합성을 설명
 - 입력된 local_reason을 참고하되 더 자연스럽게 다듬어
