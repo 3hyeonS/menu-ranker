@@ -317,7 +317,8 @@ export class MenuVectorService {
         const explainRows = await queryRunner.query(`EXPLAIN ${sql}`, params);
         const plan = explainRows
           .map((row: Record<string, unknown>) => row['QUERY PLAN'])
-          .filter((line): line is string => typeof line === 'string');
+          .filter((line): line is string => typeof line === 'string')
+          .map((line) => this.redactVectorLiterals(line));
 
         console.log('[VECTOR_SEARCH_EXPLAIN]', {
           ivfflatProbes: this.getIvfflatProbes(),
@@ -330,5 +331,9 @@ export class MenuVectorService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  private redactVectorLiterals(value: string): string {
+    return value.replace(/'\[[^\]]+\]'::vector/g, "'[redacted]'::vector");
   }
 }
