@@ -207,7 +207,7 @@ export class MenuVectorService {
       conditions.push(`protein >= $${params.length}`);
     }
 
-    const rows = await this.query(
+    const rows = await this.queryVectorSearch(
       `
       SELECT
         menu_id AS "menuId",
@@ -224,6 +224,16 @@ export class MenuVectorService {
       menuId: Number(row.menuId),
       distance: Number(row.distance),
     }));
+  }
+
+  private getIvfflatProbes(): number {
+    const parsed = Number(process.env.VECTOR_IVFFLAT_PROBES ?? 10);
+
+    if (!Number.isFinite(parsed)) {
+      return 10;
+    }
+
+    return Math.max(1, Math.min(Math.floor(parsed), 1000));
   }
 
   private assertEmbeddingDimension(embedding: number[]): void {
@@ -251,5 +261,28 @@ export class MenuVectorService {
     }
 
     return await this.vectorDataSource.query(sql, params);
+  }
+
+  private async queryVectorSearch<T = any>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<T> {
+    if (!this.vectorDataSource.isInitialized) {
+      await this.vectorDataSource.initialize();
+    }
+
+    const queryRunner = this.vectorDataSource.createQueryRunner();
+
+    await queryRunner.connect();
+
+    try {
+      await queryRunner.query(
+        `SET ivfflat.probes = ${this.getIvfflatProbes()}`,
+      );
+
+      return await queryRunner.query(sql, params);
+    } finally {
+      await queryRunner.release();
+    }
   }
 }
