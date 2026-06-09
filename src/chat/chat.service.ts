@@ -517,6 +517,12 @@ export class ChatService {
     user: UserEntity,
     file: Express.Multer.File,
   ): Promise<ChatMenuBoardRecommendResponseDto> {
+    const timing = this.createChatTimingLogger('menu_board', {
+      userId: user.id,
+      fileSize: file?.size ?? 0,
+      mimeType: file?.mimetype ?? null,
+    });
+
     if (!file) {
       throw new BadRequestException('image file is required');
     }
@@ -526,9 +532,13 @@ export class ChatService {
     }
 
     const userInfo = await this.getRequiredUserInfo(user.id);
+    timing.mark('user_info_loaded');
     const availableMenus = await this.getAvailableMenuRecognitionCandidates(
       user.id,
     );
+    timing.mark('recognition_candidates_loaded', {
+      availableMenuCount: availableMenus.length,
+    });
 
     if (availableMenus.length === 0) {
       throw new BadRequestException('No menus available for recommendation');
@@ -539,8 +549,12 @@ export class ChatService {
         user.id,
         file,
         availableMenus,
+        timing,
       );
     const candidateIds = recognizedCandidates.map((candidate) => candidate.id);
+    timing.mark('menu_board_recognition_completed', {
+      recognizedCandidateCount: recognizedCandidates.length,
+    });
 
     if (candidateIds.length === 0) {
       throw new BadRequestException(
@@ -551,6 +565,9 @@ export class ChatService {
     const candidateMenus = await this.menuRepository.find({
       where: candidateIds.map((id) => ({ id, is_deleted: 0 })),
       relations: { user: true },
+    });
+    timing.mark('recognized_menu_details_loaded', {
+      menuCount: candidateMenus.length,
     });
     const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
     const orderedCandidateMenus = candidateIds
@@ -579,6 +596,7 @@ export class ChatService {
       nutrition_constraints: this.emptyNutritionConstraints(),
     };
     const imageUrl = await this.uploadChatImage(user, file, 'menu-board');
+    timing.mark('image_uploaded');
 
     const response = (await this.recommendWithPreparedContext({
       user,
@@ -589,7 +607,11 @@ export class ChatService {
       recognizedCandidates,
       imageUrl,
       introSource: 'menu_board_recommendation',
+      timing,
     })) as ChatMenuBoardRecommendResponseDto;
+    timing.end({
+      recommendationCount: response.recommendations?.length ?? 0,
+    });
 
     return response;
   }
@@ -598,6 +620,12 @@ export class ChatService {
     user: UserEntity,
     file: Express.Multer.File,
   ): Promise<ChatFoodImageFeedbackResponseDto> {
+    const timing = this.createChatTimingLogger('food_image_feedback', {
+      userId: user.id,
+      fileSize: file?.size ?? 0,
+      mimeType: file?.mimetype ?? null,
+    });
+
     if (!file) {
       throw new BadRequestException('image file is required');
     }
@@ -607,9 +635,13 @@ export class ChatService {
     }
 
     const userInfo = await this.getRequiredUserInfo(user.id);
+    timing.mark('user_info_loaded');
     const availableMenus = await this.getAvailableMenuRecognitionCandidates(
       user.id,
     );
+    timing.mark('recognition_candidates_loaded', {
+      availableMenuCount: availableMenus.length,
+    });
 
     if (availableMenus.length === 0) {
       throw new BadRequestException('No menus available for feedback');
@@ -619,13 +651,20 @@ export class ChatService {
       user.id,
       file,
       availableMenus,
+      timing,
     );
+    timing.mark('food_image_recognition_completed', {
+      recognizedFoodCount: recognizedFoods.length,
+    });
     const recognizedIds = Array.from(
       new Set(recognizedFoods.map((food) => food.id)),
     );
     const candidateMenus = await this.menuRepository.find({
       where: recognizedIds.map((id) => ({ id, is_deleted: 0 })),
       relations: { user: true },
+    });
+    timing.mark('recognized_menu_details_loaded', {
+      menuCount: candidateMenus.length,
     });
     const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
     const matchedMenus = recognizedFoods
@@ -671,6 +710,7 @@ export class ChatService {
         position: food.position,
       })),
       skipHistorySave: true,
+      timing,
     })) as ChatFoodImageFeedbackResponseDto;
 
     response.recognized_foods = recognizedFoods.map((food) =>
@@ -681,6 +721,7 @@ export class ChatService {
       file,
       'food-image-feedback',
     );
+    timing.mark('image_uploaded');
 
     await this.chatHistoryRepository.save(
       this.chatHistoryRepository.create({
@@ -689,6 +730,10 @@ export class ChatService {
         user,
       }),
     );
+    timing.mark('history_saved');
+    timing.end({
+      recognizedFoodCount: response.recognized_foods?.length ?? 0,
+    });
 
     return response;
   }
@@ -892,6 +937,7 @@ export class ChatService {
     introSource?: ChatIntroMessageSource;
     extractedItems?: unknown[];
     skipHistorySave?: boolean;
+    timing?: ChatTimingLogger;
   }): Promise<ChatRecommendResponseDto> {
     const {
       user,
@@ -901,9 +947,11 @@ export class ChatService {
       introMessage,
       introSource = 'text_feedback',
       extractedItems,
+      timing,
     } = params;
     const targetDate = this.resolveTargetDate();
     const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
+    timing?.mark('feedback_daily_nutrition_loaded');
     const mealTime = this.inferMealTimeFromClock(new Date());
     const rankingBasis = this.buildRecommendationBasis(
       userInfo,
@@ -932,6 +980,9 @@ export class ChatService {
     feedback.total_calories = roundToOneDecimal(combinationNutrition.calories);
     feedback.score = roundToOneDecimal(combinationScore.finalScore);
     feedback.is_appropriate = combinationScore.finalScore >= 65;
+    timing?.mark('feedback_score_completed', {
+      matchedMenuCount: matchedMenus.length,
+    });
 
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'feedback';
@@ -947,6 +998,7 @@ export class ChatService {
       extractedItems,
       fallback: introMessage,
     });
+    timing?.mark('feedback_gemini_intro_completed');
 
     if (!params.skipHistorySave) {
       await this.chatHistoryRepository.save(
@@ -956,6 +1008,7 @@ export class ChatService {
           user,
         }),
       );
+      timing?.mark('feedback_history_saved');
     }
 
     return response;
@@ -1334,6 +1387,7 @@ export class ChatService {
     userId: number,
     file: Express.Multer.File,
     menus: MenuRecognitionCandidate[],
+    timing?: ChatTimingLogger,
   ): Promise<MenuRecognitionCandidate[]> {
     const prompt = `
 메뉴판 사진을 OCR로 읽고, 사진에 보이는 메뉴명 후보만 JSON object로 반환해.
@@ -1355,12 +1409,30 @@ export class ChatService {
 `.trim();
 
     const data = await this.callGeminiJsonWithImage(prompt, file);
+    timing?.mark('menu_board_gemini_ocr_completed');
     const recognition = this.normalizeMenuBoardRecognition(data);
+    console.log('[CHAT_MENU_BOARD_OCR]', {
+      userId,
+      recognizedTexts: recognition.recognizedTexts,
+      recognizedTextCount: recognition.recognizedTexts.length,
+      inferredBrand: recognition.inferredBrand,
+      inferredCategory: recognition.inferredCategory,
+    });
+    timing?.mark('menu_board_ocr_normalized', {
+      recognizedTextCount: recognition.recognizedTexts.length,
+      inferredBrand: recognition.inferredBrand,
+      inferredCategory: recognition.inferredCategory,
+    });
     const vectorCandidatePool = await this.getVectorRecognitionCandidates({
       userId,
       texts: recognition.recognizedTexts,
       context: recognition,
       limit: this.rematchCandidateLimit,
+      timing,
+      timingPrefix: 'menu_board',
+    });
+    timing?.mark('menu_board_vector_candidate_pool_completed', {
+      candidatePoolCount: vectorCandidatePool.length,
     });
     const candidatePool =
       vectorCandidatePool.length > 0
@@ -1373,10 +1445,18 @@ export class ChatService {
             15,
             34,
           );
+    timing?.mark('menu_board_candidate_pool_selected', {
+      candidatePoolCount: candidatePool.length,
+      source: vectorCandidatePool.length > 0 ? 'vector' : 'local',
+    });
     const rematchedCandidates = await this.rematchMenuBoardCandidatesWithGemini(
       recognition,
       candidatePool,
+      timing,
     );
+    timing?.mark('menu_board_gemini_rematch_completed', {
+      rematchedCount: rematchedCandidates.length,
+    });
 
     return rematchedCandidates.length > 0
       ? rematchedCandidates
@@ -1387,6 +1467,7 @@ export class ChatService {
     userId: number,
     file: Express.Multer.File,
     menus: MenuRecognitionCandidate[],
+    timing?: ChatTimingLogger,
   ): Promise<RecognizedFoodImageMenu[]> {
     const prompt = `
 음식 사진을 보고, 사진에 실제로 포함된 음식명을 JSON object로 반환해.
@@ -1430,6 +1511,7 @@ failure_reason enum:
 `.trim();
 
     const data = await this.callGeminiJsonWithImage(prompt, file);
+    timing?.mark('food_image_gemini_primary_completed');
     this.assertFoodImageRecognizable(data);
 
     const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
@@ -1438,6 +1520,9 @@ failure_reason enum:
     const predictions = detectedFoods
       .map((value) => this.normalizeFoodImagePrediction(value))
       .filter((food): food is FoodImagePrediction => food !== null);
+    timing?.mark('food_image_predictions_normalized', {
+      predictionCount: predictions.length,
+    });
     const foodImageContext = {
       inferredBrand: null,
       inferredCategory: null,
@@ -1447,6 +1532,11 @@ failure_reason enum:
       texts: predictions.map((food) => food.foodName),
       context: foodImageContext,
       limit: this.rematchCandidateLimit,
+      timing,
+      timingPrefix: 'food_image',
+    });
+    timing?.mark('food_image_vector_candidate_pool_completed', {
+      candidatePoolCount: vectorCandidatePool.length,
     });
     const candidatePool =
       vectorCandidatePool.length > 0
@@ -1459,11 +1549,19 @@ failure_reason enum:
             15,
             32,
           );
+    timing?.mark('food_image_candidate_pool_selected', {
+      candidatePoolCount: candidatePool.length,
+      source: vectorCandidatePool.length > 0 ? 'vector' : 'local',
+    });
     const rematchedFoods = await this.rematchFoodImageMenusWithGemini(
       file,
       predictions,
       candidatePool,
+      timing,
     );
+    timing?.mark('food_image_gemini_rematch_completed', {
+      rematchedCount: rematchedFoods.length,
+    });
     const recognizedFoods =
       rematchedFoods.length > 0
         ? rematchedFoods
@@ -1472,6 +1570,10 @@ failure_reason enum:
               this.matchFoodImagePredictionLocally(prediction, menus),
             )
             .filter((food): food is RecognizedFoodImageMenu => food !== null);
+    timing?.mark('food_image_final_match_selected', {
+      recognizedFoodCount: recognizedFoods.length,
+      source: rematchedFoods.length > 0 ? 'gemini_rematch' : 'local',
+    });
     const uniqueRecognizedFoods =
       this.deduplicateRecognizedFoodImageMenus(recognizedFoods);
 
@@ -1579,7 +1681,10 @@ failure_reason enum:
     texts: string[];
     context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>;
     limit: number;
+    timing?: ChatTimingLogger;
+    timingPrefix?: string;
   }): Promise<MenuRecognitionCandidate[]> {
+    const timingPrefix = params.timingPrefix ?? 'recognition';
     const texts = params.texts
       .map((text) => text.trim())
       .filter((text) => text.length >= 2);
@@ -1589,6 +1694,9 @@ failure_reason enum:
       !this.menuVectorService ||
       texts.length === 0
     ) {
+      params.timing?.mark(`${timingPrefix}_vector_search_skipped`, {
+        textCount: texts.length,
+      });
       return [];
     }
 
@@ -1602,13 +1710,26 @@ failure_reason enum:
           category: params.context.inferredCategory,
         },
       );
+      params.timing?.mark(`${timingPrefix}_vector_search_completed`, {
+        resultCount: vectorResults.length,
+        textCount: texts.length,
+      });
       const menuIds = vectorResults.map((result) => result.menuId);
 
-      return await this.getRecognitionCandidatesByIds(params.userId, menuIds);
+      const candidates = await this.getRecognitionCandidatesByIds(
+        params.userId,
+        menuIds,
+      );
+      params.timing?.mark(`${timingPrefix}_vector_mysql_detail_loaded`, {
+        candidateCount: candidates.length,
+      });
+
+      return candidates;
     } catch (error) {
       console.warn('[CHAT] vector recognition search failed, fallback to local', {
         message: error instanceof Error ? error.message : String(error),
       });
+      params.timing?.mark(`${timingPrefix}_vector_search_failed`);
 
       return [];
     }
@@ -1784,8 +1905,13 @@ failure_reason enum:
   private async rematchMenuBoardCandidatesWithGemini(
     recognition: MenuBoardRecognitionResult,
     candidates: MenuRecognitionCandidate[],
+    timing?: ChatTimingLogger,
   ): Promise<MenuRecognitionCandidate[]> {
     if (recognition.recognizedTexts.length === 0 || candidates.length === 0) {
+      timing?.mark('menu_board_gemini_rematch_skipped', {
+        recognizedTextCount: recognition.recognizedTexts.length,
+        candidateCount: candidates.length,
+      });
       return [];
     }
 
@@ -1814,6 +1940,9 @@ ${JSON.stringify(candidates)}
 
     try {
       const data = await this.callGeminiJson(prompt);
+      timing?.mark('menu_board_gemini_rematch_request_completed', {
+        candidateCount: candidates.length,
+      });
       const candidateIds: unknown[] = Array.isArray(data?.candidate_menu_ids)
         ? data.candidate_menu_ids
         : [];
@@ -1829,6 +1958,9 @@ ${JSON.stringify(candidates)}
         .map((id) => candidateMap.get(id)!)
         .slice(0, 30);
     } catch {
+      timing?.mark('menu_board_gemini_rematch_failed', {
+        candidateCount: candidates.length,
+      });
       return [];
     }
   }
@@ -1837,8 +1969,13 @@ ${JSON.stringify(candidates)}
     file: Express.Multer.File,
     predictions: FoodImagePrediction[],
     candidates: MenuRecognitionCandidate[],
+    timing?: ChatTimingLogger,
   ): Promise<RecognizedFoodImageMenu[]> {
     if (predictions.length === 0 || candidates.length === 0) {
+      timing?.mark('food_image_gemini_rematch_skipped', {
+        predictionCount: predictions.length,
+        candidateCount: candidates.length,
+      });
       return [];
     }
 
@@ -1879,6 +2016,10 @@ ${JSON.stringify(candidates)}
 
     try {
       const data = await this.callGeminiJsonWithImage(prompt, file);
+      timing?.mark('food_image_gemini_rematch_request_completed', {
+        predictionCount: predictions.length,
+        candidateCount: candidates.length,
+      });
       const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
         ? data.detected_foods
         : [];
@@ -1896,6 +2037,10 @@ ${JSON.stringify(candidates)}
 
       return this.deduplicateRecognizedFoodImageMenus(recognizedFoods);
     } catch {
+      timing?.mark('food_image_gemini_rematch_failed', {
+        predictionCount: predictions.length,
+        candidateCount: candidates.length,
+      });
       return [];
     }
   }
