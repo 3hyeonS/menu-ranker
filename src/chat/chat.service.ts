@@ -262,7 +262,6 @@ type ChatTimingLogger = {
 export class ChatService {
   private readonly mealTimeLabelMap = ['아침', '점심', '저녁', '간식', '야식'];
   private readonly mealTimeShareMap = [0.24, 0.34, 0.28, 0.08, 0.06];
-  private readonly rematchCandidateLimit = 100;
   private readonly s3: S3Client;
   private readonly bucketName: string;
 
@@ -1427,7 +1426,7 @@ export class ChatService {
       userId,
       texts: recognition.recognizedTexts,
       context: recognition,
-      limit: this.rematchCandidateLimit,
+      limit: this.getMenuBoardVectorCandidateLimit(),
       timing,
       timingPrefix: 'menu_board',
     });
@@ -1441,17 +1440,22 @@ export class ChatService {
             recognition.recognizedTexts,
             menus,
             recognition,
-            this.rematchCandidateLimit,
+            this.getMenuBoardVectorCandidateLimit(),
             15,
             34,
           );
+    const rematchCandidatePool = candidatePool.slice(
+      0,
+      this.getMenuBoardRematchCandidateLimit(),
+    );
     timing?.mark('menu_board_candidate_pool_selected', {
       candidatePoolCount: candidatePool.length,
+      rematchCandidateCount: rematchCandidatePool.length,
       source: vectorCandidatePool.length > 0 ? 'vector' : 'local',
     });
     const rematchedCandidates = await this.rematchMenuBoardCandidatesWithGemini(
       recognition,
-      candidatePool,
+      rematchCandidatePool,
       timing,
     );
     timing?.mark('menu_board_gemini_rematch_completed', {
@@ -1460,7 +1464,7 @@ export class ChatService {
 
     return rematchedCandidates.length > 0
       ? rematchedCandidates
-      : candidatePool.slice(0, 30);
+      : rematchCandidatePool.slice(0, 30);
   }
 
   private async recognizeFoodImageMenusWithGemini(
@@ -1531,7 +1535,7 @@ failure_reason enum:
       userId,
       texts: predictions.map((food) => food.foodName),
       context: foodImageContext,
-      limit: this.rematchCandidateLimit,
+      limit: this.getFoodImageVectorCandidateLimit(),
       timing,
       timingPrefix: 'food_image',
     });
@@ -1545,18 +1549,23 @@ failure_reason enum:
             predictions.map((food) => food.foodName),
             menus,
             foodImageContext,
-            this.rematchCandidateLimit,
+            this.getFoodImageVectorCandidateLimit(),
             15,
             32,
           );
+    const rematchCandidatePool = candidatePool.slice(
+      0,
+      this.getFoodImageRematchCandidateLimit(),
+    );
     timing?.mark('food_image_candidate_pool_selected', {
       candidatePoolCount: candidatePool.length,
+      rematchCandidateCount: rematchCandidatePool.length,
       source: vectorCandidatePool.length > 0 ? 'vector' : 'local',
     });
     const rematchedFoods = await this.rematchFoodImageMenusWithGemini(
       file,
       predictions,
-      candidatePool,
+      rematchCandidatePool,
       timing,
     );
     timing?.mark('food_image_gemini_rematch_completed', {
@@ -2946,6 +2955,57 @@ ${JSON.stringify(userContext)}
     }
 
     return Math.max(5, Math.min(Math.floor(parsed), 50));
+  }
+
+  private getMenuBoardVectorCandidateLimit(): number {
+    return this.getEnvNumberInRange(
+      'MENU_BOARD_VECTOR_CANDIDATE_LIMIT',
+      40,
+      10,
+      100,
+    );
+  }
+
+  private getMenuBoardRematchCandidateLimit(): number {
+    return this.getEnvNumberInRange(
+      'MENU_BOARD_REMATCH_CANDIDATE_LIMIT',
+      40,
+      10,
+      100,
+    );
+  }
+
+  private getFoodImageVectorCandidateLimit(): number {
+    return this.getEnvNumberInRange(
+      'FOOD_IMAGE_VECTOR_CANDIDATE_LIMIT',
+      50,
+      10,
+      100,
+    );
+  }
+
+  private getFoodImageRematchCandidateLimit(): number {
+    return this.getEnvNumberInRange(
+      'FOOD_IMAGE_REMATCH_CANDIDATE_LIMIT',
+      50,
+      10,
+      100,
+    );
+  }
+
+  private getEnvNumberInRange(
+    key: string,
+    fallback: number,
+    min: number,
+    max: number,
+  ): number {
+    const parsed = Number(process.env[key] ?? fallback);
+
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+
+    return Math.max(min, Math.min(Math.floor(parsed), max));
   }
 
   private getGeminiGenericMenuCandidateLimit(): number {
