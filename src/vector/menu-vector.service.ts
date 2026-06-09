@@ -173,14 +173,10 @@ export class MenuVectorService {
     this.assertEmbeddingDimension(embedding);
 
     const params: unknown[] = [
-      options.userId,
       this.toVectorLiteral(embedding),
       Math.max(options.limit, 1),
     ];
-    const conditions = [
-      'is_deleted = 0',
-      '(owner_user_id IS NULL OR owner_user_id = $1)',
-    ];
+    const conditions = ['is_deleted = 0', 'owner_user_id IS NULL'];
 
     if (options.brand) {
       params.push(`%${options.brand}%`);
@@ -211,11 +207,11 @@ export class MenuVectorService {
       `
       SELECT
         menu_id AS "menuId",
-        text_embedding <=> $2::vector AS distance
+        text_embedding <=> $1::vector AS distance
       FROM menu_vector_index
       WHERE ${conditions.join(' AND ')}
-      ORDER BY text_embedding <=> $2::vector ASC
-      LIMIT $3
+      ORDER BY text_embedding <=> $1::vector ASC
+      LIMIT $2
       `,
       params,
     );
