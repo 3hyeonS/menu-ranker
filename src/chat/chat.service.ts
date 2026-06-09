@@ -1429,6 +1429,7 @@ export class ChatService {
       limit: this.getMenuBoardVectorCandidateLimit(),
       timing,
       timingPrefix: 'menu_board',
+      disableContextFilters: true,
     });
     timing?.mark('menu_board_vector_candidate_pool_completed', {
       candidatePoolCount: vectorCandidatePool.length,
@@ -1692,6 +1693,7 @@ failure_reason enum:
     limit: number;
     timing?: ChatTimingLogger;
     timingPrefix?: string;
+    disableContextFilters?: boolean;
   }): Promise<MenuRecognitionCandidate[]> {
     const timingPrefix = params.timingPrefix ?? 'recognition';
     const texts = params.texts
@@ -1715,8 +1717,12 @@ failure_reason enum:
         {
           userId: params.userId,
           limit: params.limit,
-          brand: params.context.inferredBrand,
-          category: params.context.inferredCategory,
+          brand: params.disableContextFilters
+            ? null
+            : params.context.inferredBrand,
+          category: params.disableContextFilters
+            ? null
+            : params.context.inferredCategory,
         },
       );
       params.timing?.mark(`${timingPrefix}_vector_search_completed`, {
