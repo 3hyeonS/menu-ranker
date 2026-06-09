@@ -236,6 +236,12 @@ export class MenuVectorService {
     return Math.max(1, Math.min(Math.floor(parsed), 1000));
   }
 
+  private isVectorSearchExplainEnabled(): boolean {
+    return ['1', 'true', 'yes', 'y'].includes(
+      (process.env.VECTOR_SEARCH_EXPLAIN_ENABLED ?? '').toLowerCase(),
+    );
+  }
+
   private assertEmbeddingDimension(embedding: number[]): void {
     const dimension = Number(
       process.env.VECTOR_EMBEDDING_DIMENSION ?? this.defaultEmbeddingDimension,
@@ -279,6 +285,18 @@ export class MenuVectorService {
       await queryRunner.query(
         `SET ivfflat.probes = ${this.getIvfflatProbes()}`,
       );
+
+      if (this.isVectorSearchExplainEnabled()) {
+        const explainRows = await queryRunner.query(`EXPLAIN ${sql}`, params);
+        const plan = explainRows
+          .map((row: Record<string, unknown>) => row['QUERY PLAN'])
+          .filter((line): line is string => typeof line === 'string');
+
+        console.log('[VECTOR_SEARCH_EXPLAIN]', {
+          ivfflatProbes: this.getIvfflatProbes(),
+          plan,
+        });
+      }
 
       return await queryRunner.query(sql, params);
     } finally {
