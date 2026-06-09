@@ -172,45 +172,57 @@ export class MenuVectorService {
   ): Promise<MenuVectorSearchResult[]> {
     this.assertEmbeddingDimension(embedding);
 
+    const limit = Math.max(options.limit, 1);
+    const overfetchLimit = limit * this.getVectorSearchOverfetchMultiplier();
     const params: unknown[] = [
       this.toVectorLiteral(embedding),
-      Math.max(options.limit, 1),
+      limit,
+      overfetchLimit,
     ];
-    const conditions = ['is_deleted = 0', 'owner_user_id IS NULL'];
+    const conditions = ['m.is_deleted = 0', 'm.owner_user_id IS NULL'];
 
     if (options.brand) {
       params.push(`%${options.brand}%`);
-      conditions.push(`brand ILIKE $${params.length}`);
+      conditions.push(`m.brand ILIKE $${params.length}`);
     }
 
     if (options.category) {
       params.push(`%${options.category}%`);
-      conditions.push(`category ILIKE $${params.length}`);
+      conditions.push(`m.category ILIKE $${params.length}`);
     }
 
     if (options.namePrefix) {
       params.push(`${options.namePrefix}%`);
-      conditions.push(`name LIKE $${params.length}`);
+      conditions.push(`m.name LIKE $${params.length}`);
     }
 
     if (options.maxCalories !== null && options.maxCalories !== undefined) {
       params.push(options.maxCalories);
-      conditions.push(`calories <= $${params.length}`);
+      conditions.push(`m.calories <= $${params.length}`);
     }
 
     if (options.minProtein !== null && options.minProtein !== undefined) {
       params.push(options.minProtein);
-      conditions.push(`protein >= $${params.length}`);
+      conditions.push(`m.protein >= $${params.length}`);
     }
 
     const rows = await this.queryVectorSearch(
       `
+      WITH nearest AS MATERIALIZED (
+        SELECT
+          menu_id,
+          text_embedding <=> $1::vector AS distance
+        FROM menu_vector_index
+        ORDER BY text_embedding <=> $1::vector ASC
+        LIMIT $3
+      )
       SELECT
-        menu_id AS "menuId",
-        text_embedding <=> $1::vector AS distance
-      FROM menu_vector_index
+        nearest.menu_id AS "menuId",
+        nearest.distance AS distance
+      FROM nearest
+      INNER JOIN menu_vector_index m ON m.menu_id = nearest.menu_id
       WHERE ${conditions.join(' AND ')}
-      ORDER BY text_embedding <=> $1::vector ASC
+      ORDER BY nearest.distance ASC
       LIMIT $2
       `,
       params,
@@ -230,6 +242,16 @@ export class MenuVectorService {
     }
 
     return Math.max(1, Math.min(Math.floor(parsed), 1000));
+  }
+
+  private getVectorSearchOverfetchMultiplier(): number {
+    const parsed = Number(process.env.VECTOR_SEARCH_OVERFETCH_MULTIPLIER ?? 5);
+
+    if (!Number.isFinite(parsed)) {
+      return 5;
+    }
+
+    return Math.max(1, Math.min(Math.floor(parsed), 50));
   }
 
   private isVectorSearchExplainEnabled(): boolean {
