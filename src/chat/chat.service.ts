@@ -5723,13 +5723,18 @@ ${JSON.stringify(candidates)}
       process.env.GEMINI_IMAGE_MODEL ??
       process.env.GEMINI_MODEL ??
       'gemini-2.5-flash';
-    const fallbackModels = [
+    const configuredFallbackModels = [
       ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS
         ?.split(',')
         .map((model) => model.trim()) ?? []),
       process.env.GEMINI_IMAGE_FALLBACK_MODEL,
-      ...DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS,
     ];
+    const hasConfiguredFallbackModels =
+      process.env.GEMINI_IMAGE_FALLBACK_MODELS !== undefined ||
+      process.env.GEMINI_IMAGE_FALLBACK_MODEL !== undefined;
+    const fallbackModels = hasConfiguredFallbackModels
+      ? configuredFallbackModels
+      : DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS;
     const baseUrlOverride =
       process.env.GEMINI_IMAGE_BASE_URL ?? process.env.GEMINI_BASE_URL;
 
