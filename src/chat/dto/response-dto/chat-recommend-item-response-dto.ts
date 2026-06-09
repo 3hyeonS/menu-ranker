@@ -71,19 +71,4 @@ export class ChatRecommendItemResponseDto {
     example: 1,
   })
   rank: number;
-
-  @ApiProperty({
-    type: String,
-    description: '한 줄 요약 설명',
-    example: '단백질 밀도가 높고 점심 칼로리 예산에 잘 맞는 선택입니다.',
-  })
-  one_line_summary: string;
-
-  @ApiProperty({
-    type: String,
-    description: '상세 추천 이유',
-    example:
-      '목표 단백질 비중을 맞추는 데 유리하고, 당 밀도와 칼로리 밀도가 과도하지 않아 점심 한 끼로 안정적입니다.',
-  })
-  recommendation_reason: string;
 }
