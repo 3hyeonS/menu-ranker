@@ -48,10 +48,10 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
 const DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX = '(식약처_음식)';
-const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = [
-  'gemini-2.5-flash-lite',
-  'gemini-2.5-flash',
-];
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const DEFAULT_GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
+const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
+const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 당신은 스마트하고 냉철한 식단 및 운동 코치입니다. 다음 규칙을 엄격히 준수하세요.
 
@@ -5854,73 +5854,113 @@ ${JSON.stringify(candidates)}
   ): Promise<any> {
     // Gemini 공통 호출부: JSON 응답 강제와 에러 변환을 한곳에서 처리합니다.
     const apiKey = process.env.GEMINI_API_KEY;
-    const model = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
-    const baseUrl =
-      process.env.GEMINI_BASE_URL ??
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const primaryModel = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
+    const configuredFallbackModels = [
+      ...(process.env.GEMINI_FALLBACK_MODELS
+        ?.split(',')
+        .map((model) => model.trim()) ?? []),
+      process.env.GEMINI_FALLBACK_MODEL,
+    ];
+    const hasConfiguredFallbackModels =
+      process.env.GEMINI_FALLBACK_MODELS !== undefined ||
+      process.env.GEMINI_FALLBACK_MODEL !== undefined;
+    const fallbackModels = hasConfiguredFallbackModels
+      ? configuredFallbackModels
+      : DEFAULT_GEMINI_FALLBACK_MODELS;
+    const baseUrlOverride = process.env.GEMINI_BASE_URL;
 
     if (!apiKey) {
       console.log('[CHAT] GEMINI ENV CHECK', {
         GEMINI_API_KEY: this.maskSecret(process.env.GEMINI_API_KEY),
-        GEMINI_MODEL: model,
+        GEMINI_MODEL: primaryModel,
       });
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
-    console.log('[CHAT] GEMINI REQUEST', {
-      GEMINI_API_KEY: this.maskSecret(apiKey),
-      GEMINI_MODEL: model,
-      GEMINI_BASE_URL: baseUrl,
-    });
-
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${baseUrl}?key=${apiKey}`,
-          {
-            ...(options.systemInstruction
-              ? {
-                  system_instruction: {
-                    parts: [{ text: options.systemInstruction }],
-                  },
-                }
-              : {}),
-            contents: [
-              {
-                role: 'user',
-                parts: [{ text: prompt }],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.2,
-              responseMimeType: 'application/json',
-            },
-          },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            timeout: options.timeoutMs ?? this.getGeminiTextTimeoutMs(),
-          },
+    const attempts = Array.from(
+      new Set(
+        [
+          primaryModel,
+          ...fallbackModels,
+          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
+        ].filter(
+          (model): model is string =>
+            typeof model === 'string' && model.trim().length > 0,
         ),
-      );
+      ),
+    );
 
-      const text = response.data?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
-        .join('')
-        ?.trim();
+    for (const [index, model] of attempts.entries()) {
+      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
 
-      if (!text) {
-        throw new Error('Gemini returned empty content');
+      console.log('[CHAT] GEMINI REQUEST', {
+        GEMINI_API_KEY: this.maskSecret(apiKey),
+        GEMINI_MODEL: model,
+        GEMINI_BASE_URL: baseUrl,
+      });
+
+      try {
+        const response = await firstValueFrom(
+          this.httpService.post(
+            `${baseUrl}?key=${apiKey}`,
+            {
+              ...(options.systemInstruction
+                ? {
+                    system_instruction: {
+                      parts: [{ text: options.systemInstruction }],
+                    },
+                  }
+                : {}),
+              contents: [
+                {
+                  role: 'user',
+                  parts: [{ text: prompt }],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.2,
+                responseMimeType: 'application/json',
+              },
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              timeout: options.timeoutMs ?? this.getGeminiTextTimeoutMs(),
+            },
+          ),
+        );
+
+        const text = response.data?.candidates?.[0]?.content?.parts
+          ?.map((part) => part.text ?? '')
+          .join('')
+          ?.trim();
+
+        if (!text) {
+          throw new Error('Gemini returned empty content');
+        }
+
+        return JSON.parse(this.stripCodeFence(text));
+      } catch (error) {
+        this.logGeminiError(
+          index === 0
+            ? (options.context ?? 'text-json')
+            : `${options.context ?? 'text-json'}-fallback:${model}`,
+          error,
+        );
+
+        if (
+          index === attempts.length - 1 ||
+          !this.shouldRetryGeminiWithFallback(error)
+        ) {
+          break;
+        }
       }
-
-      return JSON.parse(this.stripCodeFence(text));
-    } catch (error) {
-      this.logGeminiError(options.context ?? 'text-json', error);
-      throw new ServiceUnavailableException(
-        'Gemini recommendation pipeline is unavailable',
-      );
     }
+
+    throw new ServiceUnavailableException(
+      'Gemini recommendation pipeline is unavailable',
+    );
   }
 
   private getGeminiTextTimeoutMs(): number {
@@ -5941,7 +5981,7 @@ ${JSON.stringify(candidates)}
     const primaryModel =
       process.env.GEMINI_IMAGE_MODEL ??
       process.env.GEMINI_MODEL ??
-      'gemini-2.5-flash';
+      DEFAULT_GEMINI_MODEL;
     const configuredFallbackModels = [
       ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS
         ?.split(',')
@@ -5967,7 +6007,11 @@ ${JSON.stringify(candidates)}
 
     const attempts = Array.from(
       new Set(
-        [primaryModel, ...fallbackModels].filter(
+        [
+          primaryModel,
+          ...fallbackModels,
+          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
+        ].filter(
           (model): model is string =>
             typeof model === 'string' && model.trim().length > 0,
         ),

@@ -62,10 +62,9 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_FOOD_DETECTED: 'no food detected in image',
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
-const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = [
-  'gemini-2.5-flash-lite',
-  'gemini-2.5-flash',
-];
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
+const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
+const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
@@ -2207,7 +2206,7 @@ failure_reason enum:
     const primaryModel =
       process.env.GEMINI_IMAGE_MODEL ??
       process.env.GEMINI_MODEL ??
-      'gemini-2.5-flash';
+      DEFAULT_GEMINI_MODEL;
     const configuredFallbackModels = [
       ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS
         ?.split(',')
@@ -2229,7 +2228,11 @@ failure_reason enum:
 
     const attempts = Array.from(
       new Set(
-        [primaryModel, ...fallbackModels].filter(
+        [
+          primaryModel,
+          ...fallbackModels,
+          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
+        ].filter(
           (model): model is string =>
             typeof model === 'string' && model.trim().length > 0,
         ),
