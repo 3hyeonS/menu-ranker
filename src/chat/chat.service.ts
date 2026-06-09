@@ -840,25 +840,27 @@ export class ChatService {
       userInfo,
       rankedMenus,
     });
-    const introMessage =
-      preparedIntroMessage ??
-      (
-        await this.generateRecommendationPresentationWithGemini({
-          source: introSource,
-          input,
-          userInfo,
-          intent,
-          dailyNutrition,
-          basis: rankingBasis,
-          rankedMenus,
-          recognizedCandidates,
-          fallbackIntro,
-          chatContext,
-        })
-      ).intro_message;
+    const shouldUseDeterministicIntro =
+      this.isComparisonIntent(intent) || !!preparedIntroMessage;
+    const introMessage = shouldUseDeterministicIntro
+      ? (preparedIntroMessage ?? fallbackIntro)
+      : (
+          await this.generateRecommendationPresentationWithGemini({
+            source: introSource,
+            input,
+            userInfo,
+            intent,
+            dailyNutrition,
+            basis: rankingBasis,
+            rankedMenus,
+            recognizedCandidates,
+            fallbackIntro,
+            chatContext,
+          })
+        ).intro_message;
     timing?.mark(
-      preparedIntroMessage
-        ? 'gemini_presentation_skipped_prepared_intro'
+      shouldUseDeterministicIntro
+        ? 'gemini_presentation_skipped_deterministic_intro'
         : 'gemini_presentation_completed',
     );
 
@@ -1271,6 +1273,10 @@ export class ChatService {
     }
 
     return `[결론]\n지금은 **${topMenuWithObjectParticle}** 먼저 추천해.\n\n[이유]\n오늘 섭취 흐름과 목표 기준으로 무난해.`;
+  }
+
+  private isComparisonIntent(intent: ParsedChatIntent): boolean {
+    return intent.include.menu_names.length >= 2;
   }
 
   private withKoreanObjectParticle(value: string): string {
