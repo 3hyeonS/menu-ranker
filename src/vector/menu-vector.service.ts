@@ -238,6 +238,12 @@ export class MenuVectorService {
     );
   }
 
+  private isVectorSearchForceIndexEnabled(): boolean {
+    return ['1', 'true', 'yes', 'y'].includes(
+      (process.env.VECTOR_SEARCH_FORCE_INDEX ?? '').toLowerCase(),
+    );
+  }
+
   private assertEmbeddingDimension(embedding: number[]): void {
     const dimension = Number(
       process.env.VECTOR_EMBEDDING_DIMENSION ?? this.defaultEmbeddingDimension,
@@ -278,9 +284,12 @@ export class MenuVectorService {
     await queryRunner.connect();
 
     try {
+      const forceIndex = this.isVectorSearchForceIndexEnabled();
+
       await queryRunner.query(
         `SET ivfflat.probes = ${this.getIvfflatProbes()}`,
       );
+      await queryRunner.query(`SET enable_seqscan = ${forceIndex ? 'off' : 'on'}`);
 
       if (this.isVectorSearchExplainEnabled()) {
         const explainRows = await queryRunner.query(`EXPLAIN ${sql}`, params);
@@ -290,6 +299,7 @@ export class MenuVectorService {
 
         console.log('[VECTOR_SEARCH_EXPLAIN]', {
           ivfflatProbes: this.getIvfflatProbes(),
+          forceIndex,
           plan,
         });
       }
