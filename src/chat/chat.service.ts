@@ -820,7 +820,7 @@ export class ChatService {
     timing?.mark('score_menu_completed', {
       scoredCount: localRankedMenus.length,
     });
-    const rankedMenus = await this.selectFinalRankedMenus({
+    let rankedMenus = await this.selectFinalRankedMenus({
       input,
       intent,
       userInfo,
@@ -840,10 +840,9 @@ export class ChatService {
       userInfo,
       rankedMenus,
     });
-    const shouldUseDeterministicIntro =
-      this.isComparisonIntent(intent) || !!preparedIntroMessage;
-    const introMessage = shouldUseDeterministicIntro
-      ? (preparedIntroMessage ?? fallbackIntro)
+    const shouldUsePreparedIntro = !!preparedIntroMessage;
+    const introMessage = shouldUsePreparedIntro
+      ? preparedIntroMessage
       : (
           await this.generateRecommendationPresentationWithGemini({
             source: introSource,
@@ -858,9 +857,25 @@ export class ChatService {
             chatContext,
           })
         ).intro_message;
+    if (this.isComparisonIntent(intent)) {
+      const alignedRankedMenus = this.alignComparisonRankedMenusWithIntro(
+        rankedMenus,
+        intent,
+        introMessage,
+      );
+
+      if (alignedRankedMenus[0]?.menu.id !== rankedMenus[0]?.menu.id) {
+        timing?.mark('comparison_ranked_menus_aligned_with_intro', {
+          beforeTopMenuId: rankedMenus[0]?.menu.id ?? null,
+          afterTopMenuId: alignedRankedMenus[0]?.menu.id ?? null,
+        });
+      }
+
+      rankedMenus = alignedRankedMenus;
+    }
     timing?.mark(
-      shouldUseDeterministicIntro
-        ? 'gemini_presentation_skipped_deterministic_intro'
+      shouldUsePreparedIntro
+        ? 'gemini_presentation_skipped_prepared_intro'
         : 'gemini_presentation_completed',
     );
 
@@ -1277,6 +1292,93 @@ export class ChatService {
 
   private isComparisonIntent(intent: ParsedChatIntent): boolean {
     return intent.include.menu_names.length >= 2;
+  }
+
+  private alignComparisonRankedMenusWithIntro(
+    rankedMenus: RankedMenu[],
+    intent: ParsedChatIntent,
+    introMessage: string,
+  ): RankedMenu[] {
+    if (rankedMenus.length <= 1 || !introMessage.trim()) {
+      return rankedMenus;
+    }
+
+    const normalizedIntro = this.normalizeCompactText(
+      introMessage.replace(/[*_\[\]\n\r]/g, ' '),
+    );
+    const comparisonNames = intent.include.menu_names
+      .map((name) => this.normalizeCompactText(name))
+      .filter((name) => name.length >= 2);
+    const scoredIndexes = rankedMenus
+      .map((rankedMenu, index) => ({
+        index,
+        score: this.calculateIntroMenuMentionScore(
+          normalizedIntro,
+          rankedMenu.menu.name,
+          comparisonNames,
+        ),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score || a.index - b.index);
+    const bestIndex = scoredIndexes[0]?.index ?? 0;
+
+    if (bestIndex <= 0) {
+      return rankedMenus;
+    }
+
+    return [
+      rankedMenus[bestIndex],
+      ...rankedMenus.filter((_, index) => index !== bestIndex),
+    ];
+  }
+
+  private calculateIntroMenuMentionScore(
+    normalizedIntro: string,
+    menuName: string,
+    comparisonNames: string[],
+  ): number {
+    const normalizedMenuName = this.normalizeCompactText(menuName);
+    const normalizedDisplayName = this.normalizeCompactText(
+      menuName.replace(/^\([^)]*\)\s*/g, ''),
+    );
+    const aliases = Array.from(
+      new Set(
+        [normalizedDisplayName, normalizedMenuName, ...comparisonNames]
+          .filter((alias) => alias.length >= 2)
+          .filter(
+            (alias) =>
+              normalizedMenuName.includes(alias) ||
+              normalizedDisplayName.includes(alias),
+          ),
+      ),
+    );
+
+    return aliases.reduce((bestScore, alias) => {
+      if (!normalizedIntro.includes(alias)) {
+        return bestScore;
+      }
+
+      const decisionPattern = new RegExp(
+        `${this.escapeRegExp(alias)}.{0,18}(더나아|나아|추천|먼저|쪽|으로가|괜찮아)`,
+      );
+      const strongDecisionPattern = new RegExp(
+        `${this.escapeRegExp(alias)}.{0,8}(더나아|나아|추천|먼저|쪽|으로가)`,
+      );
+      let score = alias.length;
+
+      if (decisionPattern.test(normalizedIntro)) {
+        score += 50;
+      }
+      if (strongDecisionPattern.test(normalizedIntro)) {
+        score += 30;
+      }
+
+      return Math.max(bestScore, score);
+    }, 0);
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private withKoreanObjectParticle(value: string): string {
