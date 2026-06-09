@@ -75,7 +75,8 @@ const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 - 딱딱한 해라체/문어체도 쓰지 마세요. 예: "~다.", "~이다.", "~한다.", "~하라." 금지.
 - 문장 끝은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아."처럼 편한 반말로 마무리하세요.
 3. 답변 길이 및 구조:
-- 가능한 한 [결론], [이유], [Action] 구조를 따르세요.
+- 핵심 결론을 먼저 말하고, 이어서 짧은 이유나 실행 팁을 자연문으로 덧붙이세요.
+- "[결론]", "[이유]", "[Action]" 같은 라벨 텍스트는 답변에 쓰지 마세요.
 - 정보가 길어질 경우 무조건 불렛포인트를 사용하여 텍스트 덩어리를 분리하세요.
 - 사용자가 구체적으로 길게 설명해달라고 요청하지 않는 한, 모든 답변은 3~4문장 이내로 압축하세요.
 - 볼드는 핵심 결정어, 수치 데이터, 실행 Action 키워드에만 단어/구 단위로 사용하세요.
@@ -707,7 +708,7 @@ export class ChatService {
       input: '음식 사진 기반 피드백',
       matchedMenus,
       introMessage:
-        '[결론]\n사진에서 인식한 메뉴 기준으로 봤어.',
+        '사진에서 인식한 메뉴 기준으로 봤어.',
       introSource: 'food_image_feedback',
       extractedItems: recognizedFoods.map((food, index) => ({
         rank: index + 1,
@@ -945,7 +946,7 @@ export class ChatService {
       userInfo,
       input,
       matchedMenus,
-      introMessage: `[결론]\n${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록 기준으로 봤어.`,
+      introMessage: `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록 기준으로 봤어.`,
       introSource: 'text_feedback',
     });
   }
@@ -1264,30 +1265,30 @@ export class ChatService {
       params.source === 'food_image_feedback';
 
     if (isImageSource) {
-      return `[결론]\n**${topMenuName}** 먼저 봐.\n\n[이유]\n사진 후보 중 현재 목표와 오늘 섭취 흐름에 제일 무난해.`;
+      return `**${topMenuName}** 먼저 봐.\n\n사진 후보 중 현재 목표와 오늘 섭취 흐름에 제일 무난해.`;
     }
 
     if (params.intent.include.menu_names.length >= 2) {
-      return `[결론]\n비교하면 **${topMenuName}** 쪽이 더 나아.\n\n[이유]\n입력한 선택지 중 현재 목표와 오늘 식사 흐름에 더 맞아.`;
+      return `비교하면 **${topMenuName}** 쪽이 더 나아.\n\n입력한 선택지 중 현재 목표와 오늘 식사 흐름에 더 맞아.`;
     }
 
     if (params.intent.nutrition_focus.includes('high_protein')) {
-      return `[결론]\n**${topMenuWithObjectParticle}** 먼저 가.\n\n[이유]\n단백질을 챙기면서 오늘 흐름에도 부담이 덜해.`;
+      return `**${topMenuWithObjectParticle}** 먼저 가.\n\n단백질을 챙기면서 오늘 흐름에도 부담이 덜해.`;
     }
 
     if (params.intent.nutrition_focus.includes('light_meal')) {
-      return `[결론]\n**${topMenuName}** 괜찮아.\n\n[이유]\n가볍게 먹기 좋고 남은 섭취량을 크게 흔들지 않아.`;
+      return `**${topMenuName}** 괜찮아.\n\n가볍게 먹기 좋고 남은 섭취량을 크게 흔들지 않아.`;
     }
 
     if (params.intent.nutrition_focus.includes('hearty_meal')) {
-      return `[결론]\n**${topMenuName}**으로 가.\n\n[이유]\n한 끼로 든든하고 포만감 균형이 좋아.`;
+      return `**${topMenuName}**으로 가.\n\n한 끼로 든든하고 포만감 균형이 좋아.`;
     }
 
     if (params.intent.desired_category) {
-      return `[결론]\n${params.intent.desired_category} 중에서는 **${topMenuWithObjectParticle}** 먼저 봐.\n\n[이유]\n현재 목표 기준으로 제일 무난해.`;
+      return `${params.intent.desired_category} 중에서는 **${topMenuWithObjectParticle}** 먼저 봐.\n\n현재 목표 기준으로 제일 무난해.`;
     }
 
-    return `[결론]\n지금은 **${topMenuWithObjectParticle}** 먼저 추천해.\n\n[이유]\n오늘 섭취 흐름과 목표 기준으로 무난해.`;
+    return `지금은 **${topMenuWithObjectParticle}** 먼저 추천해.\n\n오늘 섭취 흐름과 목표 기준으로 무난해.`;
   }
 
   private isComparisonIntent(intent: ParsedChatIntent): boolean {
@@ -3561,7 +3562,7 @@ ${JSON.stringify(userContext)}
 
     const matchedMenus = menuNames
       .map((menuName) =>
-        this.findMostSimilarMenuAboveThreshold(menuName, candidateMenus, 45),
+        this.findBestComparisonMenuAboveThreshold(menuName, candidateMenus, 45),
       )
       .filter((menu): menu is MenuEntity => !!menu);
 
@@ -3595,7 +3596,7 @@ ${JSON.stringify(userContext)}
         );
         const vectorMenuIds = vectorResults.map((result) => result.menuId);
         const vectorMenus = await this.getMenusByIds(userId, vectorMenuIds);
-        const matchedMenu = this.findMostSimilarMenuAboveThreshold(
+        const matchedMenu = this.findBestComparisonMenuAboveThreshold(
           menuName,
           vectorMenus,
           30,
@@ -3623,7 +3624,13 @@ ${JSON.stringify(userContext)}
   }
 
   private buildComparisonVectorQuery(menuName: string): string {
-    return `비교 대상 음식명: ${menuName}`;
+    return [
+      `비교 대상 일반 음식명: ${menuName}`,
+      '사용자가 말한 음식의 대표 메뉴를 찾는다.',
+      '파생 메뉴, 제품명, 변형 메뉴보다 기본 음식명을 우선한다.',
+      '예: 짜장/자장 입력은 짜장면/자장면을 우선한다.',
+      '예: 짬뽕 입력은 짬뽕을 우선한다.',
+    ].join('\n');
   }
 
   private applyIntentFilters(
@@ -4281,6 +4288,131 @@ ${JSON.stringify(userContext)}
       : null;
   }
 
+  private findBestComparisonMenuAboveThreshold(
+    inputMenuName: string,
+    menus: MenuEntity[],
+    minSimilarity: number,
+  ): MenuEntity | null {
+    const bestMatch = this.findBestComparisonMenuWithScore(
+      inputMenuName,
+      menus,
+    );
+
+    return bestMatch && bestMatch.similarity >= minSimilarity
+      ? bestMatch.menu
+      : null;
+  }
+
+  private findBestComparisonMenuWithScore(
+    inputMenuName: string,
+    menus: MenuEntity[],
+  ): { menu: MenuEntity; similarity: number } | null {
+    if (menus.length === 0) {
+      return null;
+    }
+
+    return menus
+      .map((menu) => ({
+        menu,
+        similarity: this.calculateComparisonMenuSimilarity(
+          inputMenuName,
+          menu,
+        ),
+      }))
+      .sort((a, b) => b.similarity - a.similarity)[0];
+  }
+
+  private calculateComparisonMenuSimilarity(
+    inputMenuName: string,
+    menu: MenuEntity,
+  ): number {
+    return (
+      this.calculateMenuSimilarity(inputMenuName, menu) +
+      this.calculateRepresentativeMenuPreferenceScore(inputMenuName, menu.name)
+    );
+  }
+
+  private calculateRepresentativeMenuPreferenceScore(
+    inputMenuName: string,
+    menuName: string,
+  ): number {
+    const input = this.normalizeMenuMatchText(inputMenuName);
+    const strippedMenuName = this.stripMenuSourcePrefix(menuName);
+    const menu = this.normalizeMenuMatchText(strippedMenuName);
+    const sourcePrefixed = /^\([^)]*\)\s*/.test(menuName.trim());
+
+    if (!input || !menu) {
+      return 0;
+    }
+
+    const rules = [
+      {
+        triggers: ['짜장', '자장'],
+        aliases: ['짜장면', '자장면'],
+        variants: [
+          '백짜장',
+          '백자장',
+          '짜장라면',
+          '자장라면',
+          '간짜장',
+          '간자장',
+          '쟁반짜장',
+          '쟁반자장',
+          '삼선짜장',
+          '삼선자장',
+          '유니짜장',
+          '유니자장',
+          '사천짜장',
+          '사천자장',
+        ],
+      },
+      {
+        triggers: ['짬뽕'],
+        aliases: ['짬뽕'],
+        variants: [
+          '백짬뽕',
+          '짬뽕라면',
+          '삼선짬뽕',
+          '해물짬뽕',
+          '굴짬뽕',
+          '나가사키짬뽕',
+          '짬뽕밥',
+        ],
+      },
+    ];
+
+    const matchedRule = rules.find((rule) =>
+      rule.triggers.some((trigger) => input.includes(trigger)),
+    );
+
+    if (!matchedRule) {
+      return 0;
+    }
+
+    let score = 0;
+
+    if (matchedRule.aliases.some((alias) => menu === alias)) {
+      score += 80;
+      if (sourcePrefixed) {
+        score += 10;
+      }
+    } else if (matchedRule.aliases.some((alias) => menu.startsWith(alias))) {
+      score += 40;
+    } else if (matchedRule.aliases.some((alias) => menu.includes(alias))) {
+      score += 20;
+    }
+
+    const unrequestedVariantMatched = matchedRule.variants.some(
+      (variant) => menu.includes(variant) && !input.includes(variant),
+    );
+
+    if (unrequestedVariantMatched) {
+      score -= 45;
+    }
+
+    return score;
+  }
+
   private findMostSimilarMenuWithScore(
     inputMenuName: string,
     menus: MenuEntity[],
@@ -4360,6 +4492,10 @@ ${JSON.stringify(userContext)}
 
   private normalizeMenuMatchText(value: string): string {
     return this.normalizeComparableText(value).replace(/\s+/g, '');
+  }
+
+  private stripMenuSourcePrefix(value: string): string {
+    return value.replace(/^\([^)]*\)\s*/g, '').trim();
   }
 
   private normalizeComparisonMenuKey(value: string): string {
@@ -5469,7 +5605,8 @@ JSON shape:
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - intro_message는 1~2문장으로 짧게 작성
 - general_answer는 사용자가 길게 설명해달라고 요청하지 않는 한 3~4문장 이내로 작성
-- 가능한 한 [결론], [이유], [Action] 구조를 유지하되, Action이 불필요하면 생략해
+- 핵심 결론을 먼저 말하고, 이어서 짧은 이유나 실행 팁을 자연문으로 덧붙여
+- "[결론]", "[이유]", "[Action]" 같은 라벨 텍스트는 쓰지 마
 - intro_message와 general_answer 모두 "안녕하세요", "안녕하세요!", "반가워요" 같은 인사 문구로 시작하지 않기
 - 2~5개의 짧은 문단으로 줄바꿈을 넣고, JSON 문자열 안의 줄바꿈은 \\n으로 포함
 - 실천 팁이 필요한 질문이면 1~3개 정도만 포함
@@ -5513,10 +5650,10 @@ ${JSON.stringify({
     });
     const introMessage =
       this.asNonEmptyString(data?.intro_message) ??
-      '[결론]\n핵심부터 정리할게.';
+      '핵심부터 정리할게.';
     const generalAnswer =
       this.asNonEmptyString(data?.general_answer) ??
-      '[결론]\n지금 질문은 일반 질문으로 분류됐어.\n\n[Action]\n원하는 범위를 조금만 더 구체적으로 말해줘.\n그 기준에 맞춰 바로 정리해줄게.';
+      '지금 질문은 일반 질문으로 분류됐어.\n\n원하는 범위를 조금만 더 구체적으로 말해줘.\n그 기준에 맞춰 바로 정리해줄게.';
 
     return {
       intro_message: introMessage.slice(0, 300),
@@ -5585,7 +5722,8 @@ ${JSON.stringify({
 - 존댓말, 해요체, 하십시오체 금지. "좋아요", "가능합니다", "추천해요", "드릴게요" 같은 표현은 쓰지 마
 - 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
 - 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
-- 가능한 한 [결론], [이유], [Action] 구조를 유지하되, Action이 불필요하면 생략해
+- 핵심 결론을 먼저 말하고, 이어서 짧은 이유나 실행 팁을 자연문으로 덧붙여
+- "[결론]", "[이유]", "[Action]" 같은 라벨 텍스트는 쓰지 마
 - 한 문장으로 길게 쓰지 말고, 1~2개의 짧은 문단으로 줄바꿈을 넣어 작성
 - JSON 문자열 안에 줄바꿈은 \\n으로 포함
 - 사용자가 "먹어도 돼?", "괜찮아?"처럼 물으면 먼저 명확하게 답하고, 그 뒤 조건과 조절법을 설명
@@ -5724,7 +5862,8 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
 - 존댓말, 해요체, 하십시오체 금지. "좋아요", "가능합니다", "추천해요", "드릴게요" 같은 표현은 쓰지 마
 - 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
 - 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
-- 가능한 한 [결론], [이유], [Action] 구조를 유지하되, Action이 불필요하면 생략해
+- 핵심 결론을 먼저 말하고, 이어서 짧은 이유나 실행 팁을 자연문으로 덧붙여
+- "[결론]", "[이유]", "[Action]" 같은 라벨 텍스트는 쓰지 마
 - 한 문장으로 길게 쓰지 말고, 1~2개의 짧은 문단으로 줄바꿈을 넣어 작성
 - JSON 문자열 안에 줄바꿈은 \\n으로 포함
 - "안녕하세요", "반가워요" 같은 인사 문구로 시작하지 않기
