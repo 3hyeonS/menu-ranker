@@ -1334,6 +1334,7 @@ failure_reason enum:
 
         existingMeal.image = null;
         existingMeal.mealMenus = [];
+        existingMeal.updatedAt = new Date();
 
         await this.mealRepository.save(existingMeal);
         return;
@@ -1386,6 +1387,7 @@ failure_reason enum:
 
       existingMeal.image = image ?? null;
       existingMeal.mealMenus = mealMenus;
+      existingMeal.updatedAt = new Date();
 
       await this.mealRepository.save(existingMeal);
       return;
