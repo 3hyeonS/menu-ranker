@@ -1581,8 +1581,6 @@ export class ChatService {
 - position.y는 음식 중심의 세로 좌표야. 위쪽 끝이 0, 아래쪽 끝이 1이야
 - position은 순위나 줄 번호가 아니라 실제 음식 중심 좌표야
 - 음식 중심이 이미지 아래쪽 끝에 붙어있지 않다면 position.y에 1을 쓰지 마
-- 음식이 여러 위치에 있으면 각 음식의 실제 세로 위치가 다르게 반영되도록 해
-- 가능하면 bounding_box도 0~1 정규화 좌표로 함께 반환해
 - 확실하지 않은 음식은 제외해
 - 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
 - 사진 문제로 실패한 경우 recognition_status는 "failed", detected_foods는 빈 배열로 반환해
@@ -1599,12 +1597,6 @@ export class ChatService {
       "position": {
         "x": 0.29,
         "y": 0.45
-      },
-      "bounding_box": {
-        "x_min": 0.12,
-        "y_min": 0.28,
-        "x_max": 0.46,
-        "y_max": 0.62
       }
     }
   ]
@@ -3841,13 +3833,17 @@ ${JSON.stringify(userContext)}
   }
 
   private buildComparisonVectorQuery(menuName: string): string {
+    const aliases = this.getComparisonRepresentativeAliases(menuName);
     return [
       `비교 대상 일반 음식명: ${menuName}`,
+      aliases.length > 0 ? `대표 음식 후보: ${aliases.join(', ')}` : null,
       '사용자가 말한 음식의 대표 메뉴를 찾는다.',
+      '사용자가 음식점/업종을 말했으면 그 업종의 대표적인 한 끼 메뉴를 찾는다.',
       '파생 메뉴, 제품명, 변형 메뉴보다 기본 음식명을 우선한다.',
+      '가공식품/제품명보다 일반 음식명을 우선한다.',
       '예: 짜장/자장 입력은 짜장면/자장면을 우선한다.',
       '예: 짬뽕 입력은 짬뽕을 우선한다.',
-    ].join('\n');
+    ].filter(Boolean).join('\n');
   }
 
   private applyIntentFilters(
@@ -4564,6 +4560,30 @@ ${JSON.stringify(userContext)}
 
     const rules = [
       {
+        triggers: ['중국집', '중식집', '중화요리', '중식'],
+        aliases: ['짜장면', '자장면', '짬뽕'],
+        variants: [
+          '중국집간짜장',
+          '옛날중국집',
+          '백짜장',
+          '백자장',
+          '짜장라면',
+          '자장라면',
+          '짬뽕라면',
+          '나가사키짬뽕',
+        ],
+      },
+      {
+        triggers: ['샤브샤브', '샤브'],
+        aliases: ['샤브샤브'],
+        variants: ['버섯샤브샤브', '마라샤브샤브'],
+      },
+      {
+        triggers: ['삼겹살'],
+        aliases: ['삼겹살구이', '삼겹살'],
+        variants: ['삼겹살김치찌개', '삼겹살볶음', '삼겹살덮밥'],
+      },
+      {
         triggers: ['짜장', '자장'],
         aliases: ['짜장면', '자장면'],
         variants: [
@@ -4628,6 +4648,43 @@ ${JSON.stringify(userContext)}
     }
 
     return score;
+  }
+
+  private getComparisonRepresentativeAliases(inputMenuName: string): string[] {
+    const input = this.normalizeMenuMatchText(inputMenuName);
+
+    if (!input) {
+      return [];
+    }
+
+    const rules = [
+      {
+        triggers: ['중국집', '중식집', '중화요리', '중식'],
+        aliases: ['짜장면', '짬뽕'],
+      },
+      {
+        triggers: ['샤브샤브', '샤브'],
+        aliases: ['샤브샤브'],
+      },
+      {
+        triggers: ['삼겹살'],
+        aliases: ['삼겹살구이', '삼겹살'],
+      },
+      {
+        triggers: ['짜장', '자장'],
+        aliases: ['짜장면', '자장면'],
+      },
+      {
+        triggers: ['짬뽕'],
+        aliases: ['짬뽕'],
+      },
+    ];
+
+    return (
+      rules.find((rule) =>
+        rule.triggers.some((trigger) => input.includes(trigger)),
+      )?.aliases ?? []
+    );
   }
 
   private findMostSimilarMenuWithScore(
@@ -5252,7 +5309,7 @@ ${input}
             part
               .replace(/\s*(?:중(?:에서|에)?)$/g, '')
               .replace(
-                /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*$/g,
+                /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘|어디\s*(?:갈까|가지|가야|가면|가)|어디가).*$/g,
                 '',
               )
               .replace(/\s*(?:이|가|을|를)$/g, '')
@@ -5288,7 +5345,9 @@ ${input}
       /(?:\S+)\s+(?:\S+)\s+중(?:에서|에|에는)?\??$/.test(normalized);
     const asksChoice =
       /(?:뭐|무엇|어느|어떤|뭘|머)\s*(?:먹|고르|선택)/.test(normalized) ||
-      /(?:낫|좋|추천|골라|먹는 게|먹을까|선택)/.test(normalized);
+      /(?:낫|좋|추천|골라|먹는 게|먹을까|선택|어디\s*(?:갈까|가지|가야|가면|가)|어디가)/.test(
+        normalized,
+      );
     const asksFeedbackOnly =
       /(?:먹어도\s*돼|괜찮아|어때|피드백|평가|판단)/.test(normalized) &&
       !/(?:중|골라|추천|낫|좋|먹을까|먹는 게)/.test(normalized);
@@ -5320,7 +5379,7 @@ ${input}
 
     const withoutQuestion = input
       .replace(
-        /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*/g,
+        /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘|어디\s*(?:갈까|가지|가야|가면|가)|어디가).*/g,
         '',
       )
       .replace(/[?？!！]/g, ' ')

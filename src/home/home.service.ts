@@ -1587,6 +1587,7 @@ failure_reason enum:
       .select('menu.brand', 'brand')
       .where('menu.brand LIKE :keyword', { keyword: keywordPattern })
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere('menu.user IS NULL')
       .groupBy('menu.brand')
       .orderBy('menu.brand', 'ASC')
       .getRawMany<{ brand: string }>();
@@ -1609,6 +1610,7 @@ failure_reason enum:
       .select('menu.brand', 'brand')
       .where('menu.brand = :brand', { brand })
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere('menu.user IS NULL')
       .getRawOne<{ brand: string }>();
 
     if (existingBrand) {
@@ -1639,19 +1641,6 @@ failure_reason enum:
     user: UserEntity,
     registerMenuRequestDto: RegisterMenuRequestDto,
   ): Promise<MenuIdResponseDto> {
-    const duplicatedMenu = await this.menuRepository.findOne({
-      where: {
-        name: registerMenuRequestDto.name,
-        brand: registerMenuRequestDto.brand,
-        is_deleted: 0,
-        user: { id: user.id },
-      },
-    });
-
-    if (duplicatedMenu) {
-      throw new ConflictException('Your menu already exists');
-    }
-
     const menu = this.menuRepository.create({
       ...this.normalizeMenuFloatValues(registerMenuRequestDto),
       data_source: 1,
@@ -1708,19 +1697,6 @@ failure_reason enum:
 
     if (!menu) {
       throw new NotFoundException('Menu not found');
-    }
-
-    const duplicatedMenu = await this.menuRepository.findOne({
-      where: {
-        name: modifyMenuRequestDto.name,
-        brand: modifyMenuRequestDto.brand,
-        is_deleted: 0,
-        user: { id: user.id },
-      },
-    });
-
-    if (duplicatedMenu && duplicatedMenu.id !== menu.id) {
-      throw new ConflictException('Your menu already exists');
     }
 
     Object.assign(menu, {

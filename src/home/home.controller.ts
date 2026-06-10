@@ -637,12 +637,6 @@ export class HomeController {
     message: 'Invalid or expired accessToken',
     error: 'UnauthorizedException',
   })
-  @ErrorApiResponse({
-    status: 409,
-    description: '이미 등록된 메뉴',
-    message: 'Your menu already exists',
-    error: 'ConflictException',
-  })
   @ResponseMsg('Menu registered successfully')
   @UseGuards(AuthGuard())
   @Post('/registerMenu')
@@ -728,12 +722,6 @@ export class HomeController {
     description: '수정할 메뉴를 찾을 수 없음',
     message: 'Menu not found',
     error: 'NotFoundException',
-  })
-  @ErrorApiResponse({
-    status: 409,
-    description: '이미 등록된 메뉴',
-    message: 'Your menu already exists',
-    error: 'ConflictException',
   })
   @ResponseMsg('Menu modified successfully')
   @UseGuards(AuthGuard())
