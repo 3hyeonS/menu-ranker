@@ -230,6 +230,11 @@ type FoodImagePosition = {
   y: number;
 };
 
+type FoodImageDimensions = {
+  width: number;
+  height: number;
+};
+
 type FoodImagePrediction = {
   foodName: string;
   confidence: number | null;
@@ -1615,6 +1620,10 @@ failure_reason enum:
     const data = await this.callGeminiJsonWithImage(prompt, file);
     timing?.mark('food_image_gemini_primary_completed');
     this.assertFoodImageRecognizable(data);
+    const imageDimensions = this.getImageDimensions(file.buffer);
+    if (imageDimensions) {
+      timing?.mark('food_image_dimensions_detected', imageDimensions);
+    }
 
     const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
       ? data.detected_foods
@@ -1653,7 +1662,7 @@ failure_reason enum:
     });
 
     let predictions = detectedFoods
-      .map((value) => this.normalizeFoodImagePrediction(value))
+      .map((value) => this.normalizeFoodImagePrediction(value, imageDimensions))
       .filter((food): food is FoodImagePrediction => food !== null);
     console.log(
       '[CHAT] food image normalized positions',
@@ -1681,6 +1690,7 @@ failure_reason enum:
       predictions = await this.repairFoodImagePredictionPositionsWithGemini(
         file,
         predictions,
+        imageDimensions,
         timing,
       );
       console.log(
@@ -1772,6 +1782,7 @@ failure_reason enum:
 
   private normalizeFoodImagePrediction(
     value: unknown,
+    imageDimensions: FoodImageDimensions | null = null,
   ): FoodImagePrediction | null {
     if (!value || typeof value !== 'object') {
       return null;
@@ -1780,9 +1791,9 @@ failure_reason enum:
     const item = value as Record<string, unknown>;
     const foodName = this.asNonEmptyString(item.food_name);
     const position =
-      this.normalizeFoodImagePosition(item.position) ??
-      this.normalizeFoodImagePosition(item.bounding_box) ??
-      this.normalizeFoodImagePosition(item.bbox);
+      this.normalizeFoodImagePosition(item.position, imageDimensions) ??
+      this.normalizeFoodImagePosition(item.bounding_box, imageDimensions) ??
+      this.normalizeFoodImagePosition(item.bbox, imageDimensions);
 
     if (!foodName || !position) {
       return null;
@@ -1817,6 +1828,7 @@ failure_reason enum:
   private async repairFoodImagePredictionPositionsWithGemini(
     file: Express.Multer.File,
     predictions: FoodImagePrediction[],
+    imageDimensions: FoodImageDimensions | null = null,
     timing?: ChatTimingLogger,
   ): Promise<FoodImagePrediction[]> {
     const prompt = `
@@ -1867,7 +1879,10 @@ ${JSON.stringify(
 
         const item = value as Record<string, unknown>;
         const foodIndex = this.asNullableNumber(item.food_index);
-        const position = this.normalizeFoodImagePosition(item.position);
+        const position = this.normalizeFoodImagePosition(
+          item.position,
+          imageDimensions,
+        );
 
         if (
           foodIndex === null ||
@@ -2702,7 +2717,87 @@ ${JSON.stringify(candidates)}
     return counts;
   }
 
-  private normalizeFoodImagePosition(value: unknown): FoodImagePosition | null {
+  private getImageDimensions(buffer: Buffer): FoodImageDimensions | null {
+    return this.getPngImageDimensions(buffer) ?? this.getJpegImageDimensions(buffer);
+  }
+
+  private getPngImageDimensions(buffer: Buffer): FoodImageDimensions | null {
+    if (
+      buffer.length < 24 ||
+      buffer[0] !== 0x89 ||
+      buffer[1] !== 0x50 ||
+      buffer[2] !== 0x4e ||
+      buffer[3] !== 0x47
+    ) {
+      return null;
+    }
+
+    const width = buffer.readUInt32BE(16);
+    const height = buffer.readUInt32BE(20);
+
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+
+  private getJpegImageDimensions(buffer: Buffer): FoodImageDimensions | null {
+    if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
+      return null;
+    }
+
+    let offset = 2;
+
+    while (offset < buffer.length) {
+      if (buffer[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+
+      const marker = buffer[offset + 1];
+      offset += 2;
+
+      if (marker === 0xd9 || marker === 0xda) {
+        break;
+      }
+
+      if (offset + 2 > buffer.length) {
+        break;
+      }
+
+      const segmentLength = buffer.readUInt16BE(offset);
+
+      if (segmentLength < 2 || offset + segmentLength > buffer.length) {
+        break;
+      }
+
+      if (this.isJpegStartOfFrameMarker(marker)) {
+        if (offset + 7 > buffer.length) {
+          break;
+        }
+
+        const height = buffer.readUInt16BE(offset + 3);
+        const width = buffer.readUInt16BE(offset + 5);
+
+        return width > 0 && height > 0 ? { width, height } : null;
+      }
+
+      offset += segmentLength;
+    }
+
+    return null;
+  }
+
+  private isJpegStartOfFrameMarker(marker: number): boolean {
+    return (
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf)
+    );
+  }
+
+  private normalizeFoodImagePosition(
+    value: unknown,
+    imageDimensions: FoodImageDimensions | null = null,
+  ): FoodImagePosition | null {
     if (!value || typeof value !== 'object') {
       return null;
     }
@@ -2718,10 +2813,7 @@ ${JSON.stringify(candidates)}
       this.asNullableNumber(position.y_center);
 
     if (x !== null && y !== null) {
-      return {
-        x: this.normalizeCoordinateUnit(x),
-        y: this.normalizeCoordinateUnit(y),
-      };
+      return this.normalizeCoordinatePair(x, y, imageDimensions);
     }
 
     const xMin =
@@ -2742,8 +2834,11 @@ ${JSON.stringify(candidates)}
     }
 
     return {
-      x: this.normalizeCoordinateUnit((xMin + xMax) / 2),
-      y: this.normalizeCoordinateUnit((yMin + yMax) / 2),
+      ...this.normalizeCoordinatePair(
+        (xMin + xMax) / 2,
+        (yMin + yMax) / 2,
+        imageDimensions,
+      ),
     };
   }
 
@@ -2780,10 +2875,30 @@ ${JSON.stringify(candidates)}
     return this.roundNormalizedCoordinate(Math.min(Math.max(value, 0), 1));
   }
 
+  private normalizeCoordinatePair(
+    x: number,
+    y: number,
+    imageDimensions: FoodImageDimensions | null,
+  ): FoodImagePosition {
+    const looksLikePixelCoordinate =
+      !!imageDimensions && (Math.abs(x) > 100 || Math.abs(y) > 100);
+
+    if (looksLikePixelCoordinate) {
+      return {
+        x: this.clampNormalizedCoordinate(x / imageDimensions.width),
+        y: this.clampNormalizedCoordinate(y / imageDimensions.height),
+      };
+    }
+
+    return {
+      x: this.normalizeCoordinateUnit(x),
+      y: this.normalizeCoordinateUnit(y),
+    };
+  }
+
   private normalizeCoordinateUnit(value: number): number {
-    const normalizedValue = Math.abs(value) > 1 && Math.abs(value) <= 100
-      ? value / 100
-      : value;
+    const normalizedValue =
+      Math.abs(value) > 1 && Math.abs(value) <= 100 ? value / 100 : value;
 
     return this.clampNormalizedCoordinate(normalizedValue);
   }
