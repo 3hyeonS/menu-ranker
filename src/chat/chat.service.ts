@@ -1619,9 +1619,51 @@ failure_reason enum:
     const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
       ? data.detected_foods
       : [];
+    const rawFoodImagePositionLogItems = detectedFoods
+      .map((value) => {
+        if (!value || typeof value !== 'object') {
+          return null;
+        }
+
+        const item = value as Record<string, unknown>;
+
+        return {
+          food_name: this.asNonEmptyString(item.food_name),
+          confidence: this.asNullableNumber(item.confidence),
+          position: item.position ?? null,
+          bounding_box: item.bounding_box ?? item.bbox ?? null,
+        };
+      })
+      .filter((item): item is {
+        food_name: string | null;
+        confidence: number | null;
+        position: unknown;
+        bounding_box: unknown;
+      } => item !== null);
+    console.log('[CHAT] food image Gemini raw positions', {
+      detectedFoods: rawFoodImagePositionLogItems,
+    });
+    timing?.mark('food_image_gemini_raw_positions_logged', {
+      detectedFoods: rawFoodImagePositionLogItems,
+    });
+
     let predictions = detectedFoods
       .map((value) => this.normalizeFoodImagePrediction(value))
       .filter((food): food is FoodImagePrediction => food !== null);
+    console.log('[CHAT] food image normalized positions', {
+      predictions: predictions.map((prediction) => ({
+        foodName: prediction.foodName,
+        confidence: prediction.confidence,
+        position: prediction.position,
+      })),
+    });
+    timing?.mark('food_image_normalized_positions_logged', {
+      predictions: predictions.map((prediction) => ({
+        foodName: prediction.foodName,
+        confidence: prediction.confidence,
+        position: prediction.position,
+      })),
+    });
 
     if (this.hasSuspiciousFoodImagePositions(predictions)) {
       predictions = await this.repairFoodImagePredictionPositionsWithGemini(
