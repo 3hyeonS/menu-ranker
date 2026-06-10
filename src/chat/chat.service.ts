@@ -5367,6 +5367,12 @@ ${JSON.stringify(userContext)}
 - feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
 - recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
 - 비교 선택 recommendation일 때는 비교 대상 메뉴명을 menu_names와 intent.include.menu_names에 모두 넣어
+- 비교 선택 recommendation의 menu_names는 DB 검색에 바로 쓸 수 있는 완성 음식명으로 정규화해
+- 비교 대상 중 한쪽이 "후라이", "프라이", "구이", "볶음", "찜", "탕", "국"처럼 조리 방식만 말한 생략 표현이면, 같은 문장 안의 다른 비교 대상이나 문맥에서 공통 재료를 추론해 완성 음식명으로 복원해
+- 예: "삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> menu_names=["삶은 달걀","달걀 프라이"], intent.include.menu_names도 동일
+- 예: "삶은 계란이랑 프라이 중에는?" -> menu_names=["삶은 계란","계란 프라이"], intent.include.menu_names도 동일
+- 예: "돼지고기 구이랑 찜 중 뭐가 나아?" -> menu_names=["돼지고기 구이","돼지고기 찜"], intent.include.menu_names도 동일
+- 단, 원문에 재료 단서가 전혀 없으면 억지로 추론하지 말고 원문 표현을 유지해
 - general일 때는 menu_names를 빈 배열로 반환해
 - 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
 - "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
@@ -5381,7 +5387,8 @@ ${JSON.stringify(userContext)}
 - keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
 - normalized_request: 사용자의 의도를 한 문장으로 정리
 - include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
-- "A와 B 중 뭐 먹을까?" 같은 비교 선택 요청은 include.menu_names에 A, B를 넣어
+- "A와 B 중 뭐 먹을까?" 같은 비교 선택 요청은 include.menu_names에 정규화된 A, B를 넣어
+- 비교 선택 요청에서 classification.menu_names와 intent.include.menu_names는 같은 정규화 메뉴명 목록을 사용해
 - exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
 - nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
 - caffeine_allowed: "카페인 없는", "디카페인", "카페인 빼고"는 false, 명확하지 않으면 null
@@ -5536,6 +5543,12 @@ ${input}
 - feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
 - recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
 - 비교 선택 recommendation일 때는 비교 대상 메뉴명을 menu_names에 넣어
+- 비교 선택 recommendation의 menu_names는 DB 검색에 바로 쓸 수 있는 완성 음식명으로 정규화해
+- 비교 대상 중 한쪽이 "후라이", "프라이", "구이", "볶음", "찜", "탕", "국"처럼 조리 방식만 말한 생략 표현이면, 같은 문장 안의 다른 비교 대상이나 문맥에서 공통 재료를 추론해 완성 음식명으로 복원해
+- 예: "삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> recommendation, menu_names=["삶은 달걀","달걀 프라이"]
+- 예: "삶은 계란이랑 프라이 중에는?" -> recommendation, menu_names=["삶은 계란","계란 프라이"]
+- 예: "돼지고기 구이랑 찜 중 뭐가 나아?" -> recommendation, menu_names=["돼지고기 구이","돼지고기 찜"]
+- 단, 원문에 재료 단서가 전혀 없으면 억지로 추론하지 말고 원문 표현을 유지해
 - general일 때는 menu_names를 빈 배열로 반환해
 - 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
 - "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
@@ -5546,6 +5559,7 @@ ${input}
 예시:
 "맘스터치에서 싸이버거 제외하고 메뉴 추천해줘" -> recommendation
 "싸이버거랑 빅맥 중 뭐 먹을까?" -> recommendation, menu_names=["싸이버거","빅맥"]
+"삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> recommendation, menu_names=["삶은 달걀","달걀 프라이"]
 "오늘 점심 싸이버거 먹어도 돼?" -> feedback
 "싸이버거랑 콜라 먹었는데 괜찮아?" -> feedback
 "탄수화물은 언제 먹는 게 좋아?" -> general
@@ -5794,10 +5808,17 @@ ${input}
       return [];
     }
 
-    return this.normalizeComparisonMenuNames(
+    const geminiMenuNames = this.normalizeComparisonMenuNames(
       classification.menu_names,
       intent.include.menu_names,
-      this.extractComparisonMenuNamesFallback(input),
+    );
+
+    if (geminiMenuNames.length >= 2) {
+      return geminiMenuNames.slice(0, 5);
+    }
+
+    return this.normalizeComparisonMenuNames(
+      ...[geminiMenuNames, this.extractComparisonMenuNamesFallback(input)],
     ).slice(0, 5);
   }
 
