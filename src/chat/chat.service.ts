@@ -2865,7 +2865,19 @@ ${JSON.stringify(candidates)}
     timing?: ChatTimingLogger,
   ): Promise<{ menus: MenuEntity[]; introMessage: string | null }> {
     if (!this.shouldUseGeminiGeneratedGenericCandidates(intent)) {
-      timing?.mark('gemini_generic_candidates_skipped');
+      const skipReason = this.getGeminiGeneratedGenericCandidateSkipReason(intent);
+      console.log('[CHAT] generic Gemini menu candidates skipped', {
+        reason: skipReason,
+        desiredBrand: intent.desired_brand,
+        includeBrands: intent.include.brands,
+        includeMenuNames: intent.include.menu_names,
+      });
+      timing?.mark('gemini_generic_candidates_skipped', {
+        reason: skipReason,
+        desiredBrand: intent.desired_brand,
+        includeBrands: intent.include.brands,
+        includeMenuNames: intent.include.menu_names,
+      });
       return { menus: [], introMessage: null };
     }
 
@@ -2923,9 +2935,22 @@ ${JSON.stringify(candidates)}
   ): boolean {
     return (
       !intent.desired_brand &&
-      intent.include.brands.length === 0 &&
-      intent.include.menu_names.length === 0
+      intent.include.brands.length === 0
     );
+  }
+
+  private getGeminiGeneratedGenericCandidateSkipReason(
+    intent: ParsedChatIntent,
+  ): string {
+    if (intent.desired_brand) {
+      return 'desired_brand_present';
+    }
+
+    if (intent.include.brands.length > 0) {
+      return 'include_brands_present';
+    }
+
+    return 'unknown';
   }
 
   private async buildGenericMenuCandidateUserContext(
