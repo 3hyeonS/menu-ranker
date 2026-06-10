@@ -441,6 +441,18 @@ export class ChatService {
       classification,
       analysis.intent,
     );
+    if (comparisonMenuNames.length >= 2) {
+      console.log('[CHAT] comparison menu names detected', {
+        geminiClassificationMenuNames: classification.menu_names,
+        geminiIntentMenuNames: analysis.intent.include.menu_names,
+        resolvedComparisonMenuNames: comparisonMenuNames,
+      });
+      timing.mark('comparison_menu_names_detected', {
+        geminiClassificationMenuNames: classification.menu_names,
+        geminiIntentMenuNames: analysis.intent.include.menu_names,
+        resolvedComparisonMenuNames: comparisonMenuNames,
+      });
+    }
 
     if (
       classification.chat_category === 'feedback' &&
@@ -1565,7 +1577,12 @@ export class ChatService {
 - 같은 메뉴가 여러 개 보이면 가장 선명하거나 대표적인 1개의 위치만 반환해
 - food_name에는 사진 속 음식의 가장 구체적인 이름을 넣어
 - 각 음식의 position은 이미지 전체 기준 0~1 정규화 중심 좌표로 반환해
-- position.x는 음식 중심의 x 좌표, position.y는 음식 중심의 y 좌표야
+- position.x는 음식 중심의 가로 좌표야. 왼쪽 끝이 0, 오른쪽 끝이 1이야
+- position.y는 음식 중심의 세로 좌표야. 위쪽 끝이 0, 아래쪽 끝이 1이야
+- position은 순위나 줄 번호가 아니라 실제 음식 중심 좌표야
+- 음식 중심이 이미지 아래쪽 끝에 붙어있지 않다면 position.y에 1을 쓰지 마
+- 음식이 여러 위치에 있으면 각 음식의 실제 세로 위치가 다르게 반영되도록 해
+- 가능하면 bounding_box도 0~1 정규화 좌표로 함께 반환해
 - 확실하지 않은 음식은 제외해
 - 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
 - 사진 문제로 실패한 경우 recognition_status는 "failed", detected_foods는 빈 배열로 반환해
@@ -1582,6 +1599,12 @@ export class ChatService {
       "position": {
         "x": 0.29,
         "y": 0.45
+      },
+      "bounding_box": {
+        "x_min": 0.12,
+        "y_min": 0.28,
+        "x_max": 0.46,
+        "y_max": 0.62
       }
     }
   ]
@@ -1604,9 +1627,18 @@ failure_reason enum:
     const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
       ? data.detected_foods
       : [];
-    const predictions = detectedFoods
+    let predictions = detectedFoods
       .map((value) => this.normalizeFoodImagePrediction(value))
       .filter((food): food is FoodImagePrediction => food !== null);
+
+    if (this.hasSuspiciousFoodImagePositions(predictions)) {
+      predictions = await this.repairFoodImagePredictionPositionsWithGemini(
+        file,
+        predictions,
+        timing,
+      );
+    }
+
     timing?.mark('food_image_predictions_normalized', {
       predictionCount: predictions.length,
     });
@@ -1687,7 +1719,10 @@ failure_reason enum:
 
     const item = value as Record<string, unknown>;
     const foodName = this.asNonEmptyString(item.food_name);
-    const position = this.normalizeFoodImagePosition(item.position);
+    const position =
+      this.normalizeFoodImagePosition(item.position) ??
+      this.normalizeFoodImagePosition(item.bounding_box) ??
+      this.normalizeFoodImagePosition(item.bbox);
 
     if (!foodName || !position) {
       return null;
@@ -1701,6 +1736,110 @@ failure_reason enum:
         confidence === null ? null : this.roundNormalizedCoordinate(confidence),
       position,
     };
+  }
+
+  private hasSuspiciousFoodImagePositions(
+    predictions: FoodImagePrediction[],
+  ): boolean {
+    if (predictions.length < 2) {
+      return false;
+    }
+
+    const yValues = predictions.map((prediction) => prediction.position.y);
+    const uniqueYValues = new Set(yValues);
+
+    return (
+      uniqueYValues.size === 1 &&
+      (uniqueYValues.has(0) || uniqueYValues.has(1))
+    );
+  }
+
+  private async repairFoodImagePredictionPositionsWithGemini(
+    file: Express.Multer.File,
+    predictions: FoodImagePrediction[],
+    timing?: ChatTimingLogger,
+  ): Promise<FoodImagePrediction[]> {
+    const prompt = `
+음식 사진과 1차 인식 음식 목록을 보고, 각 음식의 실제 중심 좌표만 다시 계산해서 JSON object로 반환해.
+
+규칙:
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- food_index는 입력 음식 목록의 index 값을 그대로 사용해
+- position.x는 왼쪽 0, 오른쪽 1 기준의 음식 중심 좌표야
+- position.y는 위쪽 0, 아래쪽 1 기준의 음식 중심 좌표야
+- position은 순위, 행 번호, 라벨 위치가 아니라 사진 속 음식 자체의 중심 좌표야
+- 음식 중심이 이미지 아래쪽 끝에 붙어있지 않다면 y에 1을 쓰지 마
+- 확실하지 않더라도 보이는 음식의 중심을 최대한 추정해
+
+입력 음식 목록:
+${JSON.stringify(
+  predictions.map((prediction, index) => ({
+    index,
+    food_name: prediction.foodName,
+  })),
+)}
+
+반환 shape:
+{
+  "positions": [
+    {
+      "food_index": 0,
+      "position": {
+        "x": 0.29,
+        "y": 0.45
+      }
+    }
+  ]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJsonWithImage(prompt, file);
+      const positions: unknown[] = Array.isArray(data?.positions)
+        ? data.positions
+        : [];
+      const positionMap = new Map<number, FoodImagePosition>();
+
+      positions.forEach((value) => {
+        if (!value || typeof value !== 'object') {
+          return;
+        }
+
+        const item = value as Record<string, unknown>;
+        const foodIndex = this.asNullableNumber(item.food_index);
+        const position = this.normalizeFoodImagePosition(item.position);
+
+        if (
+          foodIndex === null ||
+          !Number.isInteger(foodIndex) ||
+          foodIndex < 0 ||
+          foodIndex >= predictions.length ||
+          !position
+        ) {
+          return;
+        }
+
+        positionMap.set(foodIndex, position);
+      });
+
+      const repairedPredictions = predictions.map((prediction, index) => ({
+        ...prediction,
+        position: positionMap.get(index) ?? prediction.position,
+      }));
+
+      timing?.mark('food_image_position_repair_completed', {
+        repairedCount: positionMap.size,
+      });
+
+      return repairedPredictions;
+    } catch (error) {
+      console.warn('[CHAT] food image position repair failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      timing?.mark('food_image_position_repair_failed');
+
+      return predictions;
+    }
   }
 
   private matchFoodImagePredictionLocally(
@@ -2509,16 +2648,42 @@ ${JSON.stringify(candidates)}
     }
 
     const position = value as Record<string, unknown>;
-    const x = this.asNullableNumber(position.x);
-    const y = this.asNullableNumber(position.y);
+    const x =
+      this.asNullableNumber(position.x) ??
+      this.asNullableNumber(position.center_x) ??
+      this.asNullableNumber(position.x_center);
+    const y =
+      this.asNullableNumber(position.y) ??
+      this.asNullableNumber(position.center_y) ??
+      this.asNullableNumber(position.y_center);
 
-    if (x === null || y === null) {
+    if (x !== null && y !== null) {
+      return {
+        x: this.normalizeCoordinateUnit(x),
+        y: this.normalizeCoordinateUnit(y),
+      };
+    }
+
+    const xMin =
+      this.asNullableNumber(position.x_min) ??
+      this.asNullableNumber(position.left);
+    const yMin =
+      this.asNullableNumber(position.y_min) ??
+      this.asNullableNumber(position.top);
+    const xMax =
+      this.asNullableNumber(position.x_max) ??
+      this.asNullableNumber(position.right);
+    const yMax =
+      this.asNullableNumber(position.y_max) ??
+      this.asNullableNumber(position.bottom);
+
+    if (xMin === null || yMin === null || xMax === null || yMax === null) {
       return null;
     }
 
     return {
-      x: this.clampNormalizedCoordinate(x),
-      y: this.clampNormalizedCoordinate(y),
+      x: this.normalizeCoordinateUnit((xMin + xMax) / 2),
+      y: this.normalizeCoordinateUnit((yMin + yMax) / 2),
     };
   }
 
@@ -2553,6 +2718,14 @@ ${JSON.stringify(candidates)}
 
   private clampNormalizedCoordinate(value: number): number {
     return this.roundNormalizedCoordinate(Math.min(Math.max(value, 0), 1));
+  }
+
+  private normalizeCoordinateUnit(value: number): number {
+    const normalizedValue = Math.abs(value) > 1 && Math.abs(value) <= 100
+      ? value / 100
+      : value;
+
+    return this.clampNormalizedCoordinate(normalizedValue);
   }
 
   private roundNormalizedCoordinate(value: number): number {
