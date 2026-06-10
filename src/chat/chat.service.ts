@@ -2880,6 +2880,18 @@ ${JSON.stringify(candidates)}
     y: number,
     imageDimensions: FoodImageDimensions | null,
   ): FoodImagePosition {
+    const looksLikeThousandScaleCoordinate =
+      (Math.abs(x) > 100 || Math.abs(y) > 100) &&
+      Math.abs(x) <= 1000 &&
+      Math.abs(y) <= 1000;
+
+    if (looksLikeThousandScaleCoordinate) {
+      return {
+        x: this.clampNormalizedCoordinate(x / 1000),
+        y: this.clampNormalizedCoordinate(y / 1000),
+      };
+    }
+
     const looksLikePixelCoordinate =
       !!imageDimensions && (Math.abs(x) > 100 || Math.abs(y) > 100);
 
