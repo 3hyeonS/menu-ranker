@@ -385,6 +385,62 @@ export class HomeService {
       .map(({ menu }) => menu);
   }
 
+  private async getMealRecordCountsByMenuId(
+    menuIds: number[],
+  ): Promise<Map<number, number>> {
+    if (menuIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.mealMenuRepository
+      .createQueryBuilder('mealMenu')
+      .select('menu.id', 'menuId')
+      .addSelect('COUNT(mealMenu.id)', 'recordCount')
+      .innerJoin('mealMenu.menu', 'menu')
+      .where('menu.id IN (:...menuIds)', { menuIds })
+      .groupBy('menu.id')
+      .getRawMany<{ menuId: string; recordCount: string }>();
+
+    return new Map(
+      rows.map((row) => [Number(row.menuId), Number(row.recordCount)]),
+    );
+  }
+
+  private async insertPopularRecordedMenusAfterTopSearchResults(
+    menus: MenuEntity[],
+  ): Promise<MenuEntity[]> {
+    const fixedTopCount = 3;
+    const popularInsertCount = 3;
+
+    if (menus.length <= fixedTopCount + 1) {
+      return menus;
+    }
+
+    const topMenus = menus.slice(0, fixedTopCount);
+    const restMenus = menus.slice(fixedTopCount);
+    const recordCounts = await this.getMealRecordCountsByMenuId(
+      restMenus.map((menu) => menu.id),
+    );
+    const popularMenus = [...restMenus]
+      .sort((a, b) => {
+        const countDiff =
+          (recordCounts.get(b.id) ?? 0) - (recordCounts.get(a.id) ?? 0);
+
+        if (countDiff !== 0) {
+          return countDiff;
+        }
+
+        return menus.indexOf(a) - menus.indexOf(b);
+      })
+      .slice(0, popularInsertCount);
+    const popularMenuIds = new Set(popularMenus.map((menu) => menu.id));
+    const continuedMenus = restMenus.filter(
+      (menu) => !popularMenuIds.has(menu.id),
+    );
+
+    return [...topMenus, ...popularMenus, ...continuedMenus];
+  }
+
   private hasAnyKeyword(text: string, keywords: string[]): boolean {
     return keywords.some((keyword) => text.includes(keyword));
   }
@@ -759,13 +815,19 @@ export class HomeService {
           ]
         : exactMenus;
 
-    const pagedMenuList = menuList.slice(0, limit);
+    const basePagedMenuList = menuList.slice(0, limit);
+    const pagedMenuList =
+      cursor === undefined
+        ? await this.insertPopularRecordedMenusAfterTopSearchResults(
+            basePagedMenuList,
+          )
+        : basePagedMenuList;
     let menu_list: MenuSimpleResponseDto[] = pagedMenuList.map(
       (menu) => new MenuSimpleResponseDto(menu),
     );
     let nextCursor =
-      menuList.length > limit
-        ? pagedMenuList[pagedMenuList.length - 1].id
+      menuList.length > limit && basePagedMenuList.length > 0
+        ? basePagedMenuList[basePagedMenuList.length - 1].id
         : null;
     let has_result = menu_list.length > 0;
 
