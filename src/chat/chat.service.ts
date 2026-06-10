@@ -1631,18 +1631,23 @@ failure_reason enum:
           food_name: this.asNonEmptyString(item.food_name),
           confidence: this.asNullableNumber(item.confidence),
           position: item.position ?? null,
-          bounding_box: item.bounding_box ?? item.bbox ?? null,
         };
       })
       .filter((item): item is {
         food_name: string | null;
         confidence: number | null;
         position: unknown;
-        bounding_box: unknown;
       } => item !== null);
-    console.log('[CHAT] food image Gemini raw positions', {
-      detectedFoods: rawFoodImagePositionLogItems,
-    });
+    console.log(
+      '[CHAT] food image Gemini raw positions',
+      JSON.stringify(
+        {
+          detectedFoods: rawFoodImagePositionLogItems,
+        },
+        null,
+        2,
+      ),
+    );
     timing?.mark('food_image_gemini_raw_positions_logged', {
       detectedFoods: rawFoodImagePositionLogItems,
     });
@@ -1650,13 +1655,20 @@ failure_reason enum:
     let predictions = detectedFoods
       .map((value) => this.normalizeFoodImagePrediction(value))
       .filter((food): food is FoodImagePrediction => food !== null);
-    console.log('[CHAT] food image normalized positions', {
-      predictions: predictions.map((prediction) => ({
-        foodName: prediction.foodName,
-        confidence: prediction.confidence,
-        position: prediction.position,
-      })),
-    });
+    console.log(
+      '[CHAT] food image normalized positions',
+      JSON.stringify(
+        {
+          predictions: predictions.map((prediction) => ({
+            foodName: prediction.foodName,
+            confidence: prediction.confidence,
+            position: prediction.position,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
     timing?.mark('food_image_normalized_positions_logged', {
       predictions: predictions.map((prediction) => ({
         foodName: prediction.foodName,
@@ -1670,6 +1682,20 @@ failure_reason enum:
         file,
         predictions,
         timing,
+      );
+      console.log(
+        '[CHAT] food image repaired positions',
+        JSON.stringify(
+          {
+            predictions: predictions.map((prediction) => ({
+              foodName: prediction.foodName,
+              confidence: prediction.confidence,
+              position: prediction.position,
+            })),
+          },
+          null,
+          2,
+        ),
       );
     }
 
