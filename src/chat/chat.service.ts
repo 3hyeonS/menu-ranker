@@ -214,6 +214,17 @@ type RecognitionTextMenuMatch = {
   menu: MenuRecognitionCandidate;
 };
 
+type ComparisonMenuMatch = {
+  inputMenuName: string;
+  menu: MenuEntity;
+};
+
+type FoodImageCandidateGroup = {
+  foodIndex: number;
+  foodName: string;
+  candidates: MenuRecognitionCandidate[];
+};
+
 type MenuBoardRecognitionResult = {
   recognizedTexts: string[];
   inferredBrand: string | null;
@@ -1274,7 +1285,9 @@ export class ChatService {
     rankedMenus: RankedMenu[];
   }): string {
     const topMenu = params.rankedMenus[0]?.menu;
-    const topMenuName = topMenu?.name ?? '첫 번째 메뉴';
+    const topMenuName = topMenu
+      ? this.toIntroDisplayMenuName(topMenu.name)
+      : '첫 번째 메뉴';
     const topMenuWithObjectParticle =
       this.withKoreanObjectParticle(topMenuName);
     const isImageSource =
@@ -1310,6 +1323,82 @@ export class ChatService {
 
   private isComparisonIntent(intent: ParsedChatIntent): boolean {
     return intent.include.menu_names.length >= 2;
+  }
+
+  private toIntroDisplayMenuName(menuName: string): string {
+    let normalized = menuName
+      .replace(/^\s*\((?:식약처|식약청|공공데이터)[^)]*\)\s*/g, '')
+      .replace(/^\s*\[[^\]]+\]\s*/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const parentheticalMatches = Array.from(normalized.matchAll(/\(([^)]{2,20})\)/g))
+      .map((match) => match[1].trim())
+      .filter((value) => value.length >= 2);
+
+    normalized = normalized
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (parentheticalMatches.length > 0) {
+      const bestParenthetical = parentheticalMatches
+        .sort((a, b) => a.length - b.length)[0];
+      const compactBase = this.normalizeCompactText(normalized);
+      const compactParenthetical = this.normalizeCompactText(bestParenthetical);
+
+      if (
+        compactParenthetical &&
+        !compactBase.includes(compactParenthetical) &&
+        compactParenthetical.length <= 8
+      ) {
+        normalized = bestParenthetical;
+      }
+    }
+
+    const cleanupPatterns: Array<[RegExp, string]> = [
+      [/^(?:바로먹는|즉석|간편|간편식|냉동|냉장|가정간편식|HMR)\s+/i, ''],
+      [/^(?:대왕|옛날|전통|정통|프리미엄|오리지널|리얼)\s+/i, ''],
+      [/^(?:매운양념|매콤한|매운|순한|담백한|고소한)\s+/i, ''],
+      [/^(?:온면)\s+/i, ''],
+      [/\s+(?:라면|면)\s+라면$/i, ' 라면'],
+    ];
+
+    cleanupPatterns.forEach(([pattern, replacement]) => {
+      normalized = normalized.replace(pattern, replacement).trim();
+    });
+
+    if (normalized.length > 12) {
+      const compact = this.normalizeCompactText(normalized);
+      const representativeKeywords = [
+        '메밀국수',
+        '월남쌈',
+        '샤브샤브',
+        '삼겹살',
+        '짜장면',
+        '짬뽕',
+        '비빔밥',
+        '볶음밥',
+        '김치찌개',
+        '된장찌개',
+        '갈비탕',
+        '닭갈비',
+        '수육',
+        '잡채',
+        '냉면',
+        '국밥',
+      ];
+      const matchedKeyword = representativeKeywords.find((keyword) =>
+        compact.includes(this.normalizeCompactText(keyword)),
+      );
+
+      if (matchedKeyword) {
+        normalized = matchedKeyword;
+      }
+    }
+
+    return normalized || menuName;
   }
 
   private alignComparisonRankedMenusWithIntro(
@@ -1716,41 +1805,26 @@ failure_reason enum:
       inferredBrand: null,
       inferredCategory: null,
     };
-    const vectorCandidatePool = await this.getVectorRecognitionCandidates({
-      userId,
-      texts: predictions.map((food) => food.foodName),
-      context: foodImageContext,
-      limit: this.getFoodImageVectorCandidateLimit(),
-      timing,
-      timingPrefix: 'food_image',
-    });
-    timing?.mark('food_image_vector_candidate_pool_completed', {
-      candidatePoolCount: vectorCandidatePool.length,
-    });
-    const candidatePool =
-      vectorCandidatePool.length > 0
-        ? vectorCandidatePool
-        : this.buildRecognitionCandidatePool(
-            predictions.map((food) => food.foodName),
-            menus,
-            foodImageContext,
-            this.getFoodImageVectorCandidateLimit(),
-            15,
-            32,
-          );
-    const rematchCandidatePool = candidatePool.slice(
-      0,
-      this.getFoodImageRematchCandidateLimit(),
+    const candidateGroups =
+      await this.buildFoodImageCandidateGroupsByPrediction(
+        userId,
+        predictions,
+        menus,
+        foodImageContext,
+        timing,
+      );
+    const rematchCandidatePool = this.mergeRecognitionCandidatesById(
+      candidateGroups.flatMap((group) => group.candidates),
     );
-    timing?.mark('food_image_candidate_pool_selected', {
-      candidatePoolCount: candidatePool.length,
-      rematchCandidateCount: rematchCandidatePool.length,
-      source: vectorCandidatePool.length > 0 ? 'vector' : 'local',
+    timing?.mark('food_image_candidate_groups_selected', {
+      groupCount: candidateGroups.length,
+      candidateCount: rematchCandidatePool.length,
+      perFoodLimit: this.getFoodImagePerFoodVectorCandidateLimit(),
     });
     const rematchedFoods = await this.rematchFoodImageMenusWithGemini(
       file,
       predictions,
-      rematchCandidatePool,
+      candidateGroups,
       timing,
     );
     timing?.mark('food_image_gemini_rematch_completed', {
@@ -2044,6 +2118,154 @@ ${JSON.stringify(
 
       return [];
     }
+  }
+
+  private async buildFoodImageCandidateGroupsByPrediction(
+    userId: number,
+    predictions: FoodImagePrediction[],
+    menus: MenuRecognitionCandidate[],
+    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+    timing?: ChatTimingLogger,
+  ): Promise<FoodImageCandidateGroup[]> {
+    const groups = await this.getFoodImageVectorCandidateGroupsByPrediction(
+      userId,
+      predictions,
+      context,
+      timing,
+    );
+    const groupMap = new Map(groups.map((group) => [group.foodIndex, group]));
+    const missingPredictions = predictions
+      .map((prediction, index) => ({ prediction, index }))
+      .filter(({ index }) => !groupMap.has(index));
+
+    if (missingPredictions.length > 0) {
+      const localGroups = this.getFoodImageLocalCandidateGroupsByPrediction(
+        missingPredictions,
+        menus,
+        context,
+      );
+      localGroups.forEach((group) => groupMap.set(group.foodIndex, group));
+      timing?.mark('food_image_local_candidate_groups_completed', {
+        groupCount: localGroups.length,
+      });
+    }
+
+    return predictions
+      .map((prediction, index) => groupMap.get(index) ?? {
+        foodIndex: index,
+        foodName: prediction.foodName,
+        candidates: [],
+      })
+      .filter((group) => group.candidates.length > 0);
+  }
+
+  private async getFoodImageVectorCandidateGroupsByPrediction(
+    userId: number,
+    predictions: FoodImagePrediction[],
+    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+    timing?: ChatTimingLogger,
+  ): Promise<FoodImageCandidateGroup[]> {
+    if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
+      timing?.mark('food_image_one_to_one_vector_groups_skipped', {
+        predictionCount: predictions.length,
+      });
+      return [];
+    }
+
+    const menuVectorService = this.menuVectorService;
+    const perFoodLimit = this.getFoodImagePerFoodVectorCandidateLimit();
+
+    try {
+      const groups = await this.mapWithConcurrency(
+        predictions.map((prediction, index) => ({ prediction, index })),
+        this.getFoodImageVectorMatchConcurrency(),
+        async ({ prediction, index }) => {
+          const vectorResults = await menuVectorService.searchMenusByText(
+            this.buildSingleFoodImageMatchVectorQuery(prediction.foodName),
+            {
+              userId,
+              limit: perFoodLimit,
+            },
+          );
+          const menuIds = vectorResults.map((result) => result.menuId);
+          const candidates = await this.getRecognitionCandidatesByIds(
+            userId,
+            menuIds,
+          );
+
+          return {
+            foodIndex: index,
+            foodName: prediction.foodName,
+            candidates: this.mergeRecognitionCandidatesById(candidates).slice(
+              0,
+              perFoodLimit,
+            ),
+          };
+        },
+      );
+      const nonEmptyGroups = groups.filter((group) => group.candidates.length > 0);
+      timing?.mark('food_image_one_to_one_vector_groups_completed', {
+        predictionCount: predictions.length,
+        groupCount: nonEmptyGroups.length,
+        perFoodLimit,
+      });
+
+      return nonEmptyGroups;
+    } catch (error) {
+      console.warn('[CHAT] food image one-to-one vector groups failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      timing?.mark('food_image_one_to_one_vector_groups_failed', {
+        predictionCount: predictions.length,
+      });
+
+      return [];
+    }
+  }
+
+  private getFoodImageLocalCandidateGroupsByPrediction(
+    predictionEntries: Array<{ prediction: FoodImagePrediction; index: number }>,
+    menus: MenuRecognitionCandidate[],
+    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+  ): FoodImageCandidateGroup[] {
+    const perFoodLimit = this.getFoodImagePerFoodVectorCandidateLimit();
+
+    return predictionEntries
+      .map(({ prediction, index }) => ({
+        foodIndex: index,
+        foodName: prediction.foodName,
+        candidates: this.findTopRecognitionCandidates(
+          prediction.foodName,
+          menus,
+          context.inferredBrand,
+          context.inferredCategory,
+          perFoodLimit,
+          32,
+        ).map((candidate) => candidate.menu),
+      }))
+      .filter((group) => group.candidates.length > 0);
+  }
+
+  private buildSingleFoodImageMatchVectorQuery(foodName: string): string {
+    return [
+      `음식 사진에서 인식된 음식명: ${foodName}`,
+      '이 음식명과 이름/의미가 가장 가까운 DB 메뉴를 찾는다.',
+      '가공식품명보다 실제 음식명과 같은 메뉴를 우선한다.',
+    ].join('\n');
+  }
+
+  private mergeRecognitionCandidatesById(
+    menus: MenuRecognitionCandidate[],
+  ): MenuRecognitionCandidate[] {
+    const menuMap = new Map<number, MenuRecognitionCandidate>();
+
+    menus.forEach((menu) => {
+      if (!menuMap.has(menu.id)) {
+        menuMap.set(menu.id, menu);
+      }
+    });
+
+    return Array.from(menuMap.values());
   }
 
   private async matchMenuBoardRecognizedTextsToDbMenus(
@@ -2435,25 +2657,38 @@ ${JSON.stringify(candidates)}
   private async rematchFoodImageMenusWithGemini(
     file: Express.Multer.File,
     predictions: FoodImagePrediction[],
-    candidates: MenuRecognitionCandidate[],
+    candidateGroups: FoodImageCandidateGroup[],
     timing?: ChatTimingLogger,
   ): Promise<RecognizedFoodImageMenu[]> {
-    if (predictions.length === 0 || candidates.length === 0) {
+    if (predictions.length === 0 || candidateGroups.length === 0) {
       timing?.mark('food_image_gemini_rematch_skipped', {
         predictionCount: predictions.length,
-        candidateCount: candidates.length,
+        groupCount: candidateGroups.length,
       });
       return [];
     }
+    const candidateMap = new Map<number, MenuRecognitionCandidate>();
+    const candidateIdsByFoodIndex = new Map<number, Set<number>>();
+
+    candidateGroups.forEach((group) => {
+      const candidateIds = new Set<number>();
+      group.candidates.forEach((candidate) => {
+        candidateMap.set(candidate.id, candidate);
+        candidateIds.add(candidate.id);
+      });
+      candidateIdsByFoodIndex.set(group.foodIndex, candidateIds);
+    });
 
     const prompt = `
-음식 사진, 1차 인식 결과, 서버가 추린 후보 메뉴를 함께 보고 각 음식에 가장 잘 맞는 menu_id를 골라 JSON object로 반환해.
+음식 사진, 1차 인식 결과, 서버가 음식별로 추린 후보 메뉴를 함께 보고 각 음식에 가장 잘 맞는 menu_id를 골라 JSON object로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- 후보 목록에 없는 메뉴 id는 절대 반환하지 마
 - food_index는 입력 detected_foods의 index 값을 그대로 사용해
-- 음식 사진의 시각 정보와 후보 메뉴명/브랜드/카테고리를 함께 비교해
+- 각 food_index는 자기 candidate_menus 안에 있는 menu_id 중에서만 골라
+- 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
+- 후보 목록에 없는 메뉴 id는 절대 반환하지 마
+- 음식 사진의 시각 정보, 1차 food_name, 해당 food_index의 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 음식에 보이면 가장 대표적인 food_index 하나만 같은 menu_id에 매칭해
 
@@ -2466,8 +2701,14 @@ ${JSON.stringify(
   })),
 )}
 
-후보 메뉴:
-${JSON.stringify(candidates)}
+음식별 후보 메뉴:
+${JSON.stringify(
+  candidateGroups.map((group) => ({
+    food_index: group.foodIndex,
+    food_name: group.foodName,
+    candidate_menus: group.candidates,
+  })),
+)}
 
 반환 shape:
 {
@@ -2485,12 +2726,12 @@ ${JSON.stringify(candidates)}
       const data = await this.callGeminiJsonWithImage(prompt, file);
       timing?.mark('food_image_gemini_rematch_request_completed', {
         predictionCount: predictions.length,
-        candidateCount: candidates.length,
+        groupCount: candidateGroups.length,
+        candidateCount: candidateMap.size,
       });
       const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
         ? data.detected_foods
         : [];
-      const candidateMap = new Map(candidates.map((menu) => [menu.id, menu]));
 
       const recognizedFoods = detectedFoods
         .map((value) =>
@@ -2498,6 +2739,7 @@ ${JSON.stringify(candidates)}
             value,
             predictions,
             candidateMap,
+            candidateIdsByFoodIndex,
           ),
         )
         .filter((food): food is RecognizedFoodImageMenu => food !== null);
@@ -2506,7 +2748,7 @@ ${JSON.stringify(candidates)}
     } catch {
       timing?.mark('food_image_gemini_rematch_failed', {
         predictionCount: predictions.length,
-        candidateCount: candidates.length,
+        groupCount: candidateGroups.length,
       });
       return [];
     }
@@ -2540,6 +2782,7 @@ ${JSON.stringify(candidates)}
     value: unknown,
     predictions: FoodImagePrediction[],
     candidateMap: Map<number, MenuRecognitionCandidate>,
+    candidateIdsByFoodIndex: Map<number, Set<number>>,
   ): RecognizedFoodImageMenu | null {
     if (!value || typeof value !== 'object') {
       return null;
@@ -2556,7 +2799,8 @@ ${JSON.stringify(candidates)}
       !Number.isInteger(menuId) ||
       foodIndex < 0 ||
       foodIndex >= predictions.length ||
-      !candidateMap.has(menuId)
+      !candidateMap.has(menuId) ||
+      !candidateIdsByFoodIndex.get(foodIndex)?.has(menuId)
     ) {
       return null;
     }
@@ -3101,11 +3345,12 @@ ${JSON.stringify(candidates)}
         );
       timing?.mark('gemini_generic_candidates_matched', {
         matchedCount: matchedMenus.length,
+        preparedIntroDiscarded: !!genericPlan.introMessage,
       });
 
       return {
         menus: matchedMenus,
-        introMessage: genericPlan.introMessage,
+        introMessage: null,
       };
     } catch (error) {
       console.warn('[CHAT] Gemini generic candidate generation failed', {
@@ -3837,6 +4082,24 @@ ${JSON.stringify(userContext)}
     );
   }
 
+  private getFoodImagePerFoodVectorCandidateLimit(): number {
+    return this.getEnvNumberInRange(
+      'FOOD_IMAGE_PER_FOOD_VECTOR_CANDIDATE_LIMIT',
+      8,
+      3,
+      20,
+    );
+  }
+
+  private getFoodImageVectorMatchConcurrency(): number {
+    return this.getEnvNumberInRange(
+      'FOOD_IMAGE_VECTOR_MATCH_CONCURRENCY',
+      4,
+      1,
+      8,
+    );
+  }
+
   private getFoodImageRematchCandidateLimit(): number {
     return this.getEnvNumberInRange(
       'FOOD_IMAGE_REMATCH_CANDIDATE_LIMIT',
@@ -3951,43 +4214,67 @@ ${JSON.stringify(userContext)}
     menuNames: string[],
     timing?: ChatTimingLogger,
   ): Promise<MenuEntity[]> {
-    const vectorMatchedMenus =
+    const vectorMatches =
       await this.getComparisonCandidateMenusByVector(userId, menuNames, timing);
+    const vectorMatchMap = new Map(
+      vectorMatches.map((match) => [
+        this.normalizeComparisonMenuKey(match.inputMenuName),
+        match.menu,
+      ]),
+    );
 
-    if (vectorMatchedMenus.length >= menuNames.length) {
-      return vectorMatchedMenus;
+    if (vectorMatchMap.size >= menuNames.length) {
+      return this.toOrderedUniqueComparisonMenus(menuNames, vectorMatchMap);
     }
 
     const candidateMenus = await this.getAllCandidateMenus(userId);
 
     if (candidateMenus.length === 0) {
-      return vectorMatchedMenus;
+      return this.toOrderedUniqueComparisonMenus(menuNames, vectorMatchMap);
     }
 
-    const matchedMenus = menuNames
-      .map((menuName) =>
-        this.findBestComparisonMenuAboveThreshold(menuName, candidateMenus, 45),
-      )
-      .filter((menu): menu is MenuEntity => !!menu);
+    const localMatchMap = new Map<string, MenuEntity>();
 
-    timing?.mark('comparison_local_match_completed', {
-      matchedCount: matchedMenus.length,
+    menuNames.forEach((menuName) => {
+      const key = this.normalizeComparisonMenuKey(menuName);
+
+      if (vectorMatchMap.has(key)) {
+        return;
+      }
+
+      const matchedMenu = this.findBestComparisonMenuAboveThreshold(
+        menuName,
+        candidateMenus,
+        45,
+      );
+
+      if (matchedMenu) {
+        localMatchMap.set(key, matchedMenu);
+      }
     });
 
-    return this.mergeMenusById(vectorMatchedMenus, matchedMenus);
+    timing?.mark('comparison_local_match_completed', {
+      matchedCount: localMatchMap.size,
+    });
+
+    return this.toOrderedUniqueComparisonMenus(
+      menuNames,
+      vectorMatchMap,
+      localMatchMap,
+    );
   }
 
   private async getComparisonCandidateMenusByVector(
     userId: number,
     menuNames: string[],
     timing?: ChatTimingLogger,
-  ): Promise<MenuEntity[]> {
+  ): Promise<ComparisonMenuMatch[]> {
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
       timing?.mark('comparison_vector_match_skipped');
       return [];
     }
 
-    const matchedMenus: MenuEntity[] = [];
+    const matchedMenus: ComparisonMenuMatch[] = [];
 
     try {
       for (const menuName of menuNames) {
@@ -4007,16 +4294,15 @@ ${JSON.stringify(userContext)}
         );
 
         if (matchedMenu) {
-          matchedMenus.push(matchedMenu);
+          matchedMenus.push({ inputMenuName: menuName, menu: matchedMenu });
         }
       }
 
-      const uniqueMatchedMenus = this.mergeMenusById(matchedMenus, []);
       timing?.mark('comparison_vector_match_completed', {
-        matchedCount: uniqueMatchedMenus.length,
+        matchedCount: matchedMenus.length,
       });
 
-      return uniqueMatchedMenus;
+      return matchedMenus;
     } catch (error) {
       console.warn('[CHAT] comparison vector match failed, fallback to local', {
         message: error instanceof Error ? error.message : String(error),
@@ -4025,6 +4311,30 @@ ${JSON.stringify(userContext)}
 
       return [];
     }
+  }
+
+  private toOrderedUniqueComparisonMenus(
+    menuNames: string[],
+    ...matchMaps: Array<Map<string, MenuEntity>>
+  ): MenuEntity[] {
+    const usedMenuIds = new Set<number>();
+    const menus: MenuEntity[] = [];
+
+    menuNames.forEach((menuName) => {
+      const key = this.normalizeComparisonMenuKey(menuName);
+      const matchedMenu = matchMaps
+        .map((matchMap) => matchMap.get(key))
+        .find((menu): menu is MenuEntity => !!menu);
+
+      if (!matchedMenu || usedMenuIds.has(matchedMenu.id)) {
+        return;
+      }
+
+      usedMenuIds.add(matchedMenu.id);
+      menus.push(matchedMenu);
+    });
+
+    return menus;
   }
 
   private buildComparisonVectorQuery(menuName: string): string {
@@ -6312,6 +6622,7 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
       rank: index + 1,
       menu_id: menu.id,
       menu: menu.name,
+      display_menu: this.toIntroDisplayMenuName(menu.name),
       brand: isImageSource ? null : menu.brand,
       category: menu.category,
       amount: this.formatAmount(menu),
@@ -6339,6 +6650,9 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
 - JSON 문자열 안에 줄바꿈은 \\n으로 포함
 - "안녕하세요", "반가워요" 같은 인사 문구로 시작하지 않기
 - 추천 메뉴명은 가장 중요한 상위 1개만 언급
+- 후보 메뉴의 menu는 DB 원본명이고, display_menu는 사용자에게 말하기 좋게 정제한 음식명이야
+- intro_message에서 메뉴명을 언급할 때는 반드시 display_menu를 사용해
+- "(식약처_음식)", "(식약처_가공)" 같은 DB prefix나 제품명처럼 긴 원본명은 말하지 마
 - 나머지는 현재 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - 과장, 의학적 단정, 확정적인 건강 효과 표현은 피하기
