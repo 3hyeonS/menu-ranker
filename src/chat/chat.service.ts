@@ -2880,6 +2880,7 @@ ${JSON.stringify(candidates)}
           input,
           intent,
           userContext,
+          timing,
         );
       timing?.mark('gemini_generic_candidates_generated', {
         generatedCount: genericPlan.candidates.length,
@@ -2962,6 +2963,7 @@ ${JSON.stringify(candidates)}
     input: string,
     intent: ParsedChatIntent,
     userContext: GenericMenuCandidateUserContext,
+    timing?: ChatTimingLogger,
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
 브랜드가 명시되지 않은 메뉴 추천 요청에 대해, 사용자 정보를 고려한 intro_message와 랭킹된 일반 음식 후보명을 JSON object로 만들어줘.
@@ -3017,6 +3019,13 @@ ${JSON.stringify(userContext)}
     const candidates = Array.isArray(data?.menu_candidates)
       ? data.menu_candidates
       : [];
+    const rawCandidateLogItems = candidates
+      .map((candidate) => ({
+        rank: Number(candidate?.rank),
+        name: this.asNonEmptyString(candidate?.name) ?? null,
+      }))
+      .filter((candidate) => candidate.name)
+      .slice(0, 20);
 
     const normalizedCandidates = candidates
       .map((candidate) => ({
@@ -3035,6 +3044,16 @@ ${JSON.stringify(userContext)}
         rank: Number.isFinite(candidate.rank) ? candidate.rank : index + 1,
       }))
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
+
+    console.log('[CHAT] generic Gemini menu candidates generated', {
+      rawCandidates: rawCandidateLogItems,
+      normalizedCandidates,
+      hasIntroMessage: !!this.asNonEmptyString(data?.intro_message),
+    });
+    timing?.mark('gemini_generic_candidate_names_logged', {
+      rawCandidates: rawCandidateLogItems,
+      normalizedCandidates,
+    });
 
     return {
       introMessage: this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null,
