@@ -13,6 +13,7 @@ export type MenuVectorSearchOptions = {
   userId: number;
   limit: number;
   brand?: string | null;
+  brands?: string[] | null;
   category?: string | null;
   namePrefix?: string | null;
   maxCalories?: number | null;
@@ -181,9 +182,14 @@ export class MenuVectorService {
     ];
     const conditions = ['m.is_deleted = 0', 'm.owner_user_id IS NULL'];
 
-    if (options.brand) {
-      params.push(`%${options.brand}%`);
-      conditions.push(`m.brand ILIKE $${params.length}`);
+    const brandFilters = this.normalizeTextFilters([
+      options.brand,
+      ...(options.brands ?? []),
+    ]);
+
+    if (brandFilters.length > 0) {
+      params.push(brandFilters.map((brand) => `%${brand}%`));
+      conditions.push(`m.brand ILIKE ANY($${params.length}::text[])`);
     }
 
     if (options.category) {
@@ -279,6 +285,16 @@ export class MenuVectorService {
         `Embedding dimension mismatch: expected ${dimension}, got ${embedding.length}`,
       );
     }
+  }
+
+  private normalizeTextFilters(values: Array<string | null | undefined>): string[] {
+    return Array.from(
+      new Set(
+        values
+          .map((value) => value?.trim())
+          .filter((value): value is string => !!value),
+      ),
+    );
   }
 
   private toVectorLiteral(embedding: number[]): string {
