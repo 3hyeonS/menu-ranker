@@ -3184,12 +3184,21 @@ ${JSON.stringify(
     input: string,
     timing?: ChatTimingLogger,
   ): Promise<{ menus: MenuEntity[]; introMessage: string | null }> {
+    const hasUnsupportedBrand =
+      await this.hasUnsupportedBrandRecommendation(userId, intent);
+    timing?.mark('brand_support_checked', {
+      hasBrandIntent: this.hasBrandIntent(intent),
+      unsupported: hasUnsupportedBrand,
+      brandFilters: this.getIntentBrandFilters(intent),
+    });
+
     const geminiGeneratedResult =
       await this.getGeminiGeneratedGenericCandidateMenus(
         userId,
         userInfo,
         intent,
         input,
+        hasUnsupportedBrand,
         timing,
       );
     const geminiGeneratedMenus = geminiGeneratedResult.menus;
@@ -3198,6 +3207,13 @@ ${JSON.stringify(
       return {
         menus: geminiGeneratedMenus,
         introMessage: geminiGeneratedResult.introMessage,
+      };
+    }
+
+    if (hasUnsupportedBrand) {
+      return {
+        menus: [],
+        introMessage: null,
       };
     }
 
@@ -3313,10 +3329,14 @@ ${JSON.stringify(
     userInfo: UserInfoEntity,
     intent: ParsedChatIntent,
     input: string,
+    hasUnsupportedBrand: boolean,
     timing?: ChatTimingLogger,
   ): Promise<{ menus: MenuEntity[]; introMessage: string | null }> {
-    if (!this.shouldUseGeminiGeneratedGenericCandidates(intent)) {
-      const skipReason = this.getGeminiGeneratedGenericCandidateSkipReason(intent);
+    if (!this.shouldUseGeminiGeneratedGenericCandidates(intent, hasUnsupportedBrand)) {
+      const skipReason = this.getGeminiGeneratedGenericCandidateSkipReason(
+        intent,
+        hasUnsupportedBrand,
+      );
       console.log('[CHAT] generic Gemini menu candidates skipped', {
         reason: skipReason,
         desiredBrand: intent.desired_brand,
@@ -3384,7 +3404,12 @@ ${JSON.stringify(
 
   private shouldUseGeminiGeneratedGenericCandidates(
     intent: ParsedChatIntent,
+    hasUnsupportedBrand = false,
   ): boolean {
+    if (hasUnsupportedBrand) {
+      return true;
+    }
+
     return (
       !intent.desired_brand &&
       intent.include.brands.length === 0
@@ -3393,7 +3418,12 @@ ${JSON.stringify(
 
   private getGeminiGeneratedGenericCandidateSkipReason(
     intent: ParsedChatIntent,
+    hasUnsupportedBrand = false,
   ): string {
+    if (hasUnsupportedBrand) {
+      return 'unsupported_brand_uses_generic_candidates';
+    }
+
     if (intent.desired_brand) {
       return 'desired_brand_present';
     }
@@ -3443,11 +3473,12 @@ ${JSON.stringify(
     timing?: ChatTimingLogger,
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
-브랜드가 명시되지 않은 메뉴 추천 요청에 대해, 사용자 정보를 고려한 intro_message와 랭킹된 일반 음식 후보명을 JSON object로 만들어줘.
+브랜드가 명시되지 않았거나 DB에 없는 브랜드가 언급된 메뉴 추천 요청에 대해, 사용자 정보를 고려한 intro_message와 랭킹된 일반 음식 후보명을 JSON object로 만들어줘.
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
 
 작성 규칙:
 - 브랜드명, 매장명, 제조사명, 편의점 제품명, 영양음료 제품명은 제외해
+- DB에 없는 브랜드가 언급됐으면 그 브랜드의 메뉴 성격을 추론하되, 후보명은 일반 음식명으로 만들어
 - 사용자가 특정 카테고리를 말했으면 그 범위 안에서 일반 음식명으로 후보를 만들어
 - 사용자가 "A B C 중 어디갈까", "A, B, C 중 뭐가 나아"처럼 여러 선택지를 제시하면 반드시 그 선택지 안에서만 순위를 정해
 - 선택지형 입력에서는 선택지를 다른 음식으로 바꾸거나 넓은 유사 음식으로 대체하지 마
@@ -3868,6 +3899,66 @@ ${JSON.stringify(userContext)}
 
   private hasBrandIntent(intent: ParsedChatIntent): boolean {
     return !!intent.desired_brand || intent.include.brands.length > 0;
+  }
+
+  private async hasUnsupportedBrandRecommendation(
+    userId: number,
+    intent: ParsedChatIntent,
+  ): Promise<boolean> {
+    const brandFilters = this.getIntentBrandFilters(intent);
+
+    if (brandFilters.length === 0) {
+      return false;
+    }
+
+    const matchedBrands = await this.findMatchedMenuBrands(userId, brandFilters);
+
+    return matchedBrands.length === 0;
+  }
+
+  private async findMatchedMenuBrands(
+    userId: number,
+    brandFilters: string[],
+  ): Promise<string[]> {
+    if (brandFilters.length === 0) {
+      return [];
+    }
+
+    const rows = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select('menu.brand', 'brand')
+      .where('menu.brand IS NOT NULL')
+      .andWhere('menu.brand != :emptyBrand', { emptyBrand: '' })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .groupBy('menu.brand')
+      .getRawMany<{ brand: string }>();
+
+    const normalizedFilters = brandFilters
+      .map((brand) => this.normalizeCompactText(brand))
+      .filter((brand) => brand.length > 0);
+
+    if (normalizedFilters.length === 0) {
+      return [];
+    }
+
+    return rows
+      .map((row) => row.brand)
+      .filter((brand): brand is string => !!brand)
+      .filter((brand) => {
+        const normalizedBrand = this.normalizeCompactText(brand);
+
+        return normalizedFilters.some(
+          (filter) =>
+            normalizedBrand.includes(filter) ||
+            filter.includes(normalizedBrand),
+        );
+      });
   }
 
   private getIntentBrandFilters(intent: ParsedChatIntent): string[] {
