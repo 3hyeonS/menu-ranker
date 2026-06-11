@@ -517,6 +517,7 @@ export class ChatService {
               timing,
             ),
             introMessage: null,
+            intent: recommendationIntent,
           }
         : await this.getCandidateMenus(
             user.id,
@@ -536,7 +537,7 @@ export class ChatService {
       user,
       userInfo,
       input,
-      intent: recommendationIntent,
+      intent: candidateResult.intent,
       candidateMenus,
       chatContext,
       timing,
@@ -3183,9 +3184,16 @@ ${JSON.stringify(
     intent: ParsedChatIntent,
     input: string,
     timing?: ChatTimingLogger,
-  ): Promise<{ menus: MenuEntity[]; introMessage: string | null }> {
+  ): Promise<{
+    menus: MenuEntity[];
+    introMessage: string | null;
+    intent: ParsedChatIntent;
+  }> {
     const hasUnsupportedBrand =
       await this.hasUnsupportedBrandRecommendation(userId, intent);
+    const candidateIntent = hasUnsupportedBrand
+      ? this.toUnsupportedBrandGenericIntent(intent)
+      : intent;
     timing?.mark('brand_support_checked', {
       hasBrandIntent: this.hasBrandIntent(intent),
       unsupported: hasUnsupportedBrand,
@@ -3196,7 +3204,7 @@ ${JSON.stringify(
       await this.getGeminiGeneratedGenericCandidateMenus(
         userId,
         userInfo,
-        intent,
+        candidateIntent,
         input,
         hasUnsupportedBrand,
         timing,
@@ -3207,6 +3215,7 @@ ${JSON.stringify(
       return {
         menus: geminiGeneratedMenus,
         introMessage: geminiGeneratedResult.introMessage,
+        intent: candidateIntent,
       };
     }
 
@@ -3214,6 +3223,7 @@ ${JSON.stringify(
       return {
         menus: [],
         introMessage: null,
+        intent: candidateIntent,
       };
     }
 
@@ -3231,6 +3241,7 @@ ${JSON.stringify(
       return {
         menus: this.mergeMenusById(geminiGeneratedMenus, vectorMenus),
         introMessage: null,
+        intent: candidateIntent,
       };
     }
 
@@ -3245,6 +3256,7 @@ ${JSON.stringify(
       return {
         menus: this.mergeMenusById(geminiGeneratedMenus, vectorMenus, sqlMenus),
         introMessage: null,
+        intent: candidateIntent,
       };
     }
 
@@ -3258,6 +3270,7 @@ ${JSON.stringify(
     return {
       menus: this.mergeMenusById(geminiGeneratedMenus, sqlMenus),
       introMessage: null,
+      intent: candidateIntent,
     };
   }
 
@@ -3916,6 +3929,19 @@ ${JSON.stringify(userContext)}
     return matchedBrands.length === 0;
   }
 
+  private toUnsupportedBrandGenericIntent(
+    intent: ParsedChatIntent,
+  ): ParsedChatIntent {
+    return {
+      ...intent,
+      desired_brand: null,
+      include: {
+        ...intent.include,
+        brands: [],
+      },
+    };
+  }
+
   private async findMatchedMenuBrands(
     userId: number,
     brandFilters: string[],
@@ -3955,8 +3981,11 @@ ${JSON.stringify(userContext)}
 
         return normalizedFilters.some(
           (filter) =>
+            normalizedBrand === filter ||
             normalizedBrand.includes(filter) ||
-            filter.includes(normalizedBrand),
+            (filter.includes(normalizedBrand) &&
+              normalizedBrand.length >= 4 &&
+              normalizedBrand.length / filter.length >= 0.6),
         );
       });
   }
