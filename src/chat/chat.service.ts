@@ -835,6 +835,15 @@ export class ChatService {
       );
     }
 
+    if (shouldSkipIntentFilters && this.hasHardNutritionConstraints(intent)) {
+      filteredCandidateMenus = filteredCandidateMenus.filter((menu) =>
+        this.matchesNutritionConstraints(menu, intent.nutrition_constraints),
+      );
+      timing?.mark('hard_nutrition_constraints_applied', {
+        filteredCount: filteredCandidateMenus.length,
+      });
+    }
+
     filteredCandidateMenus = this.filterRecommendationMainMenuCandidates(
       filteredCandidateMenus,
       intent,
@@ -3266,6 +3275,9 @@ ${JSON.stringify(
             : null,
           maxCalories: intent.nutrition_constraints.max_calories,
           minProtein: intent.nutrition_constraints.min_protein,
+          excludeTextTerms: this.shouldPreferMainMenuForRecommendation(intent)
+            ? this.getSideDrinkOrDessertMenuTerms()
+            : null,
         },
       );
       timing?.mark('vector_search_completed', {
@@ -3551,6 +3563,9 @@ ${JSON.stringify(userContext)}
             namePrefix: DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX,
             maxCalories: intent.nutrition_constraints.max_calories,
             minProtein: intent.nutrition_constraints.min_protein,
+            excludeTextTerms: this.shouldPreferMainMenuForRecommendation(intent)
+              ? this.getSideDrinkOrDessertMenuTerms()
+              : null,
           },
         );
         const menuIds = vectorResults.map((result) => result.menuId);
@@ -3915,6 +3930,15 @@ ${JSON.stringify(userContext)}
     const name = this.normalizeCompactText(menu.name);
     const category = this.normalizeCompactText(menu.category ?? '');
     const text = `${name} ${category}`;
+
+    if (
+      this.getSideDrinkOrDessertMenuTerms().some((keyword) =>
+        text.includes(this.normalizeCompactText(keyword)),
+      )
+    ) {
+      return true;
+    }
+
     const mainMenuIndicators = [
       '버거',
       '샌드위치',
@@ -3940,7 +3964,11 @@ ${JSON.stringify(userContext)}
       return false;
     }
 
-    const drinkKeywords = [
+    return false;
+  }
+
+  private getSideDrinkOrDessertMenuTerms(): string[] {
+    return [
       '음료',
       '주류',
       '술',
@@ -3969,8 +3997,6 @@ ${JSON.stringify(userContext)}
       '테라',
       '클라우드',
       '막걸리',
-    ];
-    const sideDessertKeywords = [
       '디저트',
       '아이스크림',
       '쿠키',
@@ -3986,6 +4012,11 @@ ${JSON.stringify(userContext)}
       '해쉬브라운',
       '코울슬로',
       '콘샐러드',
+      '너겟킹',
+      '어니언링',
+      '치즈볼',
+      '모짜볼',
+      '스낵',
       '윙',
       '봉',
       '텐더',
@@ -3994,10 +4025,6 @@ ${JSON.stringify(userContext)}
       '토핑',
       '추가',
     ];
-
-    return [...drinkKeywords, ...sideDessertKeywords].some((keyword) =>
-      text.includes(keyword),
-    );
   }
 
   private toAmountPreferenceText(
@@ -4532,6 +4559,21 @@ ${JSON.stringify(userContext)}
     }
 
     return true;
+  }
+
+  private hasHardNutritionConstraints(intent: ParsedChatIntent): boolean {
+    const constraints = intent.nutrition_constraints;
+
+    return (
+      constraints.max_calories !== null ||
+      constraints.min_calories !== null ||
+      constraints.min_protein !== null ||
+      constraints.max_carbs !== null ||
+      constraints.max_sugars !== null ||
+      constraints.max_fat !== null ||
+      constraints.max_sodium !== null ||
+      constraints.caffeine_allowed !== null
+    );
   }
 
   private matchesAnyTerm(value: string | null | undefined, terms: string[]) {

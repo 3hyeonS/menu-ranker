@@ -18,6 +18,7 @@ export type MenuVectorSearchOptions = {
   namePrefix?: string | null;
   maxCalories?: number | null;
   minProtein?: number | null;
+  excludeTextTerms?: string[] | null;
 };
 
 @Injectable()
@@ -212,13 +213,25 @@ export class MenuVectorService {
       conditions.push(`m.protein >= $${params.length}`);
     }
 
+    const excludeTextTerms = this.normalizeCompactTextFilters(
+      options.excludeTextTerms ?? [],
+    );
+
+    if (excludeTextTerms.length > 0) {
+      params.push(excludeTextTerms.map((term) => `%${term}%`));
+      conditions.push(
+        `regexp_replace(lower(coalesce(m.name, '') || ' ' || coalesce(m.category, '')), '\\s+', '', 'g') NOT LIKE ALL($${params.length}::text[])`,
+      );
+    }
+
     const rows = await this.queryVectorSearch(
       `
       WITH nearest AS MATERIALIZED (
         SELECT
-          menu_id,
-          text_embedding <=> $1::vector AS distance
-        FROM menu_vector_index
+          m.menu_id,
+          m.text_embedding <=> $1::vector AS distance
+        FROM menu_vector_index m
+        WHERE ${conditions.join(' AND ')}
         ORDER BY text_embedding <=> $1::vector ASC
         LIMIT $3
       )
@@ -226,8 +239,6 @@ export class MenuVectorService {
         nearest.menu_id AS "menuId",
         nearest.distance AS distance
       FROM nearest
-      INNER JOIN menu_vector_index m ON m.menu_id = nearest.menu_id
-      WHERE ${conditions.join(' AND ')}
       ORDER BY nearest.distance ASC
       LIMIT $2
       `,
@@ -292,6 +303,18 @@ export class MenuVectorService {
       new Set(
         values
           .map((value) => value?.trim())
+          .filter((value): value is string => !!value),
+      ),
+    );
+  }
+
+  private normalizeCompactTextFilters(
+    values: Array<string | null | undefined>,
+  ): string[] {
+    return Array.from(
+      new Set(
+        values
+          .map((value) => value?.toLowerCase().replace(/\s+/g, '').trim())
           .filter((value): value is string => !!value),
       ),
     );
