@@ -5359,19 +5359,23 @@ ${JSON.stringify(userContext)}
 
 채팅 분류:
 - recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
-- recommendation: "A와 B 중 뭐 먹을까?", "A랑 B 중 뭐가 나아?", "A vs B 추천"처럼 여러 메뉴 중 하나를 골라달라는 비교 선택 요청
+- recommendation: "A와 B 중 뭐 먹을까?", "A랑 B 중 뭐가 나아?", "A vs B 추천"처럼 구체적인 음식 메뉴명 중 하나를 골라달라는 비교 선택 요청
+- recommendation: "맥도날드, 버거킹, 롯데리아 중 어디갈까?", "중국집, 샤브샤브, 삼겹살 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리 중 어디를 갈지 묻는 요청은 비교 선택이 아니라 일반 추천 요청으로 분류해
 - feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
 - general: 메뉴 추천 또는 메뉴/식단 피드백이 아닌 모든 일반 질문, 설명, 상담, 대화 요청
 
 맥락 규칙:
 - feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
 - recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
-- 비교 선택 recommendation일 때는 비교 대상 메뉴명을 menu_names와 intent.include.menu_names에 모두 넣어
+- 비교 선택 recommendation일 때는 비교 대상이 실제로 먹을 수 있는 구체적인 음식 메뉴명일 때만 menu_names와 intent.include.menu_names에 넣어
+- 브랜드/매장명/장소명/음식 카테고리 비교는 menu_names와 intent.include.menu_names에 넣지 말고, include.brands/categories/keywords 또는 desired_brand/desired_category에 반영해
 - 비교 선택 recommendation의 menu_names는 DB 검색에 바로 쓸 수 있는 완성 음식명으로 정규화해
 - 비교 대상 중 한쪽이 "후라이", "프라이", "구이", "볶음", "찜", "탕", "국"처럼 조리 방식만 말한 생략 표현이면, 같은 문장 안의 다른 비교 대상이나 문맥에서 공통 재료를 추론해 완성 음식명으로 복원해
 - 예: "삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> menu_names=["삶은 달걀","달걀 프라이"], intent.include.menu_names도 동일
 - 예: "삶은 계란이랑 프라이 중에는?" -> menu_names=["삶은 계란","계란 프라이"], intent.include.menu_names도 동일
 - 예: "돼지고기 구이랑 찜 중 뭐가 나아?" -> menu_names=["돼지고기 구이","돼지고기 찜"], intent.include.menu_names도 동일
+- 예: "맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> recommendation, menu_names=[], intent.include.menu_names=[]
+- 예: "중국집, 샤브샤브, 삼겹살 중 어디갈까?" -> recommendation, menu_names=[], intent.include.menu_names=[]
 - 단, 원문에 재료 단서가 전혀 없으면 억지로 추론하지 말고 원문 표현을 유지해
 - general일 때는 menu_names를 빈 배열로 반환해
 - 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
@@ -5387,7 +5391,8 @@ ${JSON.stringify(userContext)}
 - keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
 - normalized_request: 사용자의 의도를 한 문장으로 정리
 - include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
-- "A와 B 중 뭐 먹을까?" 같은 비교 선택 요청은 include.menu_names에 정규화된 A, B를 넣어
+- "A와 B 중 뭐 먹을까?" 같은 구체적인 음식 메뉴명 비교 선택 요청은 include.menu_names에 정규화된 A, B를 넣어
+- "A, B, C 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리를 고르는 요청은 include.menu_names를 비워두고 추천 조건으로만 해석해
 - 비교 선택 요청에서 classification.menu_names와 intent.include.menu_names는 같은 정규화 메뉴명 목록을 사용해
 - exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
 - nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
@@ -5537,17 +5542,21 @@ ${input}
 
 분류 규칙:
 - recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
-- recommendation: "A와 B 중 뭐 먹을까?", "A랑 B 중 뭐가 나아?", "A vs B 추천"처럼 여러 메뉴 중 하나를 골라달라는 비교 선택 요청
+- recommendation: "A와 B 중 뭐 먹을까?", "A랑 B 중 뭐가 나아?", "A vs B 추천"처럼 구체적인 음식 메뉴명 중 하나를 골라달라는 비교 선택 요청
+- recommendation: "맥도날드, 버거킹, 롯데리아 중 어디갈까?", "중국집, 샤브샤브, 삼겹살 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리 중 어디를 갈지 묻는 요청은 비교 선택이 아니라 일반 추천 요청으로 분류해
 - feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
 - general: 메뉴 추천 또는 메뉴/식단 피드백이 아닌 모든 일반 질문, 설명, 상담, 대화 요청
 - feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
 - recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
-- 비교 선택 recommendation일 때는 비교 대상 메뉴명을 menu_names에 넣어
+- 비교 선택 recommendation일 때는 비교 대상이 실제로 먹을 수 있는 구체적인 음식 메뉴명일 때만 menu_names에 넣어
+- 브랜드/매장명/장소명/음식 카테고리 비교는 menu_names에 넣지 마
 - 비교 선택 recommendation의 menu_names는 DB 검색에 바로 쓸 수 있는 완성 음식명으로 정규화해
 - 비교 대상 중 한쪽이 "후라이", "프라이", "구이", "볶음", "찜", "탕", "국"처럼 조리 방식만 말한 생략 표현이면, 같은 문장 안의 다른 비교 대상이나 문맥에서 공통 재료를 추론해 완성 음식명으로 복원해
 - 예: "삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> recommendation, menu_names=["삶은 달걀","달걀 프라이"]
 - 예: "삶은 계란이랑 프라이 중에는?" -> recommendation, menu_names=["삶은 계란","계란 프라이"]
 - 예: "돼지고기 구이랑 찜 중 뭐가 나아?" -> recommendation, menu_names=["돼지고기 구이","돼지고기 찜"]
+- 예: "맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> recommendation, menu_names=[]
+- 예: "중국집, 샤브샤브, 삼겹살 중 어디갈까?" -> recommendation, menu_names=[]
 - 단, 원문에 재료 단서가 전혀 없으면 억지로 추론하지 말고 원문 표현을 유지해
 - general일 때는 menu_names를 빈 배열로 반환해
 - 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
@@ -5560,6 +5569,8 @@ ${input}
 "맘스터치에서 싸이버거 제외하고 메뉴 추천해줘" -> recommendation
 "싸이버거랑 빅맥 중 뭐 먹을까?" -> recommendation, menu_names=["싸이버거","빅맥"]
 "삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> recommendation, menu_names=["삶은 달걀","달걀 프라이"]
+"맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> recommendation, menu_names=[]
+"중국집, 샤브샤브, 삼겹살 중 어디갈까?" -> recommendation, menu_names=[]
 "오늘 점심 싸이버거 먹어도 돼?" -> feedback
 "싸이버거랑 콜라 먹었는데 괜찮아?" -> feedback
 "탄수화물은 언제 먹는 게 좋아?" -> general
@@ -5835,7 +5846,7 @@ ${input}
             part
               .replace(/\s*(?:중(?:에서|에)?)$/g, '')
               .replace(
-                /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘|어디\s*(?:갈까|가지|가야|가면|가)|어디가).*$/g,
+                /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*$/g,
                 '',
               )
               .replace(/\s*(?:이|가|을|를)$/g, '')
@@ -5871,9 +5882,7 @@ ${input}
       /(?:\S+)\s+(?:\S+)\s+중(?:에서|에|에는)?\??$/.test(normalized);
     const asksChoice =
       /(?:뭐|무엇|어느|어떤|뭘|머)\s*(?:먹|고르|선택)/.test(normalized) ||
-      /(?:낫|좋|추천|골라|먹는 게|먹을까|선택|어디\s*(?:갈까|가지|가야|가면|가)|어디가)/.test(
-        normalized,
-      );
+      /(?:낫|좋|추천|골라|먹는 게|먹을까|선택)/.test(normalized);
     const asksFeedbackOnly =
       /(?:먹어도\s*돼|괜찮아|어때|피드백|평가|판단)/.test(normalized) &&
       !/(?:중|골라|추천|낫|좋|먹을까|먹는 게)/.test(normalized);
@@ -5905,7 +5914,7 @@ ${input}
 
     const withoutQuestion = input
       .replace(
-        /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘|어디\s*(?:갈까|가지|가야|가면|가)|어디가).*/g,
+        /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*/g,
         '',
       )
       .replace(/[?？!！]/g, ' ')
@@ -5971,6 +5980,8 @@ ${input}
 - keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
 - normalized_request: 사용자의 의도를 한 문장으로 정리
 - include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
+- "싸이버거랑 빅맥 중 뭐 먹을까?"처럼 구체적인 음식 메뉴명 비교는 include.menu_names에 넣어
+- "맥도날드, 버거킹, 롯데리아 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리를 고르는 요청은 include.menu_names를 비워두고 include.brands/categories/keywords 또는 desired_brand/desired_category에 반영해
 - exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
 - nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
 - caffeine_allowed: "카페인 없는", "디카페인", "카페인 빼고"는 false, 명확하지 않으면 null
