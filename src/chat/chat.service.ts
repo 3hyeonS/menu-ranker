@@ -5596,6 +5596,7 @@ ${JSON.stringify(userContext)}
 - recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
 - recommendation: "A와 B 중 뭐 먹을까?", "A랑 B 중 뭐가 나아?", "A vs B 추천"처럼 구체적인 음식 메뉴명 중 하나를 골라달라는 비교 선택 요청
 - recommendation: "맥도날드, 버거킹, 롯데리아 중 어디갈까?", "중국집, 샤브샤브, 삼겹살 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리 중 어디를 갈지 묻는 요청은 비교 선택이 아니라 일반 추천 요청으로 분류해
+- recommendation: 브랜드 별칭, 줄임말, 외래어 표기가 섞인 브랜드/매장 선택 요청도 브랜드 선택형 일반 추천이고, 구체 메뉴 비교가 아니야
 - feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
 - general: 메뉴 추천 또는 메뉴/식단 피드백이 아닌 모든 일반 질문, 설명, 상담, 대화 요청
 
@@ -5623,6 +5624,8 @@ ${JSON.stringify(userContext)}
 - desired_brand, desired_category: 문자열 또는 null
 - 사용자가 여러 브랜드/매장 후보 중 하나를 고르는 요청이면 desired_brand는 반드시 null로 두고, 모든 브랜드/매장명은 include.brands에 넣어
 - 예: "맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> desired_brand=null, include.brands=["맥도날드","버거킹","롯데리아"]
+- 브랜드 별칭, 줄임말, 오타, 외래어 표기는 문맥상 가장 일반적인 표준 브랜드명으로 정규화해
+- 브랜드/매장 후보를 고르는 요청이면 구체 메뉴 비교로 보지 말고 desired_brand=null, include.brands에 정규화된 브랜드들을 넣고 menu_names는 비워
 - nutrition_focus: 다음 값만 사용 ["high_protein","high_fat","low_carb","low_sugar","light_meal","hearty_meal"]
 - amount_preference: "light" | "regular" | "hearty" | null
 - keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
@@ -5630,6 +5633,7 @@ ${JSON.stringify(userContext)}
 - include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
 - "A와 B 중 뭐 먹을까?" 같은 구체적인 음식 메뉴명 비교 선택 요청은 include.menu_names에 정규화된 A, B를 넣어
 - "A, B, C 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리를 고르는 요청은 include.menu_names를 비워두고, 브랜드/매장명은 include.brands에 넣고 desired_brand는 null로 둬
+- 브랜드 별칭이 포함된 선택 요청도 구체 메뉴 비교가 아니라 브랜드 선택형 일반 추천이야
 - 비교 선택 요청에서 classification.menu_names와 intent.include.menu_names는 같은 정규화 메뉴명 목록을 사용해
 - exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
 - nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
@@ -6087,6 +6091,10 @@ ${input}
       return [];
     }
 
+    if (intent.include.brands.length >= 2) {
+      return [];
+    }
+
     const geminiMenuNames = this.normalizeComparisonMenuNames(
       classification.menu_names,
       intent.include.menu_names,
@@ -6096,9 +6104,11 @@ ${input}
       return geminiMenuNames.slice(0, 5);
     }
 
-    return this.normalizeComparisonMenuNames(
+    const fallbackMenuNames = this.normalizeComparisonMenuNames(
       ...[geminiMenuNames, this.extractComparisonMenuNamesFallback(input)],
-    ).slice(0, 5);
+    );
+
+    return fallbackMenuNames.slice(0, 5);
   }
 
   private normalizeComparisonMenuNames(...groups: string[][]): string[] {
@@ -6559,14 +6569,7 @@ JSON shape:
   }
 
   private extractBrandKeyword(input: string): string | null {
-    const knownBrands = [
-      '맘스터치',
-      '서브웨이',
-      '맥도날드',
-      '버거킹',
-      '롯데리아',
-    ];
-    return knownBrands.find((brand) => input.includes(brand)) ?? null;
+    return null;
   }
 
   private extractCategoryKeyword(input: string): string | null {
