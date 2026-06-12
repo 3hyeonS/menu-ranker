@@ -260,10 +260,12 @@ type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
 type GenericMenuCandidate = {
   name: string;
   rank: number;
+  brand: string | null;
+  category: string | null;
+  reason: string | null;
 };
 
 type GenericMenuCandidatePlan = {
-  introMessage: string | null;
   candidates: GenericMenuCandidate[];
 };
 
@@ -452,28 +454,7 @@ export class ChatService {
       chatCategory: analysis.classification.chat_category,
     });
     const classification = analysis.classification;
-    const comparisonMenuNames = this.extractComparisonMenuNames(
-      input,
-      classification,
-      analysis.intent,
-    );
-    if (comparisonMenuNames.length >= 2) {
-      console.log('[CHAT] comparison menu names detected', {
-        geminiClassificationMenuNames: classification.menu_names,
-        geminiIntentMenuNames: analysis.intent.include.menu_names,
-        resolvedComparisonMenuNames: comparisonMenuNames,
-      });
-      timing.mark('comparison_menu_names_detected', {
-        geminiClassificationMenuNames: classification.menu_names,
-        geminiIntentMenuNames: analysis.intent.include.menu_names,
-        resolvedComparisonMenuNames: comparisonMenuNames,
-      });
-    }
-
-    if (
-      classification.chat_category === 'feedback' &&
-      comparisonMenuNames.length < 2
-    ) {
+    if (classification.chat_category === 'feedback') {
       return await this.feedback(
         user,
         userInfo,
@@ -482,10 +463,7 @@ export class ChatService {
       );
     }
 
-    if (
-      classification.chat_category === 'general' &&
-      comparisonMenuNames.length < 2
-    ) {
+    if (classification.chat_category === 'general') {
       return await this.answerGeneralQuestion(user, userInfo, input);
     }
 
@@ -500,37 +478,16 @@ export class ChatService {
       chatContext,
       classification,
     );
-    const recommendationIntent =
-      comparisonMenuNames.length >= 2
-        ? this.applyComparisonMenuNamesToIntent(
-            finalizedIntent,
-            comparisonMenuNames,
-          )
-        : finalizedIntent;
-
-    const candidateResult =
-      comparisonMenuNames.length >= 2
-        ? {
-            menus: await this.getComparisonCandidateMenus(
-              user.id,
-              comparisonMenuNames,
-              timing,
-            ),
-            introMessage: null,
-            intent: recommendationIntent,
-          }
-        : await this.getCandidateMenus(
-            user.id,
-            userInfo,
-            recommendationIntent,
-            input,
-            timing,
-          );
+    const candidateResult = await this.getCandidateMenus(
+      user.id,
+      userInfo,
+      finalizedIntent,
+      input,
+      timing,
+    );
     const candidateMenus = candidateResult.menus;
     timing.mark('candidate_menus_loaded', {
       candidateCount: candidateMenus.length,
-      comparisonMenuCount:
-        comparisonMenuNames.length >= 2 ? comparisonMenuNames.length : 0,
     });
 
     const response = await this.recommendWithPreparedContext({
@@ -541,7 +498,6 @@ export class ChatService {
       candidateMenus,
       chatContext,
       timing,
-      skipIntentFiltering: comparisonMenuNames.length >= 2,
       preparedIntroMessage: candidateResult.introMessage,
     });
     timing.end({
@@ -2315,16 +2271,23 @@ ${JSON.stringify(
     );
     const localMatches = texts
       .filter((text) => !vectorMatchMap.has(this.normalizeCompactText(text)))
-      .map((text) => ({
-        inputText: text,
-        menu: this.findBestRecognitionCandidate(
+      .map((text) => {
+        const matchText = this.normalizeMenuBoardTextForMatching(
           text,
-          menus,
-          recognition.inferredBrand,
-          recognition.inferredCategory,
-          58,
-        ),
-      }))
+          recognition,
+        );
+
+        return {
+          inputText: text,
+          menu: this.findBestRecognitionCandidateFromTexts(
+            [matchText, text],
+            menus,
+            recognition.inferredBrand,
+            recognition.inferredCategory,
+            58,
+          ),
+        };
+      })
       .filter(
         (match): match is RecognitionTextMenuMatch => match.menu !== null,
       );
@@ -2377,6 +2340,10 @@ ${JSON.stringify(
         texts,
         this.getMenuBoardVectorMatchConcurrency(),
         async (text) => {
+          const matchText = this.normalizeMenuBoardTextForMatching(
+            text,
+            recognition,
+          );
           const vectorResults = await menuVectorService.searchMenusByText(
             this.buildSingleMenuBoardMatchVectorQuery(text, recognition),
             {
@@ -2389,8 +2356,8 @@ ${JSON.stringify(
             userId,
             menuIds,
           );
-          const matchedMenu = this.findBestRecognitionCandidate(
-            text,
+          const matchedMenu = this.findBestRecognitionCandidateFromTexts(
+            [matchText, text],
             candidates,
             recognition.inferredBrand,
             recognition.inferredCategory,
@@ -2425,9 +2392,12 @@ ${JSON.stringify(
     text: string,
     recognition: MenuBoardRecognitionResult,
   ): string {
+    const matchText = this.normalizeMenuBoardTextForMatching(text, recognition);
     const parts = [
       `메뉴판 OCR 메뉴명: ${text}`,
+      matchText !== text ? `정제 메뉴명: ${matchText}` : null,
       '이 메뉴명과 이름/의미가 가장 가까운 DB 메뉴를 찾는다.',
+      '매장명, 브랜드명, 세트/정식/단품 같은 판매 형태 표현보다 실제 음식명을 우선한다.',
       recognition.inferredBrand
         ? `메뉴판 추정 브랜드: ${recognition.inferredBrand}`
         : null,
@@ -2877,6 +2847,65 @@ ${JSON.stringify(
       .sort((a, b) => b.score - a.score);
 
     return bestMatch && bestMatch.score >= minScore ? bestMatch.menu : null;
+  }
+
+  private findBestRecognitionCandidateFromTexts(
+    inputNames: string[],
+    menus: MenuRecognitionCandidate[],
+    inferredBrand: string | null,
+    inferredCategory: string | null,
+    minScore: number,
+  ): MenuRecognitionCandidate | null {
+    const normalizedInputs = Array.from(
+      new Set(
+        inputNames
+          .map((inputName) => inputName.trim())
+          .filter((inputName) => inputName.length >= 2),
+      ),
+    );
+
+    if (normalizedInputs.length === 0) {
+      return null;
+    }
+
+    const [bestMatch] = menus
+      .flatMap((menu) =>
+        normalizedInputs.map((inputName) => ({
+          menu,
+          score: this.calculateRecognitionCandidateScore(
+            inputName,
+            menu,
+            inferredBrand,
+            inferredCategory,
+          ),
+        })),
+      )
+      .sort((a, b) => b.score - a.score);
+
+    return bestMatch && bestMatch.score >= minScore ? bestMatch.menu : null;
+  }
+
+  private normalizeMenuBoardTextForMatching(
+    text: string,
+    recognition: MenuBoardRecognitionResult,
+  ): string {
+    const brandTokens = (recognition.inferredBrand ?? '')
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2);
+    let normalized = text.replace(/[()[\]{}]/g, ' ');
+
+    brandTokens.forEach((token) => {
+      normalized = normalized.replace(new RegExp(this.escapeRegExp(token), 'gi'), ' ');
+    });
+
+    normalized = normalized
+      .replace(/\b(?:set)\b/gi, ' ')
+      .replace(/(?:세트|정식|단품|메뉴|대표|추천|best)/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return normalized.length >= 2 ? normalized : text.trim();
   }
 
   private calculateRecognitionCandidateScore(
@@ -3380,13 +3409,12 @@ ${JSON.stringify(
         );
       timing?.mark('gemini_generic_candidates_generated', {
         generatedCount: genericPlan.candidates.length,
-        hasIntroMessage: !!genericPlan.introMessage,
       });
 
       if (genericPlan.candidates.length === 0) {
         return {
           menus: [],
-          introMessage: genericPlan.introMessage,
+          introMessage: null,
         };
       }
 
@@ -3398,7 +3426,6 @@ ${JSON.stringify(
         );
       timing?.mark('gemini_generic_candidates_matched', {
         matchedCount: matchedMenus.length,
-        preparedIntroDiscarded: !!genericPlan.introMessage,
       });
 
       return {
@@ -3419,14 +3446,7 @@ ${JSON.stringify(
     intent: ParsedChatIntent,
     hasUnsupportedBrand = false,
   ): boolean {
-    if (hasUnsupportedBrand) {
-      return true;
-    }
-
-    return (
-      !intent.desired_brand &&
-      intent.include.brands.length === 0
-    );
+    return true;
   }
 
   private getGeminiGeneratedGenericCandidateSkipReason(
@@ -3486,13 +3506,18 @@ ${JSON.stringify(
     timing?: ChatTimingLogger,
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
-브랜드가 명시되지 않았거나 DB에 없는 브랜드가 언급된 메뉴 추천 요청에 대해, 사용자 정보를 고려한 intro_message와 랭킹된 일반 음식 후보명을 JSON object로 만들어줘.
+메뉴 추천 요청에 대해, 사용자 정보를 고려한 랭킹 후보 메뉴를 JSON object로 만들어줘.
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
 
 작성 규칙:
-- 브랜드명, 매장명, 제조사명, 편의점 제품명, 영양음료 제품명은 제외해
-- DB에 없는 브랜드가 언급됐으면 그 브랜드의 메뉴 성격을 추론하되, 후보명은 일반 음식명으로 만들어
-- 사용자가 특정 카테고리를 말했으면 그 범위 안에서 일반 음식명으로 후보를 만들어
+- 최종 사용자 답변 문장은 만들지 마
+- 각 후보는 name, brand, category, reason만 작성해
+- name은 DB와 1대1 매칭하기 쉬운 실제 음식명/메뉴명으로 작성해
+- brand는 사용자가 특정 브랜드/매장을 명시했고 그 후보가 그 브랜드 메뉴일 때만 넣어. 불명확하면 null
+- category는 음식 카테고리나 메뉴군이 명확할 때만 넣어. 불명확하면 null
+- reason은 후보를 고른 짧은 판단 근거야. 사용자에게 그대로 노출하지 않는 내부 참고용으로 40자 이내로 작성해
+- DB에 없는 브랜드가 언급됐으면 그 브랜드의 메뉴 성격을 추론하되, name은 DB에서 일반 음식으로 매칭 가능한 후보명으로 만들어
+- 사용자가 특정 카테고리를 말했으면 그 범위 안에서 후보를 만들어
 - 사용자가 "A B C 중 어디갈까", "A, B, C 중 뭐가 나아"처럼 여러 선택지를 제시하면 반드시 그 선택지 안에서만 순위를 정해
 - 선택지형 입력에서는 선택지를 다른 음식으로 바꾸거나 넓은 유사 음식으로 대체하지 마
 - 예: "샤브샤브 삼겹살 중국집 중 어디갈까"는 샤브샤브, 삼겹살구이/삼겹살, 짜장면/짬뽕 같은 선택지 대표 메뉴만 후보로 써. 돼지고기 수육, 제육, 김치찌개처럼 선택지 밖 메뉴는 금지
@@ -3501,19 +3526,11 @@ ${JSON.stringify(
 - 사용자 목표, 오늘 남은 칼로리, 남은 탄수화물/단백질/지방, 최근 먹은 메뉴 요약을 반영해
 - 후보 순위는 사용자의 현재 목표와 남은 영양 흐름에 더 잘 맞는 순서로 정해
 - 우리 DB와 매칭하기 쉽도록 너무 추상적인 표현 대신 실제 음식명으로 작성해
-- 후보는 10~15개
+- 후보는 최대 10개
 - name은 2~20자 정도의 자연스러운 한국어 음식명
-- intro_message는 사용자가 바로 볼 최종 답변이야
-- intro_message는 90~200자 정도로 작성하고, 상위 1개 후보만 언급해
-- intro_message는 system_instruction의 코치 페르소나, 반말 해체, 결론 우선 구조를 반드시 적용해
-- 존댓말, 해요체, 하십시오체 금지
-- 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
-- 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
-- 한 문장으로 길게 쓰지 말고, 1~2개의 짧은 문단으로 줄바꿈을 넣어 작성해
-- JSON 문자열 안에 줄바꿈은 \\n으로 포함해
-- "안녕하세요", "반가워요" 같은 인사 문구로 시작하지 마
-- 아래 사용자 식사 정보는 후보 생성과 intro_message 작성을 위한 내부 참고 정보야
-- intro_message에 남은 칼로리나 남은 탄단지 수치를 직접 노출하지 마
+- 브랜드명, 매장명, 제조사명, 편의점 제품명 자체를 음식 후보명으로 쓰지 마
+- 음료, 소스, 토핑, 패티, 사이드 메뉴는 사용자가 명시적으로 요청한 경우가 아니면 후보에서 제외해
+- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 
 사용자 입력:
@@ -3527,11 +3544,13 @@ ${JSON.stringify(userContext)}
 
 반환 shape:
 {
-  "intro_message": "string",
   "menu_candidates": [
     {
       "rank": 1,
-      "name": "닭가슴살 샐러드"
+      "name": "닭가슴살 샐러드",
+      "brand": null,
+      "category": "샐러드",
+      "reason": "단백질을 챙기기 쉬움"
     }
   ]
 }
@@ -3548,6 +3567,9 @@ ${JSON.stringify(userContext)}
       .map((candidate) => ({
         rank: Number(candidate?.rank),
         name: this.asNonEmptyString(candidate?.name) ?? null,
+        brand: this.asNonEmptyString(candidate?.brand) ?? null,
+        category: this.asNonEmptyString(candidate?.category) ?? null,
+        reason: this.asNonEmptyString(candidate?.reason) ?? null,
       }))
       .filter((candidate) => candidate.name)
       .slice(0, 20);
@@ -3556,6 +3578,9 @@ ${JSON.stringify(userContext)}
       .map((candidate) => ({
         rank: Number(candidate?.rank),
         name: this.asNonEmptyString(candidate?.name) ?? '',
+        brand: this.asNonEmptyString(candidate?.brand),
+        category: this.asNonEmptyString(candidate?.category),
+        reason: this.asNonEmptyString(candidate?.reason),
       }))
       .filter((candidate) => candidate.name.length >= 2)
       .sort((a, b) => {
@@ -3567,13 +3592,15 @@ ${JSON.stringify(userContext)}
       .map((candidate, index) => ({
         name: candidate.name,
         rank: Number.isFinite(candidate.rank) ? candidate.rank : index + 1,
+        brand: candidate.brand ?? null,
+        category: candidate.category ?? null,
+        reason: candidate.reason ?? null,
       }))
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
     console.log('[CHAT] generic Gemini menu candidates generated', {
       rawCandidates: rawCandidateLogItems,
       normalizedCandidates,
-      hasIntroMessage: !!this.asNonEmptyString(data?.intro_message),
     });
     timing?.mark('gemini_generic_candidate_names_logged', {
       rawCandidates: rawCandidateLogItems,
@@ -3581,7 +3608,6 @@ ${JSON.stringify(userContext)}
     });
 
     return {
-      introMessage: this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null,
       candidates: normalizedCandidates,
     };
   }
@@ -3599,16 +3625,38 @@ ${JSON.stringify(userContext)}
     }
 
     const menuVectorService = this.menuVectorService;
+    const supportedCandidateBrandKeys =
+      await this.getSupportedGenericCandidateBrandKeys(
+        userId,
+        genericCandidates,
+      );
     const matchedMenus = await this.mapWithConcurrency(
       genericCandidates,
       this.getGeminiGenericMenuVectorConcurrency(),
       async (candidate) => {
+        const brandFilters = this.getGenericCandidateVectorBrands(
+          candidate,
+          supportedCandidateBrandKeys,
+        );
+        const shouldUseDefaultScope =
+          this.shouldUseDefaultGenericCandidateMenuScope(
+            candidate,
+            supportedCandidateBrandKeys,
+          );
         const vectorResults = await menuVectorService.searchMenusByText(
           this.buildSingleGenericCandidateVectorQuery(candidate, intent),
           {
             userId,
             limit: this.getGeminiGenericMenuPerCandidateLimit(),
-            namePrefix: DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX,
+            brands: brandFilters,
+            category: this.getSingleVectorFilter([
+              candidate.category,
+              intent.desired_category,
+              ...intent.include.categories,
+            ]),
+            namePrefix: shouldUseDefaultScope
+              ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
+              : null,
             maxCalories: intent.nutrition_constraints.max_calories,
             minProtein: intent.nutrition_constraints.min_protein,
             excludeTextTerms: this.shouldPreferMainMenuForRecommendation(intent)
@@ -3633,6 +3681,60 @@ ${JSON.stringify(userContext)}
     ).slice(
       0,
       this.getGeminiGenericMenuMatchedMenuLimit(),
+    );
+  }
+
+  private getGenericCandidateVectorBrands(
+    candidate: GenericMenuCandidate,
+    supportedCandidateBrandKeys: Set<string>,
+  ): string[] | null {
+    const candidateBrand = this.asNonEmptyString(candidate.brand);
+    const candidateBrandKey = candidateBrand
+      ? this.normalizeCompactText(candidateBrand)
+      : null;
+
+    if (!candidateBrand || !supportedCandidateBrandKeys.has(candidateBrandKey ?? '')) {
+      return null;
+    }
+
+    return [candidateBrand];
+  }
+
+  private async getSupportedGenericCandidateBrandKeys(
+    userId: number,
+    genericCandidates: GenericMenuCandidate[],
+  ): Promise<Set<string>> {
+    const candidateBrands = Array.from(
+      new Set(
+        genericCandidates
+          .map((candidate) => this.asNonEmptyString(candidate.brand))
+          .filter((brand): brand is string => !!brand),
+      ),
+    );
+
+    if (candidateBrands.length === 0) {
+      return new Set();
+    }
+
+    const matchedBrands = await this.findMatchedMenuBrands(userId, candidateBrands);
+
+    return new Set(
+      matchedBrands.map((brand) => this.normalizeCompactText(brand)),
+    );
+  }
+
+  private shouldUseDefaultGenericCandidateMenuScope(
+    candidate: GenericMenuCandidate,
+    supportedCandidateBrandKeys: Set<string>,
+  ): boolean {
+    const candidateBrand = this.asNonEmptyString(candidate.brand);
+
+    if (!candidateBrand) {
+      return true;
+    }
+
+    return !supportedCandidateBrandKeys.has(
+      this.normalizeCompactText(candidateBrand),
     );
   }
 
@@ -3662,6 +3764,9 @@ ${JSON.stringify(userContext)}
   ): string {
     return [
       `추천 후보 음식명: ${candidate.name}`,
+      candidate.brand ? `후보 브랜드/매장: ${candidate.brand}` : null,
+      candidate.category ? `후보 카테고리: ${candidate.category}` : null,
+      candidate.reason ? `후보 판단 근거: ${candidate.reason}` : null,
       '이 후보와 같은 음식명/대표 음식만 DB에서 찾는다.',
       '재료가 비슷해도 조리 방식이나 음식 종류가 다르면 제외한다.',
       '예: 삼겹살 후보는 삼겹살/삼겹살구이를 우선하고 돼지고기 수육, 제육, 김치찌개는 제외한다.',
@@ -3822,12 +3927,7 @@ ${JSON.stringify(userContext)}
   private shouldUseDefaultRecommendationMenuScope(
     intent: ParsedChatIntent,
   ): boolean {
-    return (
-      !intent.desired_brand &&
-      !intent.desired_category &&
-      intent.include.brands.length === 0 &&
-      intent.include.categories.length === 0
-    );
+    return false;
   }
 
   private buildVectorRecommendationQuery(
@@ -4345,25 +4445,25 @@ ${JSON.stringify(userContext)}
   }
 
   private getGeminiGenericMenuCandidateLimit(): number {
-    const parsed = Number(process.env.GEMINI_GENERIC_MENU_CANDIDATE_LIMIT ?? 12);
+    const parsed = Number(process.env.GEMINI_GENERIC_MENU_CANDIDATE_LIMIT ?? 10);
 
     if (!Number.isFinite(parsed)) {
-      return 12;
+      return 10;
     }
 
-    return Math.max(10, Math.min(Math.floor(parsed), 20));
+    return Math.max(1, Math.min(Math.floor(parsed), 10));
   }
 
   private getGeminiGenericMenuMatchedMenuLimit(): number {
     const parsed = Number(
-      process.env.GEMINI_GENERIC_MENU_MATCHED_MENU_LIMIT ?? 12,
+      process.env.GEMINI_GENERIC_MENU_MATCHED_MENU_LIMIT ?? 10,
     );
 
     if (!Number.isFinite(parsed)) {
-      return 12;
+      return 10;
     }
 
-    return Math.max(10, Math.min(Math.floor(parsed), 30));
+    return Math.max(1, Math.min(Math.floor(parsed), 10));
   }
 
   private getGeminiGenericMenuPerCandidateLimit(): number {

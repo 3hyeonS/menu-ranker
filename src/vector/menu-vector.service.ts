@@ -351,6 +351,9 @@ export class MenuVectorService {
         `SET ivfflat.probes = ${this.getIvfflatProbes()}`,
       );
       await queryRunner.query(`SET enable_seqscan = ${forceIndex ? 'off' : 'on'}`);
+      await queryRunner.query(
+        `SET enable_bitmapscan = ${forceIndex ? 'off' : 'on'}`,
+      );
 
       if (this.isVectorSearchExplainEnabled()) {
         const explainRows = await queryRunner.query(`EXPLAIN ${sql}`, params);
