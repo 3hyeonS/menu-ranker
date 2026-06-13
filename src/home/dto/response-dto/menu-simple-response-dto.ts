@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { MenuEntity } from '../../entity/menu.entity';
+import { stripPublicMenuSourcePrefix } from '../../../utils/menu-name.util';
 
 export class MenuSimpleResponseDto {
   @ApiProperty({
@@ -125,7 +126,7 @@ export class MenuSimpleResponseDto {
   constructor(menu: MenuEntity) {
     this.id = menu.id;
     this.data_source = menu.data_source;
-    this.name = menu.name;
+    this.name = stripPublicMenuSourcePrefix(menu.name);
     this.brand = menu.brand;
     this.category = menu.category;
     this.unit = menu.unit;

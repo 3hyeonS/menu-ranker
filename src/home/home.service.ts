@@ -52,6 +52,7 @@ import { NutritionLabelRecognition } from './types/nutrition-label-recognition.t
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
+import { stripPublicMenuSourcePrefix } from '../utils/menu-name.util';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -441,6 +442,21 @@ export class HomeService {
     return [...topMenus, ...popularMenus, ...continuedMenus];
   }
 
+  private dedupeMenusByDisplayName(menus: MenuEntity[]): MenuEntity[] {
+    const seenDisplayNames = new Set<string>();
+
+    return menus.filter((menu) => {
+      const displayName = stripPublicMenuSourcePrefix(menu.name);
+
+      if (seenDisplayNames.has(displayName)) {
+        return false;
+      }
+
+      seenDisplayNames.add(displayName);
+      return true;
+    });
+  }
+
   private hasAnyKeyword(text: string, keywords: string[]): boolean {
     return keywords.some((keyword) => text.includes(keyword));
   }
@@ -732,6 +748,7 @@ export class HomeService {
 
     const keywordPattern = `%${keyword}%`;
     const keywordTokens = this.toSearchTokens(keyword);
+    const rawFetchLimit = Math.min(limit * 4 + 1, 401);
     const buildSearchQuery = () => {
       const menuQuery = this.menuRepository
         .createQueryBuilder('menu')
@@ -799,23 +816,24 @@ export class HomeService {
             .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
             .andWhere('menu.name = :exactKeyword', { exactKeyword: keyword })
             .orderBy('menu.id', 'ASC')
-            .take(limit)
+            .take(rawFetchLimit)
             .getMany()
         : [];
-    const remainingLimit = Math.max(limit - exactMenus.length, 0);
-    const menuList =
-      remainingLimit > 0
+    const remainingRawLimit = Math.max(rawFetchLimit - exactMenus.length, 0);
+    const rawMenuList =
+      remainingRawLimit > 0
         ? [
             ...exactMenus,
             ...(await buildSearchQuery()
               .andWhere('menu.name != :exactKeyword', { exactKeyword: keyword })
               .orderBy('menu.id', 'ASC')
-              .take(remainingLimit + 1)
+              .take(remainingRawLimit)
               .getMany()),
           ]
         : exactMenus;
 
-    const basePagedMenuList = menuList.slice(0, limit);
+    const uniqueMenuList = this.dedupeMenusByDisplayName(rawMenuList);
+    const basePagedMenuList = uniqueMenuList.slice(0, limit);
     const pagedMenuList =
       cursor === undefined
         ? await this.insertPopularRecordedMenusAfterTopSearchResults(
@@ -826,8 +844,9 @@ export class HomeService {
       (menu) => new MenuSimpleResponseDto(menu),
     );
     let nextCursor =
-      menuList.length > limit && basePagedMenuList.length > 0
-        ? basePagedMenuList[basePagedMenuList.length - 1].id
+      (uniqueMenuList.length > limit || rawMenuList.length >= rawFetchLimit) &&
+      rawMenuList.length > 0
+        ? rawMenuList[rawMenuList.length - 1].id
         : null;
     let has_result = menu_list.length > 0;
 
@@ -836,7 +855,7 @@ export class HomeService {
         keyword,
         user,
       );
-      menu_list = alternativeMenus.map(
+      menu_list = this.dedupeMenusByDisplayName(alternativeMenus).map(
         (menu) => new MenuSimpleResponseDto(menu),
       );
       nextCursor = null;

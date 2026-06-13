@@ -37,6 +37,7 @@ import { ChatFoodImagePositionResponseDto } from './dto/response-dto/chat-food-i
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
+import { stripPublicMenuSourcePrefix } from '../utils/menu-name.util';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -905,7 +906,7 @@ export class ChatService {
       const item = new ChatRecommendItemResponseDto();
 
       item.menu_id = menu.id;
-      item.menu_name = menu.name;
+      item.menu_name = stripPublicMenuSourcePrefix(menu.name);
       item.brand = menu.brand ?? null;
       item.unit = menu.unit;
       item.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
@@ -1175,12 +1176,12 @@ export class ChatService {
 
     const recommendedMenus =
       payload.recommendations
-        ?.map((item) => item.menu_name)
+        ?.map((item) => stripPublicMenuSourcePrefix(item.menu_name))
         .filter((menuName): menuName is string => !!menuName)
         .slice(0, 10) ?? [];
     const feedbackMenus =
       payload.feedback?.menus
-        ?.map((item) => item.menu_name)
+        ?.map((item) => stripPublicMenuSourcePrefix(item.menu_name))
         .filter((menuName): menuName is string => !!menuName)
         .slice(0, 10) ?? [];
     const recommendationBrands =
@@ -3240,7 +3241,10 @@ ${JSON.stringify(
       );
     const geminiGeneratedMenus = geminiGeneratedResult.menus;
 
-    if (geminiGeneratedMenus.length > 0) {
+    if (
+      geminiGeneratedMenus.length > 0 ||
+      geminiGeneratedResult.generatedCount > 0
+    ) {
       return {
         menus: geminiGeneratedMenus,
         introMessage: geminiGeneratedResult.introMessage,
@@ -3373,7 +3377,11 @@ ${JSON.stringify(
     input: string,
     hasUnsupportedBrand: boolean,
     timing?: ChatTimingLogger,
-  ): Promise<{ menus: MenuEntity[]; introMessage: string | null }> {
+  ): Promise<{
+    menus: MenuEntity[];
+    introMessage: string | null;
+    generatedCount: number;
+  }> {
     if (!this.shouldUseGeminiGeneratedGenericCandidates(intent, hasUnsupportedBrand)) {
       const skipReason = this.getGeminiGeneratedGenericCandidateSkipReason(
         intent,
@@ -3391,7 +3399,7 @@ ${JSON.stringify(
         includeBrands: intent.include.brands,
         includeMenuNames: intent.include.menu_names,
       });
-      return { menus: [], introMessage: null };
+      return { menus: [], introMessage: null, generatedCount: 0 };
     }
 
     try {
@@ -3415,6 +3423,7 @@ ${JSON.stringify(
         return {
           menus: [],
           introMessage: null,
+          generatedCount: 0,
         };
       }
 
@@ -3431,6 +3440,7 @@ ${JSON.stringify(
       return {
         menus: matchedMenus,
         introMessage: null,
+        generatedCount: genericPlan.candidates.length,
       };
     } catch (error) {
       console.warn('[CHAT] Gemini generic candidate generation failed', {
@@ -3438,7 +3448,7 @@ ${JSON.stringify(
       });
       timing?.mark('gemini_generic_candidates_failed');
 
-      return { menus: [], introMessage: null };
+      return { menus: [], introMessage: null, generatedCount: 0 };
     }
   }
 
@@ -3672,7 +3682,16 @@ ${JSON.stringify(userContext)}
           25,
         );
 
-        return matchedMenu;
+        if (matchedMenu) {
+          return matchedMenu;
+        }
+
+        return await this.findGenericCandidateMenuByKeywordFallback(
+          userId,
+          candidate,
+          intent,
+          supportedCandidateBrandKeys,
+        );
       },
     );
 
@@ -3682,6 +3701,115 @@ ${JSON.stringify(userContext)}
       0,
       this.getGeminiGenericMenuMatchedMenuLimit(),
     );
+  }
+
+  private async findGenericCandidateMenuByKeywordFallback(
+    userId: number,
+    candidate: GenericMenuCandidate,
+    intent: ParsedChatIntent,
+    supportedCandidateBrandKeys: Set<string>,
+  ): Promise<MenuEntity | null> {
+    const candidateName = this.asNonEmptyString(candidate.name);
+
+    if (!candidateName) {
+      return null;
+    }
+
+    const builder = this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere('menu.name LIKE :candidateName', {
+        candidateName: `%${candidateName}%`,
+      });
+
+    if (
+      this.shouldUseDefaultGenericCandidateMenuScope(
+        candidate,
+        supportedCandidateBrandKeys,
+      )
+    ) {
+      builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
+        defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
+      });
+    }
+
+    const brandFilters = this.getGenericCandidateVectorBrands(
+      candidate,
+      supportedCandidateBrandKeys,
+    );
+    if (brandFilters && brandFilters.length > 0) {
+      builder.andWhere(
+        new Brackets((qb) => {
+          brandFilters.forEach((brand, index) => {
+            const parameterName = `fallbackBrand${index}`;
+            const condition = `menu.brand LIKE :${parameterName}`;
+
+            if (index === 0) {
+              qb.where(condition, { [parameterName]: `%${brand}%` });
+              return;
+            }
+
+            qb.orWhere(condition, { [parameterName]: `%${brand}%` });
+          });
+        }),
+      );
+    }
+
+    const categoryFilters = [
+      candidate.category,
+      intent.desired_category,
+      ...intent.include.categories,
+    ].filter((category): category is string => !!this.asNonEmptyString(category));
+    if (categoryFilters.length > 0) {
+      builder.andWhere(
+        new Brackets((qb) => {
+          categoryFilters.forEach((category, index) => {
+            const parameterName = `fallbackCategory${index}`;
+            const condition =
+              `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName})`;
+
+            if (index === 0) {
+              qb.where(condition, { [parameterName]: `%${category}%` });
+              return;
+            }
+
+            qb.orWhere(condition, { [parameterName]: `%${category}%` });
+          });
+        }),
+      );
+    }
+
+    if (intent.nutrition_constraints.max_calories != null) {
+      builder.andWhere('menu.calories <= :fallbackMaxCalories', {
+        fallbackMaxCalories: intent.nutrition_constraints.max_calories,
+      });
+    }
+    if (intent.nutrition_constraints.min_protein != null) {
+      builder.andWhere('menu.protein >= :fallbackMinProtein', {
+        fallbackMinProtein: intent.nutrition_constraints.min_protein,
+      });
+    }
+
+    const candidates = this.filterRecommendationMainMenuCandidates(
+      await builder
+        .orderBy(
+          'CASE WHEN menu.name = :exactCandidateName THEN 0 ELSE 1 END',
+          'ASC',
+        )
+        .addOrderBy('CHAR_LENGTH(menu.name)', 'ASC')
+        .setParameter('exactCandidateName', candidateName)
+        .take(20)
+        .getMany(),
+      intent,
+    );
+
+    return this.findMostSimilarMenuAboveThreshold(candidateName, candidates, 20);
   }
 
   private getGenericCandidateVectorBrands(
@@ -5257,7 +5385,7 @@ ${JSON.stringify(userContext)}
 
     response.input_menu_name = inputMenuName;
     response.menu_id = menu.id;
-    response.menu_name = menu.name;
+    response.menu_name = stripPublicMenuSourcePrefix(menu.name);
     response.brand = menu.brand ?? null;
     response.unit = menu.unit;
     response.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
@@ -5659,7 +5787,7 @@ ${JSON.stringify(userContext)}
   ): ChatRecognizedCandidateResponseDto {
     const response = new ChatRecognizedCandidateResponseDto();
     response.menu_id = candidate.id;
-    response.menu = candidate.name;
+    response.menu = stripPublicMenuSourcePrefix(candidate.name);
     response.brand = candidate.brand;
     response.category = candidate.category;
     return response;
@@ -5674,7 +5802,7 @@ ${JSON.stringify(userContext)}
 
     const response = new ChatFoodImageRecognizedMenuResponseDto();
     response.menu_id = food.id;
-    response.menu_name = food.name;
+    response.menu_name = stripPublicMenuSourcePrefix(food.name);
     response.brand = food.brand;
     response.category = food.category;
     response.confidence = food.confidence;

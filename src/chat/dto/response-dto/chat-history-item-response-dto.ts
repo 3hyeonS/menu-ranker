@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ChatHistoryEntity } from '../../entity/chat-history.entity';
 import { ChatRecommendResponseDto } from './chat-recommend-response-dto';
 import { ChatMealRecordResponseDto } from './chat-meal-record-response-dto';
+import { stripPublicMenuSourcePrefix } from '../../../utils/menu-name.util';
 
 export class ChatHistoryItemResponseDto {
   @ApiProperty({
@@ -51,12 +52,38 @@ export class ChatHistoryItemResponseDto {
     this.id = chatHistory.id;
     this.input_text = chatHistory.input_text;
     this.createdAt = chatHistory.createdAt;
-    this.response_payload =
-      chatHistory.response_payload as unknown as ChatRecommendResponseDto;
+    this.response_payload = this.stripMenuSourcePrefixesFromPayload(
+      chatHistory.response_payload,
+    ) as unknown as ChatRecommendResponseDto;
     this.image_url =
       typeof chatHistory.response_payload?.image_url === 'string'
         ? chatHistory.response_payload.image_url
         : null;
-    this.meal_record = chatHistory.meal_record;
+    this.meal_record = this.stripMenuSourcePrefixesFromPayload(
+      chatHistory.meal_record,
+    ) as ChatMealRecordResponseDto | null;
+  }
+
+  private stripMenuSourcePrefixesFromPayload(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.stripMenuSourcePrefixesFromPayload(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        typeof entry === 'string' && this.isMenuNameField(key)
+          ? stripPublicMenuSourcePrefix(entry)
+          : this.stripMenuSourcePrefixesFromPayload(entry),
+      ]),
+    );
+  }
+
+  private isMenuNameField(key: string): boolean {
+    return ['name', 'menu', 'menu_name'].includes(key);
   }
 }
