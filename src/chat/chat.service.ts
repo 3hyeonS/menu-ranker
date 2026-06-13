@@ -63,6 +63,8 @@ const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 - 일반 질문을 억지로 건강/식단/운동 주제로 돌리지 마세요.
 - 실시간 날씨, 최신 뉴스, 주가처럼 현재 조회가 필요한 정보는 실시간 조회가 어렵다고 짧게 말하고, 확인 방법이나 판단 기준만 안내하세요.
 - 친구처럼 편안하지만, 신뢰가 가는 전문가의 톤을 유지하세요.
+- 사용자의 실제 현재 시각을 알 수 없으므로 사용자가 직접 말하지 않은 시간대, 날짜, 남은 하루를 추정하거나 언급하지 마세요.
+- 단, 사용자가 입력에서 "오전", "저녁", "오늘", "지금"처럼 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 됩니다.
 
 [핵심 행동 강령]
 1. 극도의 간결함:
@@ -1137,7 +1139,7 @@ export class ChatService {
       matchedMenus,
       introMessage:
         feedbackIntroMessage ??
-        `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록 기준으로 봤어.`,
+          `${this.goalToLabel(userInfo.goal)} 목표와 식사 기록 기준으로 봤어.`,
       preparedIntroMessage: feedbackIntroMessage,
       introSource: 'text_feedback',
       timing,
@@ -1228,7 +1230,7 @@ export class ChatService {
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'feedback';
     response.feedback = feedback;
-    response.intro_message =
+    const generatedIntroMessage =
       preparedIntroMessage ??
       (await this.generateIntroMessageWithGemini({
         source: introSource,
@@ -1241,6 +1243,7 @@ export class ChatService {
         extractedItems,
         fallback: introMessage,
       }));
+    response.intro_message = generatedIntroMessage;
     timing?.mark(
       preparedIntroMessage
         ? 'feedback_gemini_intro_skipped_prepared_intro'
@@ -1511,15 +1514,15 @@ export class ChatService {
       params.source === 'food_image_feedback';
 
     if (isImageSource) {
-      return `**${topMenuName}** 먼저 봐.\n\n사진 후보 중 현재 목표와 오늘 섭취 흐름에 제일 무난해.`;
+      return `**${topMenuName}** 먼저 봐.\n\n사진 후보 중 사용자 목표와 섭취 흐름에 제일 무난해.`;
     }
 
     if (params.intent.include.menu_names.length >= 2) {
-      return `비교하면 **${topMenuName}** 쪽이 더 나아.\n\n입력한 선택지 중 현재 목표와 오늘 식사 흐름에 더 맞아.`;
+      return `비교하면 **${topMenuName}** 쪽이 더 나아.\n\n입력한 선택지 중 사용자 목표와 식사 흐름에 더 맞아.`;
     }
 
     if (params.intent.nutrition_focus.includes('high_protein')) {
-      return `**${topMenuWithObjectParticle}** 먼저 가.\n\n단백질을 챙기면서 오늘 흐름에도 부담이 덜해.`;
+      return `**${topMenuWithObjectParticle}** 먼저 가.\n\n단백질을 챙기면서 섭취 흐름에도 부담이 덜해.`;
     }
 
     if (params.intent.nutrition_focus.includes('light_meal')) {
@@ -1531,10 +1534,10 @@ export class ChatService {
     }
 
     if (params.intent.desired_category) {
-      return `${params.intent.desired_category} 중에서는 **${topMenuWithObjectParticle}** 먼저 봐.\n\n현재 목표 기준으로 제일 무난해.`;
+      return `${params.intent.desired_category} 중에서는 **${topMenuWithObjectParticle}** 먼저 봐.\n\n사용자 목표 기준으로 제일 무난해.`;
     }
 
-    return `지금은 **${topMenuWithObjectParticle}** 먼저 추천해.\n\n오늘 섭취 흐름과 목표 기준으로 무난해.`;
+    return `**${topMenuWithObjectParticle}** 먼저 추천해.\n\n섭취 흐름과 목표 기준으로 무난해.`;
   }
 
   private isComparisonIntent(intent: ParsedChatIntent): boolean {
@@ -1877,7 +1880,9 @@ export class ChatService {
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 - intro_message는 사진 속 음식과 사용자 식사 피드백 맥락을 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
-- 단, 사용자 식사 정보와 이전 채팅 맥락은 판단에 참고해
+- 단, 사용자 목표, 섭취 흐름, 최근 먹은 메뉴, 이전 채팅 맥락은 판단에 적극 반영해
+- 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 사용자가 입력이나 사진/메뉴판 맥락에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
@@ -3723,7 +3728,7 @@ ${JSON.stringify(
       recentMenuSummary:
         snapshot.recentMenuNames.length > 0
           ? snapshot.recentMenuNames.join(', ')
-          : '오늘 기록된 식사 없음',
+          : '기록된 식사 없음',
     };
   }
 
@@ -3745,7 +3750,9 @@ ${JSON.stringify(
 - 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
 - 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
 - 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
-- 단, 사용자 정보와 오늘 식사 흐름은 판단에 참고해
+- 단, 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴는 판단에 적극 반영해
+- 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
@@ -3760,7 +3767,7 @@ ${JSON.stringify(
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
-- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
+- 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
 
 사용자 입력:
 ${input}
@@ -3796,8 +3803,7 @@ ${JSON.stringify(userContext)}
       .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
-    const introMessage =
-      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const introMessage = this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
     console.log('[CHAT] Gemini recommendation plan', {
       introMessage,
       candidates: normalizedCandidates,
@@ -3830,7 +3836,9 @@ ${JSON.stringify(userContext)}
 - 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
 - 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
 - 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
-- 단, 사용자 정보와 오늘 식사 흐름은 판단에 참고해
+- 단, 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴는 판단에 적극 반영해
+- 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
@@ -3845,7 +3853,7 @@ ${JSON.stringify(userContext)}
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
-- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
+- 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
 
 사용자 입력:
 ${input}
@@ -3881,8 +3889,7 @@ ${JSON.stringify(userContext)}
       .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
-    const introMessage =
-      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const introMessage = this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
     console.log('[CHAT] Gemini feedback plan', {
       introMessage,
       candidates: normalizedCandidates,
@@ -3914,7 +3921,9 @@ ${JSON.stringify(userContext)}
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - 가격, 원산지, 알레르기 안내, 광고 문구, 주류/음료 메뉴는 음식 추천에 필요할 때가 아니면 언급하지 마
 - 메뉴판에 보이는 음식 중 사용자에게 추천할 만한 메뉴만 자연스럽게 언급해
-- 사용자 식사 정보와 이전 채팅 맥락은 판단에 참고해
+- 사용자 목표, 섭취 흐름, 최근 먹은 메뉴, 이전 채팅 맥락은 판단에 적극 반영해
+- 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 메뉴판 이미지나 이전 채팅 맥락에서 시간 관련 표현이 직접 제공된 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
@@ -3929,7 +3938,7 @@ ${JSON.stringify(userContext)}
 - brand는 메뉴판에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
-- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
+- 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
 
 정규화 의도:
 ${JSON.stringify(intent)}
@@ -3962,8 +3971,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       .map((candidate) => this.normalizeGenericMenuCandidate(candidate))
       .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
-    const introMessage =
-      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const introMessage = this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
 
     console.log('[CHAT] menu board Gemini plan', {
       introMessage,
@@ -7462,10 +7470,12 @@ JSON shape:
 - 딱딱한 해라체/문어체 금지. "~다.", "~이다.", "~한다.", "~하라."로 끝내지 마
 - 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
 - 특정 메뉴를 추천하거나 DB 메뉴를 고르지 말고, 사용자의 질문에 직접 답해
-- 질문이 식단/영양/운동/생활습관과 관련될 때만 사용자의 목표, 오늘 섭취 흐름, 남은 섭취량을 자연스럽게 참고해
+- 질문이 식단/영양/운동/생활습관과 관련될 때만 사용자의 목표, 섭취 흐름, 남은 섭취량을 자연스럽게 참고해
 - 질문이 식단/영양과 관련 없으면 사용자 식단 정보는 언급하지 말고, system_instruction의 코치 페르소나와 반말 해체를 유지해
 - 질문이 식단/영양과 관련 없으면 건강/식단/운동 이야기로 억지 전환하지 말고 질문 자체에 답해
 - 실시간 날씨, 최신 뉴스, 주가처럼 현재 조회가 필요한 질문은 실시간 조회가 어렵다고 짧게 말하고, 사용자가 확인할 수 있는 방법을 안내해
+- 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 사용자가 질문에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치는 말하지 않기
 - 영양 설명이 필요하면 정성적인 표현으로만 말하기
@@ -7514,11 +7524,8 @@ ${JSON.stringify({
       context: 'general-answer',
       systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
     });
-    const introMessage =
-      this.asNonEmptyString(data?.intro_message) ?? '핵심부터 정리할게.';
-    const generalAnswer =
-      this.asNonEmptyString(data?.general_answer) ??
-      '지금 질문은 일반 질문으로 분류됐어.\n\n원하는 범위를 조금만 더 구체적으로 말해줘.\n그 기준에 맞춰 바로 정리해줄게.';
+    const introMessage = this.asNonEmptyString(data?.intro_message) ?? '핵심부터 정리할게.';
+    const generalAnswer = this.asNonEmptyString(data?.general_answer) ?? '질문은 일반 질문으로 분류됐어.\n\n원하는 범위를 조금만 더 구체적으로 말해줘.\n그 기준에 맞춰 바로 정리해줄게.';
 
     return {
       intro_message: introMessage.slice(0, 300),
@@ -7594,9 +7601,12 @@ ${JSON.stringify({
 - 사용자가 "먹어도 돼?", "괜찮아?"처럼 물으면 먼저 명확하게 답하고, 그 뒤 조건과 조절법을 설명
 - "안녕하세요", "안녕하세요!", "반가워요" 같은 인사 문구로 시작하지 않기
 - 딱딱한 템플릿처럼 쓰지 말고, 실제 코치가 말하듯 현실적인 톤으로 작성
-- 메뉴명/목표/오늘 섭취 흐름/사진 인식 맥락 중 중요한 것을 자연스럽게 반영
+- 메뉴명/목표/섭취 흐름/사진 인식 맥락 중 중요한 것을 자연스럽게 반영
+- 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴 중 중요한 정보를 반영해 개인화해
+- 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - 추천 메뉴나 피드백 메뉴명은 가장 중요한 상위 1개만 언급
-- 나머지 분량은 현재 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
+- 나머지 분량은 사용자 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치는 말하지 않기
 - 영양 설명이 필요하면 정성적인 표현으로만 말하기
@@ -7818,7 +7828,10 @@ ${JSON.stringify(menusPayload)}
 - intro_message에서 메뉴명을 언급할 때는 menu와 cleaned_menu를 보고 네가 직접 사용자에게 자연스러운 대표 음식명으로 정제해 말해
 - "(식약처_음식)", "(식약처_가공)" 같은 DB prefix, 브랜드/제품명처럼 긴 원본명, 광고 문구형 이름은 절대 그대로 말하지 마
 - 원본명이 길거나 제품명/문장형이면 가장 가까운 일반 음식명으로 말해. 예: "두마리같은한마리치킨주세요 닭튀김"은 "치킨", "옛날중국집간짜장곱빼기"는 "짜장면"처럼 말해
-- 나머지는 현재 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
+- 나머지는 사용자 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
+- 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴 중 중요한 정보를 반영해 개인화해
+- 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
 - 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치는 말하지 않기
 - 영양 설명이 필요하면 정성적인 표현으로만 말하기
@@ -7878,8 +7891,7 @@ ${JSON.stringify(menusPayload, promptPayloadReplacer)}
         context: 'recommendation-presentation',
         systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
       });
-      const introMessage =
-        this.asNonEmptyString(data?.intro_message) ?? params.fallbackIntro;
+      const introMessage = this.asNonEmptyString(data?.intro_message) ?? params.fallbackIntro;
 
       return {
         intro_message: introMessage.slice(0, 300),
