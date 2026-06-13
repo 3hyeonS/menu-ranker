@@ -4323,7 +4323,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           supportedCandidateBrandKeys,
         )
       : null;
-    const buildFallbackQuery = (useCandidateName: boolean) => {
+    const exactCandidateNames = this.getExactGenericCandidateMenuNames(
+      candidateName,
+    );
+    const buildFallbackQuery = (matchMode: 'exact' | 'contains') => {
       const builder = this.menuRepository
         .createQueryBuilder('menu')
         .leftJoinAndSelect('menu.user', 'user')
@@ -4336,7 +4339,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         )
         .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 });
 
-      if (useCandidateName) {
+      if (matchMode === 'exact') {
+        builder.andWhere('menu.name IN (:...exactCandidateNames)', {
+          exactCandidateNames,
+        });
+      }
+
+      if (matchMode === 'contains') {
         builder.andWhere('menu.name LIKE :candidateName', {
           candidateName: `%${candidateName}%`,
         });
@@ -4387,22 +4396,58 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       return builder.orderBy('menu.id', 'ASC').take(20);
     };
 
-    let fallbackMenus = await buildFallbackQuery(true).getMany();
+    let fallbackMenus = await buildFallbackQuery('exact').getMany();
+    if (fallbackMenus.length === 0) {
+      fallbackMenus = await buildFallbackQuery('contains').getMany();
+    }
     const candidates = fallbackMenus.sort((left, right) => {
-      const leftExact = left.name === candidateName ? 0 : 1;
-      const rightExact = right.name === candidateName ? 0 : 1;
+      const leftExact = this.isExactGenericCandidateMenuMatch(
+        candidateName,
+        left.name,
+      )
+        ? 0
+        : 1;
+      const rightExact = this.isExactGenericCandidateMenuMatch(
+        candidateName,
+        right.name,
+      )
+        ? 0
+        : 1;
 
       if (leftExact !== rightExact) {
         return leftExact - rightExact;
       }
 
-      return left.name.length - right.name.length;
+      return (
+        stripPublicMenuSourcePrefix(left.name).length -
+        stripPublicMenuSourcePrefix(right.name).length
+      );
     });
 
     return this.findMostSimilarMenuAboveThreshold(
       candidateName,
       candidates,
       20,
+    );
+  }
+
+  private getExactGenericCandidateMenuNames(candidateName: string): string[] {
+    return Array.from(
+      new Set([
+        candidateName,
+        `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX} ${candidateName}`,
+        `(식약처_가공) ${candidateName}`,
+      ]),
+    );
+  }
+
+  private isExactGenericCandidateMenuMatch(
+    candidateName: string,
+    menuName: string,
+  ): boolean {
+    return (
+      this.normalizeMenuMatchText(stripPublicMenuSourcePrefix(menuName)) ===
+      this.normalizeMenuMatchText(candidateName)
     );
   }
 

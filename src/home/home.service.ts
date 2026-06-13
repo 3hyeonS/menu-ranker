@@ -443,18 +443,57 @@ export class HomeService {
   }
 
   private dedupeMenusByDisplayName(menus: MenuEntity[]): MenuEntity[] {
-    const seenDisplayNames = new Set<string>();
+    const menuByDisplayKey = new Map<string, MenuEntity>();
+    const displayKeys: string[] = [];
 
-    return menus.filter((menu) => {
-      const displayName = stripPublicMenuSourcePrefix(menu.name);
+    menus.forEach((menu) => {
+      const displayKey = this.normalizeMenuDisplayDedupeKey(menu.name);
 
-      if (seenDisplayNames.has(displayName)) {
-        return false;
+      if (!displayKey) {
+        return;
       }
 
-      seenDisplayNames.add(displayName);
-      return true;
+      const previousMenu = menuByDisplayKey.get(displayKey);
+
+      if (!previousMenu) {
+        displayKeys.push(displayKey);
+        menuByDisplayKey.set(displayKey, menu);
+        return;
+      }
+
+      if (this.shouldPreferMenuForDisplayDedupe(menu, previousMenu)) {
+        menuByDisplayKey.set(displayKey, menu);
+      }
     });
+
+    return displayKeys
+      .map((displayKey) => menuByDisplayKey.get(displayKey))
+      .filter((menu): menu is MenuEntity => !!menu);
+  }
+
+  private normalizeMenuDisplayDedupeKey(menuName: string): string {
+    return this.normalizeCompactSearchText(stripPublicMenuSourcePrefix(menuName));
+  }
+
+  private shouldPreferMenuForDisplayDedupe(
+    candidate: MenuEntity,
+    current: MenuEntity,
+  ): boolean {
+    const candidateHasPublicSourcePrefix =
+      this.hasPublicMenuSourcePrefix(candidate.name);
+    const currentHasPublicSourcePrefix = this.hasPublicMenuSourcePrefix(
+      current.name,
+    );
+
+    if (candidateHasPublicSourcePrefix !== currentHasPublicSourcePrefix) {
+      return !candidateHasPublicSourcePrefix;
+    }
+
+    return false;
+  }
+
+  private hasPublicMenuSourcePrefix(menuName: string): boolean {
+    return /^\((?:식약처_음식|식약처_가공)\)\s*/.test(menuName.trim());
   }
 
   private dedupeMenusById(menus: MenuEntity[]): MenuEntity[] {
