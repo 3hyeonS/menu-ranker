@@ -748,6 +748,11 @@ export class HomeService {
 
     const keywordPattern = `%${keyword}%`;
     const keywordTokens = this.toSearchTokens(keyword);
+    const exactNameCandidates = [
+      keyword,
+      `(식약처_음식) ${keyword}`,
+      `(식약처_가공) ${keyword}`,
+    ];
     const rawFetchLimit = Math.min(limit * 4 + 1, 401);
     const buildSearchQuery = () => {
       const menuQuery = this.menuRepository
@@ -814,7 +819,9 @@ export class HomeService {
               }),
             )
             .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-            .andWhere('menu.name = :exactKeyword', { exactKeyword: keyword })
+            .andWhere('menu.name IN (:...exactNameCandidates)', {
+              exactNameCandidates,
+            })
             .orderBy('menu.id', 'ASC')
             .take(rawFetchLimit)
             .getMany()
@@ -825,7 +832,9 @@ export class HomeService {
         ? [
             ...exactMenus,
             ...(await buildSearchQuery()
-              .andWhere('menu.name != :exactKeyword', { exactKeyword: keyword })
+              .andWhere('menu.name NOT IN (:...exactNameCandidates)', {
+                exactNameCandidates,
+              })
               .orderBy('menu.id', 'ASC')
               .take(remainingRawLimit)
               .getMany()),

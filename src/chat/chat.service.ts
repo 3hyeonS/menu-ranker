@@ -3435,6 +3435,7 @@ ${JSON.stringify(
           userId,
           genericPlan.candidates,
           intent,
+          timing,
         );
       timing?.mark('gemini_generic_candidates_matched', {
         matchedCount: matchedMenus.length,
@@ -3636,6 +3637,7 @@ ${JSON.stringify(userContext)}
     userId: number,
     genericCandidates: GenericMenuCandidate[],
     intent: ParsedChatIntent,
+    timing?: ChatTimingLogger,
   ): Promise<MenuEntity[]> {
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
       return await this.matchGenericMenuCandidatesToDbMenusLocally(
@@ -3645,6 +3647,13 @@ ${JSON.stringify(userContext)}
     }
 
     const menuVectorService = this.menuVectorService;
+    const matchLogs: Array<{
+      candidate: Pick<GenericMenuCandidate, 'name' | 'rank' | 'brand' | 'category'>;
+      source: 'vector' | 'keyword_fallback' | 'none';
+      menuId: number | null;
+      menuName: string | null;
+      menuBrand: string | null;
+    }> = [];
     const supportedCandidateBrandKeys =
       await this.getSupportedGenericCandidateBrandKeys(
         userId,
@@ -3693,17 +3702,53 @@ ${JSON.stringify(userContext)}
         );
 
         if (matchedMenu) {
+          matchLogs.push({
+            candidate: {
+              name: candidate.name,
+              rank: candidate.rank,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'vector',
+            menuId: matchedMenu.id,
+            menuName: stripPublicMenuSourcePrefix(matchedMenu.name),
+            menuBrand: matchedMenu.brand ?? null,
+          });
           return matchedMenu;
         }
 
-        return await this.findGenericCandidateMenuByKeywordFallback(
+        const fallbackMenu = await this.findGenericCandidateMenuByKeywordFallback(
           userId,
           candidate,
           intent,
           supportedCandidateBrandKeys,
         );
+        matchLogs.push({
+          candidate: {
+            name: candidate.name,
+            rank: candidate.rank,
+            brand: candidate.brand,
+            category: candidate.category,
+          },
+          source: fallbackMenu ? 'keyword_fallback' : 'none',
+          menuId: fallbackMenu?.id ?? null,
+          menuName: fallbackMenu
+            ? stripPublicMenuSourcePrefix(fallbackMenu.name)
+            : null,
+          menuBrand: fallbackMenu?.brand ?? null,
+        });
+
+        return fallbackMenu;
       },
     );
+
+    matchLogs.sort((a, b) => a.candidate.rank - b.candidate.rank);
+    console.log('[CHAT] generic Gemini candidates matched to DB menus', {
+      matches: matchLogs,
+    });
+    timing?.mark('gemini_generic_candidate_match_details_logged', {
+      matches: matchLogs,
+    });
 
     return this.mergeMenusById(
       matchedMenus.filter((menu): menu is MenuEntity => !!menu),
