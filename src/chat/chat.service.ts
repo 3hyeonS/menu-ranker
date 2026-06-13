@@ -3715,6 +3715,8 @@ ${JSON.stringify(
 - intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
 - 각 후보는 name, brand, category만 작성해
 - name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- 밥, 공기밥, 쌀밥, 빵, 면, 국, 찌개, 과일, 간식처럼 흔한 기본 음식도 사용자가 먹어도 되는지 묻거나 intro_message에서 식사 판단 대상으로 언급했다면 반드시 후보에 포함해
+- "밥 반공기", "밥 한 공기", "공기밥 조금"처럼 수량/양 표현이 붙으면 name은 대표 음식명으로 정제해서 "밥" 또는 "공기밥"처럼 작성해
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
