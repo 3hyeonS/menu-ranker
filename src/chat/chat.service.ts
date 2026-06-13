@@ -4026,6 +4026,31 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             candidate,
             supportedCandidateBrandKeys,
           );
+        const exactFallbackMenu =
+          await this.findGenericCandidateMenuByKeywordFallback(
+            userId,
+            candidate,
+            intent,
+            supportedCandidateBrandKeys,
+            options,
+          );
+
+        if (exactFallbackMenu) {
+          matchLogs.push({
+            candidateIndex,
+            candidate: {
+              name: candidate.name,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'keyword_fallback',
+            menuId: exactFallbackMenu.id,
+            menuName: stripPublicMenuSourcePrefix(exactFallbackMenu.name),
+            menuBrand: exactFallbackMenu.brand ?? null,
+          });
+          return exactFallbackMenu;
+        }
+
         const vectorResults = await menuVectorService.searchMenusByText(
           this.buildSingleGenericCandidateVectorQuery(candidate, intent),
           {
@@ -4065,14 +4090,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           return matchedMenu;
         }
 
-        const fallbackMenu =
-          await this.findGenericCandidateMenuByKeywordFallback(
-            userId,
-            candidate,
-            intent,
-            supportedCandidateBrandKeys,
-            options,
-          );
         matchLogs.push({
           candidateIndex,
           candidate: {
@@ -4080,15 +4097,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             brand: candidate.brand,
             category: candidate.category,
           },
-          source: fallbackMenu ? 'keyword_fallback' : 'none',
-          menuId: fallbackMenu?.id ?? null,
-          menuName: fallbackMenu
-            ? stripPublicMenuSourcePrefix(fallbackMenu.name)
-            : null,
-          menuBrand: fallbackMenu?.brand ?? null,
+          source: 'none',
+          menuId: null,
+          menuName: null,
+          menuBrand: null,
         });
 
-        return fallbackMenu;
+        return null;
       },
     );
 
@@ -4172,6 +4187,34 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             candidate,
             supportedCandidateBrandKeys,
           );
+        const exactFallbackMenu =
+          await this.findGenericCandidateMenuByKeywordFallback(
+            userId,
+            candidate,
+            intent,
+            supportedCandidateBrandKeys,
+          );
+
+        if (exactFallbackMenu) {
+          matchLogs.push({
+            candidateIndex,
+            candidate: {
+              name: candidate.name,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'keyword_fallback',
+            menuId: exactFallbackMenu.id,
+            menuName: stripPublicMenuSourcePrefix(exactFallbackMenu.name),
+            menuBrand: exactFallbackMenu.brand ?? null,
+          });
+
+          return {
+            inputMenuName: candidate.name,
+            menu: exactFallbackMenu,
+          };
+        }
+
         const vectorResults = await menuVectorService.searchMenusByText(
           this.buildSingleGenericCandidateVectorQuery(candidate, intent),
           {
@@ -4214,13 +4257,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           };
         }
 
-        const fallbackMenu =
-          await this.findGenericCandidateMenuByKeywordFallback(
-            userId,
-            candidate,
-            intent,
-            supportedCandidateBrandKeys,
-          );
         matchLogs.push({
           candidateIndex,
           candidate: {
@@ -4228,20 +4264,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             brand: candidate.brand,
             category: candidate.category,
           },
-          source: fallbackMenu ? 'keyword_fallback' : 'none',
-          menuId: fallbackMenu?.id ?? null,
-          menuName: fallbackMenu
-            ? stripPublicMenuSourcePrefix(fallbackMenu.name)
-            : null,
-          menuBrand: fallbackMenu?.brand ?? null,
+          source: 'none',
+          menuId: null,
+          menuName: null,
+          menuBrand: null,
         });
 
-        return fallbackMenu
-          ? {
-              inputMenuName: candidate.name,
-              menu: fallbackMenu,
-            }
-          : null;
+        return null;
       },
     );
 
