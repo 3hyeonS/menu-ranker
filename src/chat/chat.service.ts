@@ -1106,7 +1106,15 @@ export class ChatService {
     }
 
     if (feedbackCandidates.length === 0) {
-      throw new BadRequestException('No menus found in feedback request');
+      return await this.buildFeedbackIntroOnlyResponse({
+        user,
+        input,
+        introMessage:
+          feedbackIntroMessage ??
+          '입력한 메뉴를 정확히 특정하진 못했어. 음식명을 조금 더 구체적으로 알려주면 더 정확히 봐줄 수 있어.',
+        timing,
+        stage: 'feedback_completed_without_menu_candidates',
+      });
     }
 
     const matchedMenus = await this.matchGenericMenuCandidatesToFeedbackMenus(
@@ -1117,7 +1125,15 @@ export class ChatService {
     );
 
     if (matchedMenus.length === 0) {
-      throw new BadRequestException('No menus available for feedback');
+      return await this.buildFeedbackIntroOnlyResponse({
+        user,
+        input,
+        introMessage:
+          feedbackIntroMessage ??
+          '입력한 메뉴를 DB에서 정확히 찾지는 못했어. 그래도 음식명 기준으로는 대략적인 방향만 참고해줘.',
+        timing,
+        stage: 'feedback_completed_without_matched_menus',
+      });
     }
 
     return await this.buildFeedbackChatResponse({
@@ -1132,6 +1148,29 @@ export class ChatService {
       introSource: 'text_feedback',
       timing,
     });
+  }
+
+  private async buildFeedbackIntroOnlyResponse(params: {
+    user: UserEntity;
+    input: string;
+    introMessage: string;
+    timing?: ChatTimingLogger;
+    stage: string;
+  }): Promise<ChatRecommendResponseDto> {
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'feedback';
+    response.intro_message = params.introMessage;
+
+    await this.chatHistoryRepository.save(
+      this.chatHistoryRepository.create({
+        input_text: params.input,
+        response_payload: response as unknown as Record<string, any>,
+        user: params.user,
+      }),
+    );
+    params.timing?.mark(params.stage);
+
+    return response;
   }
 
   private async buildFeedbackChatResponse(params: {
