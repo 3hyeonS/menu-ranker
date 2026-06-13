@@ -457,6 +457,36 @@ export class HomeService {
     });
   }
 
+  private dedupeMenusById(menus: MenuEntity[]): MenuEntity[] {
+    const seenMenuIds = new Set<number>();
+
+    return menus.filter((menu) => {
+      if (seenMenuIds.has(menu.id)) {
+        return false;
+      }
+
+      seenMenuIds.add(menu.id);
+      return true;
+    });
+  }
+
+  private normalizeMenuNameForExactSearch(menuName: string): string {
+    return stripPublicMenuSourcePrefix(menuName)
+      .replace(/\s*[\(\[\{（［【][^\)\]\}）］】]*[\)\]\}）］】]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isExactDisplayNameMatch(menu: MenuEntity, keyword: string): boolean {
+    const normalize = (value: string) =>
+      value.replace(/\s+/g, '').trim().toLowerCase();
+
+    return (
+      normalize(this.normalizeMenuNameForExactSearch(menu.name)) ===
+      normalize(keyword)
+    );
+  }
+
   private hasAnyKeyword(text: string, keywords: string[]): boolean {
     return keywords.some((keyword) => text.includes(keyword));
   }
@@ -753,6 +783,14 @@ export class HomeService {
       `(식약처_음식) ${keyword}`,
       `(식약처_가공) ${keyword}`,
     ];
+    const exactParentheticalPatterns = [
+      `${keyword}(%`,
+      `${keyword} (%`,
+      `(식약처_음식) ${keyword}(%`,
+      `(식약처_음식) ${keyword} (%`,
+      `(식약처_가공) ${keyword}(%`,
+      `(식약처_가공) ${keyword} (%`,
+    ];
     const rawFetchLimit = Math.min(limit * 4 + 1, 401);
     const buildSearchQuery = () => {
       const menuQuery = this.menuRepository
@@ -819,15 +857,25 @@ export class HomeService {
               }),
             )
             .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-            .andWhere('menu.name IN (:...exactNameCandidates)', {
-              exactNameCandidates,
-            })
+            .andWhere(
+              new Brackets((qb) => {
+                qb.where('menu.name IN (:...exactNameCandidates)', {
+                  exactNameCandidates,
+                });
+
+                exactParentheticalPatterns.forEach((pattern, index) => {
+                  qb.orWhere(`menu.name LIKE :exactParenthetical${index}`, {
+                    [`exactParenthetical${index}`]: pattern,
+                  });
+                });
+              }),
+            )
             .orderBy('menu.id', 'ASC')
             .take(rawFetchLimit)
             .getMany()
         : [];
     const remainingRawLimit = Math.max(rawFetchLimit - exactMenus.length, 0);
-    const rawMenuList =
+    const rawMenuList = this.dedupeMenusById(
       remainingRawLimit > 0
         ? [
             ...exactMenus,
@@ -839,7 +887,17 @@ export class HomeService {
               .take(remainingRawLimit)
               .getMany()),
           ]
-        : exactMenus;
+        : exactMenus,
+    ).sort((left, right) => {
+      const leftExact = this.isExactDisplayNameMatch(left, keyword) ? 0 : 1;
+      const rightExact = this.isExactDisplayNameMatch(right, keyword) ? 0 : 1;
+
+      if (leftExact !== rightExact) {
+        return leftExact - rightExact;
+      }
+
+      return 0;
+    });
 
     const uniqueMenuList = this.dedupeMenusByDisplayName(rawMenuList);
     const basePagedMenuList = uniqueMenuList.slice(0, limit);
