@@ -3402,6 +3402,8 @@ ${JSON.stringify(
       return { menus: [], introMessage: null, generatedCount: 0 };
     }
 
+    let generatedCount = 0;
+
     try {
       const userContext = await this.buildGenericMenuCandidateUserContext(
         userId,
@@ -3415,11 +3417,12 @@ ${JSON.stringify(
           userContext,
           timing,
         );
+      generatedCount = genericPlan.candidates.length;
       timing?.mark('gemini_generic_candidates_generated', {
-        generatedCount: genericPlan.candidates.length,
+        generatedCount,
       });
 
-      if (genericPlan.candidates.length === 0) {
+      if (generatedCount === 0) {
         return {
           menus: [],
           introMessage: null,
@@ -3440,7 +3443,7 @@ ${JSON.stringify(
       return {
         menus: matchedMenus,
         introMessage: null,
-        generatedCount: genericPlan.candidates.length,
+        generatedCount,
       };
     } catch (error) {
       console.warn('[CHAT] Gemini generic candidate generation failed', {
@@ -3448,7 +3451,7 @@ ${JSON.stringify(
       });
       timing?.mark('gemini_generic_candidates_failed');
 
-      return { menus: [], introMessage: null, generatedCount: 0 };
+      return { menus: [], introMessage: null, generatedCount };
     }
   }
 
@@ -3522,20 +3525,24 @@ ${JSON.stringify(
 작성 규칙:
 - 최종 사용자 답변 문장은 만들지 마
 - 각 후보는 name, brand, category, reason만 작성해
-- name은 DB와 1대1 매칭하기 쉬운 실제 음식명/메뉴명으로 작성해
+- name은 사용자의 질문 의도에 맞는 음식명/메뉴명/음식 범주로 작성해
+- 사용자의 표현이 넓은 음식 범주를 비교하는 맥락이면 name도 같은 추상도의 범주명으로 유지해
+- 사용자의 표현이 구체 메뉴 추천을 원하는 맥락이면 name을 실제 메뉴명 수준으로 구체화해
+- 후보명 추상도는 사용자 질문의 선택지 단위, 비교 단위, 식사 맥락을 종합해서 스스로 판단해
+- 서로 비교되는 후보들은 가능한 한 같은 추상도와 같은 단위로 작성해
 - brand는 사용자가 특정 브랜드/매장을 명시했고 그 후보가 그 브랜드 메뉴일 때만 넣어. 불명확하면 null
 - category는 음식 카테고리나 메뉴군이 명확할 때만 넣어. 불명확하면 null
 - reason은 후보를 고른 짧은 판단 근거야. 사용자에게 그대로 노출하지 않는 내부 참고용으로 40자 이내로 작성해
 - DB에 없는 브랜드가 언급됐으면 그 브랜드의 메뉴 성격을 추론하되, name은 DB에서 일반 음식으로 매칭 가능한 후보명으로 만들어
 - 사용자가 특정 카테고리를 말했으면 그 범위 안에서 후보를 만들어
-- 사용자가 "A B C 중 어디갈까", "A, B, C 중 뭐가 나아"처럼 여러 선택지를 제시하면 반드시 그 선택지 안에서만 순위를 정해
-- 선택지형 입력에서는 선택지를 다른 음식으로 바꾸거나 넓은 유사 음식으로 대체하지 마
-- 예: "샤브샤브 삼겹살 중국집 중 어디갈까"는 샤브샤브, 삼겹살구이/삼겹살, 짜장면/짬뽕 같은 선택지 대표 메뉴만 후보로 써. 돼지고기 수육, 제육, 김치찌개처럼 선택지 밖 메뉴는 금지
-- 예: "맥도날드 버거킹 롯데리아 중 어디갈까"는 각 브랜드의 대표 메인 메뉴 후보만 만들고, 패티/소스/음료/사이드 같은 부품 메뉴는 금지
+- 사용자가 여러 선택지를 제시하면 반드시 그 선택지의 의미 범위 안에서만 순위를 정해
+- 선택지형 입력에서는 사용자가 제시한 선택지보다 과하게 좁히거나 넓히지 마
+- 선택지가 업종/브랜드/음식 범주/구체 메뉴 중 무엇인지 판단하고, 그 판단에 맞춰 후보명을 만들어
+- 선택지 밖의 음식, 재료, 사이드, 하위 옵션으로 임의 대체하지 마
 - "가볍게", "든든하게", "배달음식", "다이어트식" 같은 맥락을 반영해
 - 사용자 목표, 오늘 남은 칼로리, 남은 탄수화물/단백질/지방, 최근 먹은 메뉴 요약을 반영해
 - 후보 순위는 사용자의 현재 목표와 남은 영양 흐름에 더 잘 맞는 순서로 정해
-- 우리 DB와 매칭하기 쉽도록 너무 추상적인 표현 대신 실제 음식명으로 작성해
+- DB 매칭 가능성보다 사용자 의도와 후보 단위의 자연스러움을 우선해
 - 후보는 최대 10개
 - name은 2~20자 정도의 자연스러운 한국어 음식명
 - 브랜드명, 매장명, 제조사명, 편의점 제품명 자체를 음식 후보명으로 쓰지 마
@@ -3796,16 +3803,21 @@ ${JSON.stringify(userContext)}
       });
     }
 
+    const fallbackMenus = await builder
+      .orderBy('CHAR_LENGTH(menu.name)', 'ASC')
+      .take(20)
+      .getMany();
     const candidates = this.filterRecommendationMainMenuCandidates(
-      await builder
-        .orderBy(
-          'CASE WHEN menu.name = :exactCandidateName THEN 0 ELSE 1 END',
-          'ASC',
-        )
-        .addOrderBy('CHAR_LENGTH(menu.name)', 'ASC')
-        .setParameter('exactCandidateName', candidateName)
-        .take(20)
-        .getMany(),
+      fallbackMenus.sort((left, right) => {
+        const leftExact = left.name === candidateName ? 0 : 1;
+        const rightExact = right.name === candidateName ? 0 : 1;
+
+        if (leftExact !== rightExact) {
+          return leftExact - rightExact;
+        }
+
+        return left.name.length - right.name.length;
+      }),
       intent,
     );
 
