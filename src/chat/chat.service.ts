@@ -267,6 +267,7 @@ type GenericMenuCandidate = {
 };
 
 type GenericMenuCandidatePlan = {
+  introMessage: string | null;
   candidates: GenericMenuCandidate[];
 };
 
@@ -812,6 +813,27 @@ export class ChatService {
     });
 
     if (filteredCandidateMenus.length === 0) {
+      if (preparedIntroMessage) {
+        const response = new ChatRecommendResponseDto();
+        response.chat_category = 'recommendation';
+        response.intro_message = preparedIntroMessage;
+        response.recommendations = [];
+        if (imageUrl) {
+          (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
+        }
+
+        await this.chatHistoryRepository.save(
+          this.chatHistoryRepository.create({
+            input_text: input,
+            response_payload: response as unknown as Record<string, any>,
+            user,
+          }),
+        );
+        timing?.mark('completed_without_menu_cards');
+
+        return response;
+      }
+
       throw new BadRequestException('No menus available for recommendation');
     }
 
@@ -862,11 +884,58 @@ export class ChatService {
             chatContext,
           })
         ).intro_message;
-    const introAlignment = this.alignRankedMenusWithIntro(
-      rankedMenus,
-      intent,
-      introMessage,
-    );
+    if (
+      shouldUsePreparedIntro &&
+      introSource === 'text_recommendation' &&
+      rankedMenus.length > 0
+    ) {
+      const validation = await this.validateRecommendationMenusAgainstIntro({
+        input,
+        introMessage,
+        rankedMenus,
+      });
+      timing?.mark('gemini_intro_menu_validation_completed', {
+        shouldReturnMenus: validation.shouldReturnMenus,
+        orderedMenuIds: validation.orderedMenuIds,
+      });
+
+      if (!validation.shouldReturnMenus) {
+        rankedMenus = [];
+      } else if (validation.orderedMenuIds.length > 0) {
+        const rankedMenuMap = new Map(
+          rankedMenus.map((rankedMenu) => [rankedMenu.menu.id, rankedMenu]),
+        );
+        rankedMenus = validation.orderedMenuIds
+          .map((menuId) => rankedMenuMap.get(menuId))
+          .filter((rankedMenu): rankedMenu is RankedMenu => !!rankedMenu);
+      }
+    }
+
+    if (rankedMenus.length === 0) {
+      const response = new ChatRecommendResponseDto();
+      response.chat_category = 'recommendation';
+      response.intro_message = introMessage;
+      response.recommendations = [];
+
+      await this.chatHistoryRepository.save(
+        this.chatHistoryRepository.create({
+          input_text: input,
+          response_payload: response as unknown as Record<string, any>,
+          user,
+        }),
+      );
+      timing?.mark('completed_without_validated_menu_cards');
+
+      return response;
+    }
+
+    const introAlignment = shouldUsePreparedIntro
+      ? { rankedMenus, hasMenuMention: true }
+      : this.alignRankedMenusWithIntro(
+          rankedMenus,
+          intent,
+          introMessage,
+        );
 
     if (introAlignment.rankedMenus[0]?.menu.id !== rankedMenus[0]?.menu.id) {
       timing?.mark('ranked_menus_aligned_with_intro', {
@@ -1603,7 +1672,7 @@ export class ChatService {
     const data = await this.callGeminiJsonWithImage(prompt, file);
     timing?.mark('menu_board_gemini_ocr_completed');
     const recognition = this.normalizeMenuBoardRecognition(data);
-    console.log('[CHAT_MENU_BOARD_OCR]', {
+    console.log('[CHAT] menu board Gemini recognized texts', {
       userId,
       recognizedTexts: recognition.recognizedTexts,
       recognizedTextCount: recognition.recognizedTexts.length,
@@ -1689,58 +1758,11 @@ failure_reason enum:
     const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
       ? data.detected_foods
       : [];
-    const rawFoodImagePositionLogItems = detectedFoods
-      .map((value) => {
-        if (!value || typeof value !== 'object') {
-          return null;
-        }
-
-        const item = value as Record<string, unknown>;
-
-        return {
-          food_name: this.asNonEmptyString(item.food_name),
-          confidence: this.asNullableNumber(item.confidence),
-          position: item.position ?? null,
-        };
-      })
-      .filter((item): item is {
-        food_name: string | null;
-        confidence: number | null;
-        position: unknown;
-      } => item !== null);
-    console.log(
-      '[CHAT] food image Gemini raw positions',
-      JSON.stringify(
-        {
-          detectedFoods: rawFoodImagePositionLogItems,
-        },
-        null,
-        2,
-      ),
-    );
-    timing?.mark('food_image_gemini_raw_positions_logged', {
-      detectedFoods: rawFoodImagePositionLogItems,
-    });
-
     let predictions = detectedFoods
       .map((value) => this.normalizeFoodImagePrediction(value, imageDimensions))
       .filter((food): food is FoodImagePrediction => food !== null);
-    console.log(
-      '[CHAT] food image normalized positions',
-      JSON.stringify(
-        {
-          predictions: predictions.map((prediction) => ({
-            foodName: prediction.foodName,
-            confidence: prediction.confidence,
-            position: prediction.position,
-          })),
-        },
-        null,
-        2,
-      ),
-    );
-    timing?.mark('food_image_normalized_positions_logged', {
-      predictions: predictions.map((prediction) => ({
+    console.log('[CHAT] food image Gemini detected foods', {
+      foods: predictions.map((prediction) => ({
         foodName: prediction.foodName,
         confidence: prediction.confidence,
         position: prediction.position,
@@ -1753,20 +1775,6 @@ failure_reason enum:
         predictions,
         imageDimensions,
         timing,
-      );
-      console.log(
-        '[CHAT] food image repaired positions',
-        JSON.stringify(
-          {
-            predictions: predictions.map((prediction) => ({
-              foodName: prediction.foodName,
-              confidence: prediction.confidence,
-              position: prediction.position,
-            })),
-          },
-          null,
-          2,
-        ),
       );
     }
 
@@ -3387,12 +3395,6 @@ ${JSON.stringify(
         intent,
         hasUnsupportedBrand,
       );
-      console.log('[CHAT] generic Gemini menu candidates skipped', {
-        reason: skipReason,
-        desiredBrand: intent.desired_brand,
-        includeBrands: intent.include.brands,
-        includeMenuNames: intent.include.menu_names,
-      });
       timing?.mark('gemini_generic_candidates_skipped', {
         reason: skipReason,
         desiredBrand: intent.desired_brand,
@@ -3425,7 +3427,7 @@ ${JSON.stringify(
       if (generatedCount === 0) {
         return {
           menus: [],
-          introMessage: null,
+          introMessage: genericPlan.introMessage,
           generatedCount: 0,
         };
       }
@@ -3443,7 +3445,7 @@ ${JSON.stringify(
 
       return {
         menus: matchedMenus,
-        introMessage: null,
+        introMessage: genericPlan.introMessage,
         generatedCount,
       };
     } catch (error) {
@@ -3520,39 +3522,26 @@ ${JSON.stringify(
     timing?: ChatTimingLogger,
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
-메뉴 추천 요청에 대해, 사용자 정보를 고려한 랭킹 후보 메뉴를 JSON object로 만들어줘.
+메뉴 추천 요청에 대해, 먼저 사용자에게 보낼 자연스러운 intro_message를 작성하고,
+그 intro_message 안에 실제로 언급한 메뉴/음식/브랜드/카테고리 후보만 menu_candidates로 추출해줘.
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
 
 작성 규칙:
-- 최종 사용자 답변 문장은 만들지 마
-- 각 후보는 name, brand, category, reason만 작성해
-- name은 사용자의 질문 의도에 맞는 음식명/메뉴명/음식 범주로 작성해
-- 사용자의 표현이 넓은 음식 범주를 비교하는 맥락이면 name도 같은 추상도의 범주명으로 유지해
-- 사용자의 표현이 구체 메뉴 추천을 원하는 맥락이면 name을 실제 메뉴명 수준으로 구체화해
-- 후보명 추상도는 사용자 질문의 선택지 단위, 비교 단위, 식사 맥락을 종합해서 스스로 판단해
-- 서로 비교되는 후보들은 가능한 한 같은 추상도와 같은 단위로 작성해
-- 사용자 정보와 영양 목표는 후보의 순위와 reason 판단에 반영하되, 사용자가 제시한 후보명을 불필요하게 구체화하는 근거로 쓰지 마
-- 넓은 음식 범주끼리 고르는 요청이라면 조리법, 맛, 세부 메뉴명을 임의로 붙이지 말고 범주명을 유지해
-- 선택지의 추상도가 애매하면 더 구체적인 메뉴명보다 사용자가 말한 후보 단위에 가까운 표현을 우선해
-- brand는 사용자가 특정 브랜드/매장을 명시했고 그 후보가 그 브랜드 메뉴일 때만 넣어. 불명확하면 null
-- category는 음식 카테고리나 메뉴군이 명확할 때만 넣어. 불명확하면 null
-- reason은 후보를 고른 짧은 판단 근거야. 사용자에게 그대로 노출하지 않는 내부 참고용으로 40자 이내로 작성해
-- DB에 없는 브랜드가 언급됐으면 그 브랜드의 메뉴 성격을 추론하되, name은 사용자 요청에 자연스러운 음식 후보명으로 만들어
-- 사용자가 특정 카테고리를 말했으면 그 범위 안에서 후보를 만들어
-- 사용자가 여러 선택지를 제시하면 반드시 그 선택지의 의미 범위 안에서만 순위를 정해
-- 선택지형 입력에서는 사용자가 제시한 선택지보다 과하게 좁히거나 넓히지 마
-- 선택지가 업종/브랜드/음식 범주/구체 메뉴 중 무엇인지 판단하고, 그 판단에 맞춰 후보명을 만들어
-- 선택지 밖의 음식, 재료, 사이드, 하위 옵션으로 임의 대체하지 마
-- "가볍게", "든든하게", "배달음식", "다이어트식" 같은 맥락을 반영해
-- 사용자 목표, 오늘 남은 칼로리, 남은 탄수화물/단백질/지방, 최근 먹은 메뉴 요약을 반영해
-- 후보 순위는 사용자의 현재 목표와 남은 영양 흐름에 더 잘 맞는 순서로 정해
-- DB 매칭 가능성보다 사용자 의도와 후보 단위의 자연스러움을 우선해
-- 후보는 최대 10개
-- name은 2~20자 정도의 자연스러운 한국어 음식명
-- 브랜드명, 매장명, 제조사명, 편의점 제품명 자체를 음식 후보명으로 쓰지 마
-- 음료, 소스, 토핑, 패티, 사이드 메뉴는 사용자가 명시적으로 요청한 경우가 아니면 후보에서 제외해
-- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
+- intro_message는 사용자의 입력만 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
+- intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
+- 메뉴명/브랜드명/카테고리를 반드시 말해야 한다는 압박 없이, 필요할 때만 자연스럽게 언급해
+- 단, 사용자 정보와 오늘 식사 흐름은 판단에 참고해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
+- menu_candidates는 intro_message 안에 실제로 등장한 특정 메뉴/음식/브랜드/카테고리만 추출해
+- intro_message에 메뉴가 명확히 등장하지 않으면 menu_candidates는 빈 배열로 둬
+- intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
+- 각 후보는 name, brand, category, reason만 작성해
+- name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
+- category는 명확할 때만 넣어. 불명확하면 null
+- reason은 후보를 추출한 이유를 내부 참고용으로 40자 이내로 작성해
+- 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
+- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
 
 사용자 입력:
 ${input}
@@ -3565,13 +3554,14 @@ ${JSON.stringify(userContext)}
 
 반환 shape:
 {
+  "intro_message": "string",
   "menu_candidates": [
     {
       "rank": 1,
-      "name": "닭가슴살 샐러드",
+      "name": "치킨",
       "brand": null,
-      "category": "샐러드",
-      "reason": "단백질을 챙기기 쉬움"
+      "category": "치킨",
+      "reason": "intro에서 언급됨"
     }
   ]
 }
@@ -3584,17 +3574,6 @@ ${JSON.stringify(userContext)}
     const candidates = Array.isArray(data?.menu_candidates)
       ? data.menu_candidates
       : [];
-    const rawCandidateLogItems = candidates
-      .map((candidate) => ({
-        rank: Number(candidate?.rank),
-        name: this.asNonEmptyString(candidate?.name) ?? null,
-        brand: this.asNonEmptyString(candidate?.brand) ?? null,
-        category: this.asNonEmptyString(candidate?.category) ?? null,
-        reason: this.asNonEmptyString(candidate?.reason) ?? null,
-      }))
-      .filter((candidate) => candidate.name)
-      .slice(0, 20);
-
     const normalizedCandidates = candidates
       .map((candidate) => ({
         rank: Number(candidate?.rank),
@@ -3619,16 +3598,18 @@ ${JSON.stringify(userContext)}
       }))
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
-    console.log('[CHAT] generic Gemini menu candidates generated', {
-      rawCandidates: rawCandidateLogItems,
-      normalizedCandidates,
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    console.log('[CHAT] Gemini recommendation plan', {
+      introMessage,
+      candidates: normalizedCandidates,
     });
     timing?.mark('gemini_generic_candidate_names_logged', {
-      rawCandidates: rawCandidateLogItems,
-      normalizedCandidates,
+      generatedCount: normalizedCandidates.length,
     });
 
     return {
+      introMessage,
       candidates: normalizedCandidates,
     };
   }
@@ -3663,11 +3644,14 @@ ${JSON.stringify(userContext)}
       genericCandidates,
       this.getGeminiGenericMenuVectorConcurrency(),
       async (candidate) => {
-        const brandFilters = this.getGenericCandidateVectorBrands(
-          candidate,
-          supportedCandidateBrandKeys,
-        );
+        const brandFilters = this.hasBrandIntent(intent)
+          ? this.getGenericCandidateVectorBrands(
+              candidate,
+              supportedCandidateBrandKeys,
+            )
+          : null;
         const shouldUseDefaultScope =
+          !this.hasBrandIntent(intent) ||
           this.shouldUseDefaultGenericCandidateMenuScope(
             candidate,
             supportedCandidateBrandKeys,
@@ -3743,7 +3727,7 @@ ${JSON.stringify(userContext)}
     );
 
     matchLogs.sort((a, b) => a.candidate.rank - b.candidate.rank);
-    console.log('[CHAT] generic Gemini candidates matched to DB menus', {
+    console.log('[CHAT] Gemini candidate DB matches', {
       matches: matchLogs,
     });
     timing?.mark('gemini_generic_candidate_match_details_logged', {
@@ -3775,10 +3759,12 @@ ${JSON.stringify(userContext)}
       intent.desired_category,
       ...intent.include.categories,
     ].filter((category): category is string => !!this.asNonEmptyString(category));
-    const brandFilters = this.getGenericCandidateVectorBrands(
-      candidate,
-      supportedCandidateBrandKeys,
-    );
+    const brandFilters = this.hasBrandIntent(intent)
+      ? this.getGenericCandidateVectorBrands(
+          candidate,
+          supportedCandidateBrandKeys,
+        )
+      : null;
     const buildFallbackQuery = (useCandidateName: boolean) => {
       const builder = this.menuRepository
         .createQueryBuilder('menu')
@@ -3797,6 +3783,7 @@ ${JSON.stringify(userContext)}
       }
 
       if (
+        !this.hasBrandIntent(intent) ||
         this.shouldUseDefaultGenericCandidateMenuScope(
           candidate,
           supportedCandidateBrandKeys,
@@ -6535,9 +6522,6 @@ ${input}
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      console.log('[CHAT] GEMINI ENV CHECK', {
-        GEMINI_API_KEY: this.maskSecret(process.env.GEMINI_API_KEY),
-      });
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
@@ -7197,6 +7181,82 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
     }
   }
 
+  private async validateRecommendationMenusAgainstIntro(params: {
+    input: string;
+    introMessage: string;
+    rankedMenus: RankedMenu[];
+  }): Promise<{ shouldReturnMenus: boolean; orderedMenuIds: number[] }> {
+    const menusPayload = params.rankedMenus.slice(0, 10).map(({ menu }, index) => ({
+      rank: index + 1,
+      menu_id: menu.id,
+      menu: menu.name,
+      cleaned_menu: this.toIntroDisplayMenuName(menu.name),
+      brand: menu.brand,
+      category: menu.category,
+      amount: this.formatAmount(menu),
+      calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+    }));
+    const prompt = `
+최초 Gemini 답변 intro_message와 DB에서 매칭된 메뉴 목록이 서로 자연스럽게 일치하는지 판단해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+판단 규칙:
+- intro_message에서 사용자가 먹으라고 권한 메뉴/음식/브랜드/카테고리와 DB 메뉴가 자연스럽게 같은 대상이면 유지해
+- intro_message가 특정 메뉴를 말하지 않았거나, DB 메뉴들이 intro_message의 추천 대상과 잘 맞지 않으면 should_return_menus를 false로 해
+- 메뉴명이 DB 제품명처럼 길어도 cleaned_menu, brand, category를 보고 실제 음식 의미가 맞는지 판단해
+- 맞는 메뉴가 일부만 있으면 그 메뉴들만 ordered_menu_ids에 넣어
+- intro_message에서 더 중요하게 말한 메뉴와 가장 가까운 DB 메뉴를 맨 앞으로 둬
+- ordered_menu_ids는 입력된 menu_id 중에서만 고르고 최대 10개야
+
+사용자 입력:
+${params.input}
+
+intro_message:
+${params.introMessage}
+
+DB 매칭 메뉴:
+${JSON.stringify(menusPayload)}
+
+반환 shape:
+{
+  "should_return_menus": true,
+  "ordered_menu_ids": [1, 2]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt, {
+        context: 'recommendation-menu-intro-validation',
+        systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
+      });
+      const allowedMenuIds = new Set(menusPayload.map((menu) => menu.menu_id));
+      const orderedMenuIds = Array.isArray(data?.ordered_menu_ids)
+        ? data.ordered_menu_ids
+            .map((menuId) => Number(menuId))
+            .filter((menuId) => allowedMenuIds.has(menuId))
+            .slice(0, 10)
+        : [];
+      const shouldReturnMenus =
+        data?.should_return_menus === true && orderedMenuIds.length > 0;
+      console.log('[CHAT] intro menu validation', {
+        shouldReturnMenus,
+        orderedMenuIds,
+      });
+
+      return {
+        shouldReturnMenus,
+        orderedMenuIds,
+      };
+    } catch {
+      return {
+        shouldReturnMenus: true,
+        orderedMenuIds: params.rankedMenus
+          .slice(0, 10)
+          .map((rankedMenu) => rankedMenu.menu.id),
+      };
+    }
+  }
+
   private async generateRecommendationPresentationWithGemini(params: {
     source: ChatIntroMessageSource;
     input: string;
@@ -7499,10 +7559,6 @@ ${JSON.stringify(candidates)}
     const baseUrlOverride = process.env.GEMINI_BASE_URL;
 
     if (!apiKey) {
-      console.log('[CHAT] GEMINI ENV CHECK', {
-        GEMINI_API_KEY: this.maskSecret(process.env.GEMINI_API_KEY),
-        GEMINI_MODEL: primaryModel,
-      });
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
@@ -7521,12 +7577,6 @@ ${JSON.stringify(candidates)}
 
     for (const [index, model] of attempts.entries()) {
       const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
-
-      console.log('[CHAT] GEMINI REQUEST', {
-        GEMINI_API_KEY: this.maskSecret(apiKey),
-        GEMINI_MODEL: model,
-        GEMINI_BASE_URL: baseUrl,
-      });
 
       try {
         const response = await firstValueFrom(
@@ -7627,10 +7677,6 @@ ${JSON.stringify(candidates)}
       process.env.GEMINI_IMAGE_BASE_URL ?? process.env.GEMINI_BASE_URL;
 
     if (!apiKey) {
-      console.log('[CHAT] GEMINI ENV CHECK', {
-        GEMINI_API_KEY: this.maskSecret(process.env.GEMINI_API_KEY),
-        GEMINI_MODEL: primaryModel,
-      });
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
