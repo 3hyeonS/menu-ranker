@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpException,
   Post,
   UploadedFile,
   UseGuards,
@@ -44,6 +45,47 @@ import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-me
 @Controller('/chat')
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
+
+  private logChatApiError(
+    context: string,
+    user: UserEntity | null,
+    error: unknown,
+    extra: Record<string, unknown> = {},
+  ): void {
+    const maybeError = error as {
+      name?: string;
+      message?: string;
+      stack?: string;
+      code?: string;
+      response?: {
+        status?: number;
+        data?: unknown;
+      };
+    };
+    const httpStatus =
+      error instanceof HttpException
+        ? error.getStatus()
+        : maybeError.response?.status ?? null;
+    const responseBody =
+      error instanceof HttpException
+        ? error.getResponse()
+        : maybeError.response?.data ?? null;
+
+    console.error('[CHAT_API_ERROR]', {
+      context,
+      userId: user?.id ?? null,
+      httpStatus,
+      errorName: maybeError.name ?? null,
+      errorMessage: maybeError.message ?? null,
+      errorCode: maybeError.code ?? null,
+      responseBody,
+      stack:
+        typeof maybeError.stack === 'string'
+          ? maybeError.stack.split('\n').slice(0, 8).join('\n')
+          : null,
+      ...extra,
+    });
+  }
 
   @ApiBearerAuth('accessToken')
   @ApiOperation({
@@ -197,7 +239,14 @@ export class ChatController {
     @GetUser() user: UserEntity,
     @Body() chatRecommendRequestDto: ChatRecommendRequestDto,
   ): Promise<ChatRecommendResponseDto> {
-    return await this.chatService.recommend(user, chatRecommendRequestDto);
+    try {
+      return await this.chatService.recommend(user, chatRecommendRequestDto);
+    } catch (error) {
+      this.logChatApiError('POST /chat/recommend', user, error, {
+        inputLength: chatRecommendRequestDto?.input?.length ?? null,
+      });
+      throw error;
+    }
   }
 
   @ApiBearerAuth('accessToken')
@@ -251,7 +300,15 @@ export class ChatController {
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<ChatMenuBoardRecommendResponseDto> {
-    return await this.chatService.recommendFromMenuBoard(user, file);
+    try {
+      return await this.chatService.recommendFromMenuBoard(user, file);
+    } catch (error) {
+      this.logChatApiError('POST /chat/menu-board', user, error, {
+        fileSize: file?.size ?? null,
+        mimeType: file?.mimetype ?? null,
+      });
+      throw error;
+    }
   }
 
   @ApiBearerAuth('accessToken')
@@ -382,7 +439,15 @@ export class ChatController {
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<ChatFoodImageFeedbackResponseDto> {
-    return await this.chatService.feedbackFromFoodImage(user, file);
+    try {
+      return await this.chatService.feedbackFromFoodImage(user, file);
+    } catch (error) {
+      this.logChatApiError('POST /chat/food-image-feedback', user, error, {
+        fileSize: file?.size ?? null,
+        mimeType: file?.mimetype ?? null,
+      });
+      throw error;
+    }
   }
 
   @ApiBearerAuth('accessToken')

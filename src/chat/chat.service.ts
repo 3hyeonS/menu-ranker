@@ -264,6 +264,11 @@ type GenericMenuCandidate = {
   category: string | null;
 };
 
+type GenericMenuCandidateMatchOptions = {
+  disableDefaultNamePrefix?: boolean;
+  useIntentCategoryFilters?: boolean;
+};
+
 type GenericMenuCandidatePlan = {
   introMessage: string | null;
   candidates: GenericMenuCandidate[];
@@ -534,6 +539,8 @@ export class ChatService {
 
     const userInfo = await this.getRequiredUserInfo(user.id);
     timing.mark('user_info_loaded');
+    const chatContext = await this.getRecentChatContext(user.id);
+    timing.mark('chat_context_loaded');
 
     const now = new Date();
     const mealTime = this.inferMealTimeFromClock(now);
@@ -558,6 +565,7 @@ export class ChatService {
       file,
       baseIntent,
       userContext,
+      chatContext,
       timing,
     );
     timing.mark('menu_board_gemini_candidates_generated', {
@@ -573,14 +581,11 @@ export class ChatService {
     const inferredBrand = this.inferDominantValue(
       menuBoardPlan.candidates.map((candidate) => candidate.brand),
     );
-    const inferredCategory = this.inferDominantValue(
-      menuBoardPlan.candidates.map((candidate) => candidate.category),
-    );
     const intent: ParsedChatIntent = {
       normalized_request: '메뉴판 사진에 있는 메뉴 후보 기반 추천',
       meal_time: mealTime,
       desired_brand: inferredBrand,
-      desired_category: inferredCategory,
+      desired_category: null,
       nutrition_focus: [],
       amount_preference: 'regular',
       keywords: menuBoardPlan.candidates.map((candidate) => candidate.name),
@@ -594,6 +599,10 @@ export class ChatService {
         menuBoardPlan.candidates,
         intent,
         timing,
+        {
+          disableDefaultNamePrefix: true,
+          useIntentCategoryFilters: false,
+        },
       );
     timing.mark('menu_board_candidates_matched', {
       matchedCount: orderedCandidateMenus.length,
@@ -609,7 +618,7 @@ export class ChatService {
       id: menu.id,
       name: menu.name,
       brand: menu.brand ?? inferredBrand ?? null,
-      category: menu.category ?? inferredCategory ?? null,
+      category: menu.category ?? null,
     }));
     const imageUrl = await this.uploadChatImage(user, file, 'menu-board');
     timing.mark('image_uploaded');
@@ -623,6 +632,7 @@ export class ChatService {
       recognizedCandidates,
       imageUrl,
       introSource: 'menu_board_recommendation',
+      chatContext,
       timing,
       preparedIntroMessage: menuBoardPlan.introMessage,
     })) as ChatMenuBoardRecommendResponseDto;
@@ -653,6 +663,26 @@ export class ChatService {
 
     const userInfo = await this.getRequiredUserInfo(user.id);
     timing.mark('user_info_loaded');
+    const chatContext = await this.getRecentChatContext(user.id);
+    timing.mark('chat_context_loaded');
+    const mealTime = this.inferMealTimeFromClock(new Date());
+    const baseIntent: ParsedChatIntent = {
+      normalized_request: '음식 사진 기반 피드백',
+      meal_time: mealTime,
+      desired_brand: null,
+      desired_category: null,
+      nutrition_focus: [],
+      amount_preference: 'regular',
+      keywords: [],
+      include: this.emptyIntentConditionGroup(),
+      exclude: this.emptyIntentConditionGroup(),
+      nutrition_constraints: this.emptyNutritionConstraints(),
+    };
+    const userContext = await this.buildGenericMenuCandidateUserContext(
+      user.id,
+      userInfo,
+      baseIntent,
+    );
     const availableMenus = await this.getAvailableMenuRecognitionCandidates(
       user.id,
     );
@@ -668,6 +698,8 @@ export class ChatService {
       user.id,
       file,
       availableMenus,
+      userContext,
+      chatContext,
       timing,
     );
     const recognizedFoods = foodImageRecognition.foods;
@@ -846,7 +878,6 @@ export class ChatService {
         const response = new ChatRecommendResponseDto();
         response.chat_category = 'recommendation';
         response.intro_message = preparedIntroMessage;
-        response.recommendations = [];
         if (imageUrl) {
           (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
         }
@@ -943,7 +974,6 @@ export class ChatService {
       const response = new ChatRecommendResponseDto();
       response.chat_category = 'recommendation';
       response.intro_message = introMessage;
-      response.recommendations = [];
 
       await this.chatHistoryRepository.save(
         this.chatHistoryRepository.create({
@@ -999,7 +1029,7 @@ export class ChatService {
     if (imageUrl) {
       (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
     }
-    response.recommendations = rankedMenus.map(({ menu, score }, index) => {
+    response.recommendations = rankedMenus.map(({ menu, score }) => {
       const item = new ChatRecommendItemResponseDto();
 
       item.menu_id = menu.id;
@@ -1011,7 +1041,6 @@ export class ChatService {
       item.calories = roundNullableToOneDecimal(menu.calories) ?? 0;
       item.data_source = menu.data_source;
       item.score = roundToOneDecimal(score.finalScore);
-      item.rank = index + 1;
 
       return item;
     });
@@ -1799,6 +1828,8 @@ export class ChatService {
     userId: number,
     file: Express.Multer.File,
     menus: MenuRecognitionCandidate[],
+    userContext: GenericMenuCandidateUserContext,
+    chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
   ): Promise<FoodImageMenuRecognitionResult> {
     const prompt = `
@@ -1809,6 +1840,7 @@ export class ChatService {
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 - intro_message는 사진 속 음식과 사용자 식사 피드백 맥락을 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
+- 단, 사용자 식사 정보와 이전 채팅 맥락은 판단에 참고해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
@@ -1850,6 +1882,12 @@ failure_reason enum:
 - FOOD_OCCLUDED: 음식이 가려졌거나 잘려서 판단이 어려움
 - NO_FOOD_DETECTED: 사진에서 음식을 찾을 수 없음
 - NO_MATCHING_MENU: 음식은 보이지만 후보 메뉴와 매칭할 수 없음
+
+사용자 식사 정보:
+${JSON.stringify(userContext)}
+
+이전 채팅 맥락:
+${JSON.stringify(this.toLightweightChatContext(chatContext))}
 `.trim();
 
     const data = await this.callGeminiJsonWithImage(prompt, file);
@@ -3359,14 +3397,16 @@ ${JSON.stringify(
         timing,
       );
     const geminiGeneratedMenus = geminiGeneratedResult.menus;
+    const geminiGeneratedIntroMessage = geminiGeneratedResult.introMessage;
 
     if (
       geminiGeneratedMenus.length > 0 ||
-      geminiGeneratedResult.generatedCount > 0
+      geminiGeneratedResult.generatedCount > 0 ||
+      geminiGeneratedIntroMessage
     ) {
       return {
         menus: geminiGeneratedMenus,
-        introMessage: geminiGeneratedResult.introMessage,
+        introMessage: geminiGeneratedIntroMessage,
         intent: candidateIntent,
       };
     }
@@ -3374,7 +3414,7 @@ ${JSON.stringify(
     if (hasUnsupportedBrand) {
       return {
         menus: [],
-        introMessage: null,
+        introMessage: geminiGeneratedIntroMessage,
         intent: candidateIntent,
       };
     }
@@ -3392,7 +3432,7 @@ ${JSON.stringify(
     if (vectorMenus.length >= this.getVectorSearchMinResult()) {
       return {
         menus: this.mergeMenusById(geminiGeneratedMenus, vectorMenus),
-        introMessage: null,
+        introMessage: geminiGeneratedIntroMessage,
         intent: candidateIntent,
       };
     }
@@ -3404,7 +3444,7 @@ ${JSON.stringify(
       });
       return {
         menus: this.mergeMenusById(geminiGeneratedMenus, vectorMenus, sqlMenus),
-        introMessage: null,
+        introMessage: geminiGeneratedIntroMessage,
         intent: candidateIntent,
       };
     }
@@ -3415,7 +3455,7 @@ ${JSON.stringify(
     });
     return {
       menus: this.mergeMenusById(geminiGeneratedMenus, sqlMenus),
-      introMessage: null,
+      introMessage: geminiGeneratedIntroMessage,
       intent: candidateIntent,
     };
   }
@@ -3792,6 +3832,7 @@ ${JSON.stringify(userContext)}
     file: Express.Multer.File,
     intent: ParsedChatIntent,
     userContext: GenericMenuCandidateUserContext,
+    chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
@@ -3804,6 +3845,7 @@ ${JSON.stringify(userContext)}
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - 가격, 원산지, 알레르기 안내, 광고 문구, 주류/음료 메뉴는 음식 추천에 필요할 때가 아니면 언급하지 마
 - 메뉴판에 보이는 음식 중 사용자에게 추천할 만한 메뉴만 자연스럽게 언급해
+- 사용자 식사 정보와 이전 채팅 맥락은 판단에 참고해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
@@ -3811,7 +3853,10 @@ ${JSON.stringify(userContext)}
 - intro_message에 메뉴가 명확히 등장하지 않으면 menu_candidates는 빈 배열로 둬
 - intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
 - 각 후보는 name, brand, category만 작성해
-- name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- name은 메뉴판/intro_message에 등장한 메뉴명을 DB 매칭에 좋은 대표 음식명으로 정제해서 작성해
+- name에서 세트, 정식, 단품, 메뉴, 인기, 추천, BEST, 1인, 2인, 증정 같은 판매 형태/홍보 표현은 제거해
+- name에서 괄호 속 구성 설명이나 "+ 밥 + 샐러드" 같은 부가 구성은 제거하고 핵심 음식명만 남겨
+- 예: "돈카츠 세트" -> "돈카츠", "필라프 정식" -> "필라프", "[1인 스파게티 증정] 생선카츠 정식 세트" -> "생선카츠"
 - brand는 메뉴판에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
@@ -3822,6 +3867,9 @@ ${JSON.stringify(intent)}
 
 사용자 식사 정보:
 ${JSON.stringify(userContext)}
+
+이전 채팅 맥락:
+${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
 반환 shape:
 {
@@ -3876,6 +3924,7 @@ ${JSON.stringify(userContext)}
     genericCandidates: GenericMenuCandidate[],
     intent: ParsedChatIntent,
     timing?: ChatTimingLogger,
+    options: GenericMenuCandidateMatchOptions = {},
   ): Promise<MenuEntity[]> {
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
       return await this.matchGenericMenuCandidatesToDbMenusLocally(
@@ -3917,18 +3966,22 @@ ${JSON.stringify(userContext)}
             candidate,
             supportedCandidateBrandKeys,
           );
+        const categoryFilters =
+          options.useIntentCategoryFilters === false
+            ? [candidate.category]
+            : [
+                candidate.category,
+                intent.desired_category,
+                ...intent.include.categories,
+              ];
         const vectorResults = await menuVectorService.searchMenusByText(
           this.buildSingleGenericCandidateVectorQuery(candidate, intent),
           {
             userId,
             limit: this.getGeminiGenericMenuPerCandidateLimit(),
             brands: brandFilters,
-            category: this.getSingleVectorFilter([
-              candidate.category,
-              intent.desired_category,
-              ...intent.include.categories,
-            ]),
-            namePrefix: shouldUseDefaultScope
+            category: this.getSingleVectorFilter(categoryFilters),
+            namePrefix: !options.disableDefaultNamePrefix && shouldUseDefaultScope
               ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
               : null,
             maxCalories: intent.nutrition_constraints.max_calories,
@@ -3964,6 +4017,7 @@ ${JSON.stringify(userContext)}
           candidate,
           intent,
           supportedCandidateBrandKeys,
+          options,
         );
         matchLogs.push({
           candidateIndex,
@@ -4178,6 +4232,7 @@ ${JSON.stringify(userContext)}
     candidate: GenericMenuCandidate,
     intent: ParsedChatIntent,
     supportedCandidateBrandKeys: Set<string>,
+    options: GenericMenuCandidateMatchOptions = {},
   ): Promise<MenuEntity | null> {
     const candidateName = this.asNonEmptyString(candidate.name);
 
@@ -4185,11 +4240,18 @@ ${JSON.stringify(userContext)}
       return null;
     }
 
-    const categoryFilters = [
-      candidate.category,
-      intent.desired_category,
-      ...intent.include.categories,
-    ].filter((category): category is string => !!this.asNonEmptyString(category));
+    const categoryFilters =
+      options.useIntentCategoryFilters === false
+        ? [candidate.category].filter(
+            (category): category is string => !!this.asNonEmptyString(category),
+          )
+        : [
+            candidate.category,
+            intent.desired_category,
+            ...intent.include.categories,
+          ].filter(
+            (category): category is string => !!this.asNonEmptyString(category),
+          );
     const brandFilters = this.hasBrandIntent(intent)
       ? this.getGenericCandidateVectorBrands(
           candidate,
@@ -4214,11 +4276,12 @@ ${JSON.stringify(userContext)}
       }
 
       if (
-        !this.hasBrandIntent(intent) ||
-        this.shouldUseDefaultGenericCandidateMenuScope(
-          candidate,
-          supportedCandidateBrandKeys,
-        )
+        !options.disableDefaultNamePrefix &&
+        (!this.hasBrandIntent(intent) ||
+          this.shouldUseDefaultGenericCandidateMenuScope(
+            candidate,
+            supportedCandidateBrandKeys,
+          ))
       ) {
         builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
           defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
@@ -8054,6 +8117,9 @@ ${JSON.stringify(candidates)}
         this.httpService.post(
           `${baseUrl}?key=${apiKey}`,
           {
+            system_instruction: {
+              parts: [{ text: CHAT_RESPONSE_SYSTEM_INSTRUCTION }],
+            },
             contents: [
               {
                 role: 'user',

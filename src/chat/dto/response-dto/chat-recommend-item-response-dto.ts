@@ -65,10 +65,4 @@ export class ChatRecommendItemResponseDto {
   })
   score: number;
 
-  @ApiProperty({
-    type: Number,
-    description: '순위',
-    example: 1,
-  })
-  rank: number;
 }
