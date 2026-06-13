@@ -269,6 +269,11 @@ type GenericMenuCandidatePlan = {
   candidates: GenericMenuCandidate[];
 };
 
+type FoodImageMenuRecognitionResult = {
+  introMessage: string | null;
+  foods: RecognizedFoodImageMenu[];
+};
+
 type GenericMenuCandidateUserContext = {
   goal: string;
   remainingCalories: number;
@@ -529,56 +534,48 @@ export class ChatService {
 
     const userInfo = await this.getRequiredUserInfo(user.id);
     timing.mark('user_info_loaded');
-    const availableMenus = await this.getAvailableMenuRecognitionCandidates(
+
+    const now = new Date();
+    const mealTime = this.inferMealTimeFromClock(now);
+    const baseIntent: ParsedChatIntent = {
+      normalized_request: '메뉴판 사진 기반 추천',
+      meal_time: mealTime,
+      desired_brand: null,
+      desired_category: null,
+      nutrition_focus: [],
+      amount_preference: 'regular',
+      keywords: [],
+      include: this.emptyIntentConditionGroup(),
+      exclude: this.emptyIntentConditionGroup(),
+      nutrition_constraints: this.emptyNutritionConstraints(),
+    };
+    const userContext = await this.buildGenericMenuCandidateUserContext(
       user.id,
+      userInfo,
+      baseIntent,
     );
-    timing.mark('recognition_candidates_loaded', {
-      availableMenuCount: availableMenus.length,
+    const menuBoardPlan = await this.generateMenuBoardCandidatePlanWithGemini(
+      file,
+      baseIntent,
+      userContext,
+      timing,
+    );
+    timing.mark('menu_board_gemini_candidates_generated', {
+      generatedCount: menuBoardPlan.candidates.length,
     });
 
-    if (availableMenus.length === 0) {
-      throw new BadRequestException('No menus available for recommendation');
-    }
-
-    const recognizedCandidates =
-      await this.recognizeMenuBoardCandidatesWithGemini(
-        user.id,
-        file,
-        availableMenus,
-        timing,
-      );
-    const candidateIds = recognizedCandidates.map((candidate) => candidate.id);
-    timing.mark('menu_board_recognition_completed', {
-      recognizedCandidateCount: recognizedCandidates.length,
-    });
-
-    if (candidateIds.length === 0) {
+    if (menuBoardPlan.candidates.length === 0) {
       throw new BadRequestException(
         'No recognized menus matched the available menu list',
       );
     }
 
-    const candidateMenus = await this.menuRepository.find({
-      where: candidateIds.map((id) => ({ id, is_deleted: 0 })),
-      relations: { user: true },
-    });
-    timing.mark('recognized_menu_details_loaded', {
-      menuCount: candidateMenus.length,
-    });
-    const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
-    const orderedCandidateMenus = candidateIds
-      .map((id) => menuMap.get(id))
-      .filter((menu): menu is MenuEntity => !!menu);
-
     const inferredBrand = this.inferDominantValue(
-      recognizedCandidates.map((candidate) => candidate.brand),
+      menuBoardPlan.candidates.map((candidate) => candidate.brand),
     );
     const inferredCategory = this.inferDominantValue(
-      recognizedCandidates.map((candidate) => candidate.category),
+      menuBoardPlan.candidates.map((candidate) => candidate.category),
     );
-
-    const now = new Date();
-    const mealTime = this.inferMealTimeFromClock(now);
     const intent: ParsedChatIntent = {
       normalized_request: '메뉴판 사진에 있는 메뉴 후보 기반 추천',
       meal_time: mealTime,
@@ -586,11 +583,34 @@ export class ChatService {
       desired_category: inferredCategory,
       nutrition_focus: [],
       amount_preference: 'regular',
-      keywords: this.buildKeywordsFromCandidates(recognizedCandidates),
+      keywords: menuBoardPlan.candidates.map((candidate) => candidate.name),
       include: this.emptyIntentConditionGroup(),
       exclude: this.emptyIntentConditionGroup(),
       nutrition_constraints: this.emptyNutritionConstraints(),
     };
+    const orderedCandidateMenus =
+      await this.matchGenericMenuCandidatesToDbMenusByVector(
+        user.id,
+        menuBoardPlan.candidates,
+        intent,
+        timing,
+      );
+    timing.mark('menu_board_candidates_matched', {
+      matchedCount: orderedCandidateMenus.length,
+    });
+
+    if (orderedCandidateMenus.length === 0) {
+      throw new BadRequestException(
+        'No recognized menus matched the available menu list',
+      );
+    }
+
+    const recognizedCandidates = orderedCandidateMenus.map((menu) => ({
+      id: menu.id,
+      name: menu.name,
+      brand: menu.brand ?? inferredBrand ?? null,
+      category: menu.category ?? inferredCategory ?? null,
+    }));
     const imageUrl = await this.uploadChatImage(user, file, 'menu-board');
     timing.mark('image_uploaded');
 
@@ -604,6 +624,7 @@ export class ChatService {
       imageUrl,
       introSource: 'menu_board_recommendation',
       timing,
+      preparedIntroMessage: menuBoardPlan.introMessage,
     })) as ChatMenuBoardRecommendResponseDto;
     timing.end({
       recommendationCount: response.recommendations?.length ?? 0,
@@ -643,12 +664,13 @@ export class ChatService {
       throw new BadRequestException('No menus available for feedback');
     }
 
-    const recognizedFoods = await this.recognizeFoodImageMenusWithGemini(
+    const foodImageRecognition = await this.recognizeFoodImageMenusWithGemini(
       user.id,
       file,
       availableMenus,
       timing,
     );
+    const recognizedFoods = foodImageRecognition.foods;
     timing.mark('food_image_recognition_completed', {
       recognizedFoodCount: recognizedFoods.length,
     });
@@ -695,7 +717,9 @@ export class ChatService {
       input: '음식 사진 기반 피드백',
       matchedMenus,
       introMessage:
+        foodImageRecognition.introMessage ??
         '사진에서 인식한 메뉴 기준으로 봤어.',
+      preparedIntroMessage: foodImageRecognition.introMessage,
       introSource: 'food_image_feedback',
       extractedItems: recognizedFoods.map((food, index) => ({
         rank: index + 1,
@@ -891,7 +915,6 @@ export class ChatService {
         ).intro_message;
     if (
       shouldUsePreparedIntro &&
-      introSource === 'text_recommendation' &&
       rankedMenus.length > 0
     ) {
       const validation = await this.validateRecommendationMenusAgainstIntro({
@@ -1777,12 +1800,18 @@ export class ChatService {
     file: Express.Multer.File,
     menus: MenuRecognitionCandidate[],
     timing?: ChatTimingLogger,
-  ): Promise<RecognizedFoodImageMenu[]> {
+  ): Promise<FoodImageMenuRecognitionResult> {
     const prompt = `
-음식 사진을 보고, 사진에 실제로 포함된 음식명을 JSON object로 반환해.
+음식 사진을 보고, 먼저 사용자에게 보낼 자연스러운 intro_message를 작성하고,
+사진에 실제로 포함된 음식명을 detected_foods로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- intro_message는 사진 속 음식과 사용자 식사 피드백 맥락을 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
+- intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
+- target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
+- intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
+- 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
 - 사진 속에서 같은 메뉴로 보이는 음식이 여러 개 있어도 detected_foods에는 1개만 반환해
 - 같은 메뉴가 여러 개 보이면 가장 선명하거나 대표적인 1개의 위치만 반환해
 - food_name에는 사진 속 음식의 가장 구체적인 이름을 넣어
@@ -1798,6 +1827,7 @@ export class ChatService {
 
 반환 shape:
 {
+  "intro_message": "string",
   "recognition_status": "recognized",
   "failure_reason": null,
   "detected_foods": [
@@ -1825,6 +1855,8 @@ failure_reason enum:
     const data = await this.callGeminiJsonWithImage(prompt, file);
     timing?.mark('food_image_gemini_primary_completed');
     this.assertFoodImageRecognizable(data);
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
     const imageDimensions = this.getImageDimensions(file.buffer);
     if (imageDimensions) {
       timing?.mark('food_image_dimensions_detected', imageDimensions);
@@ -1837,6 +1869,7 @@ failure_reason enum:
       .map((value) => this.normalizeFoodImagePrediction(value, imageDimensions))
       .filter((food): food is FoodImagePrediction => food !== null);
     console.log('[CHAT] food image Gemini detected foods', {
+      introMessage,
       foods: predictions.map((prediction) => ({
         foodName: prediction.foodName,
         confidence: prediction.confidence,
@@ -1906,7 +1939,10 @@ failure_reason enum:
       );
     }
 
-    return uniqueRecognizedFoods;
+    return {
+      introMessage,
+      foods: uniqueRecognizedFoods,
+    };
   }
 
   private normalizeFoodImagePrediction(
@@ -3743,6 +3779,89 @@ ${JSON.stringify(userContext)}
       candidates: normalizedCandidates,
     });
     timing?.mark('gemini_feedback_candidate_names_logged', {
+      generatedCount: normalizedCandidates.length,
+    });
+
+    return {
+      introMessage,
+      candidates: normalizedCandidates,
+    };
+  }
+
+  private async generateMenuBoardCandidatePlanWithGemini(
+    file: Express.Multer.File,
+    intent: ParsedChatIntent,
+    userContext: GenericMenuCandidateUserContext,
+    timing?: ChatTimingLogger,
+  ): Promise<GenericMenuCandidatePlan> {
+    const prompt = `
+메뉴판 사진을 보고, 먼저 사용자에게 보낼 자연스러운 intro_message를 작성하고,
+그 intro_message 안에 실제로 언급한 메뉴/음식/브랜드/카테고리 후보만 menu_candidates로 추출해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+작성 규칙:
+- intro_message는 사진 속 메뉴판과 사용자 식사 정보를 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
+- intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
+- 가격, 원산지, 알레르기 안내, 광고 문구, 주류/음료 메뉴는 음식 추천에 필요할 때가 아니면 언급하지 마
+- 메뉴판에 보이는 음식 중 사용자에게 추천할 만한 메뉴만 자연스럽게 언급해
+- target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
+- intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
+- 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
+- menu_candidates는 intro_message 안에 실제로 등장한 특정 메뉴/음식/브랜드/카테고리만 추출해
+- intro_message에 메뉴가 명확히 등장하지 않으면 menu_candidates는 빈 배열로 둬
+- intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
+- 각 후보는 name, brand, category만 작성해
+- name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- brand는 메뉴판에서 명확할 때만 넣어. 불명확하면 null
+- category는 명확할 때만 넣어. 불명확하면 null
+- 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
+- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
+
+정규화 의도:
+${JSON.stringify(intent)}
+
+사용자 식사 정보:
+${JSON.stringify(userContext)}
+
+반환 shape:
+{
+  "intro_message": "string",
+  "menu_candidates": [
+    {
+      "name": "꿔바로우",
+      "brand": null,
+      "category": "중식"
+    }
+  ]
+}
+`.trim();
+
+    const data = await this.callGeminiJsonWithImage(prompt, file);
+    timing?.mark('menu_board_gemini_plan_completed');
+    const candidates = Array.isArray(data?.menu_candidates)
+      ? data.menu_candidates
+      : [];
+    const normalizedCandidates = candidates
+      .map((candidate) => ({
+        name: this.asNonEmptyString(candidate?.name) ?? '',
+        brand: this.asNonEmptyString(candidate?.brand),
+        category: this.asNonEmptyString(candidate?.category),
+      }))
+      .filter((candidate) => candidate.name.length >= 2)
+      .map((candidate) => ({
+        name: candidate.name,
+        brand: candidate.brand ?? null,
+        category: candidate.category ?? null,
+      }))
+      .slice(0, this.getGeminiGenericMenuCandidateLimit());
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+
+    console.log('[CHAT] menu board Gemini plan', {
+      introMessage,
+      candidates: normalizedCandidates,
+    });
+    timing?.mark('menu_board_gemini_candidate_names_logged', {
       generatedCount: normalizedCandidates.length,
     });
 
