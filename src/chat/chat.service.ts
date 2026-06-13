@@ -944,10 +944,7 @@ export class ChatService {
             chatContext,
           })
         ).intro_message;
-    if (
-      shouldUsePreparedIntro &&
-      rankedMenus.length > 0
-    ) {
+    if (shouldUsePreparedIntro && rankedMenus.length > 0) {
       const validation = await this.validateRecommendationMenusAgainstIntro({
         input,
         introMessage,
@@ -989,11 +986,7 @@ export class ChatService {
 
     const introAlignment = shouldUsePreparedIntro
       ? { rankedMenus, hasMenuMention: true }
-      : this.alignRankedMenusWithIntro(
-          rankedMenus,
-          intent,
-          introMessage,
-        );
+      : this.alignRankedMenusWithIntro(rankedMenus, intent, introMessage);
 
     if (introAlignment.rankedMenus[0]?.menu.id !== rankedMenus[0]?.menu.id) {
       timing?.mark('ranked_menus_aligned_with_intro', {
@@ -1079,12 +1072,13 @@ export class ChatService {
         userInfo,
         intent,
       );
-      const feedbackPlan = await this.generateFeedbackMenuCandidatePlanWithGemini(
-        input,
-        intent,
-        userContext,
-        timing,
-      );
+      const feedbackPlan =
+        await this.generateFeedbackMenuCandidatePlanWithGemini(
+          input,
+          intent,
+          userContext,
+          timing,
+        );
       feedbackIntroMessage = feedbackPlan.introMessage;
       feedbackCandidates = feedbackPlan.candidates;
       timing?.mark('gemini_feedback_candidates_generated', {
@@ -1442,7 +1436,6 @@ export class ChatService {
     };
   }
 
-
   async recordMealFromChat(
     user: UserEntity,
     chatMealRecordRequestDto: ChatMealRecordRequestDto,
@@ -1555,7 +1548,9 @@ export class ChatService {
       .replace(/\s+/g, ' ')
       .trim();
 
-    const parentheticalMatches = Array.from(normalized.matchAll(/\(([^)]{2,20})\)/g))
+    const parentheticalMatches = Array.from(
+      normalized.matchAll(/\(([^)]{2,20})\)/g),
+    )
       .map((match) => match[1].trim())
       .filter((value) => value.length >= 2);
 
@@ -1566,8 +1561,9 @@ export class ChatService {
       .trim();
 
     if (parentheticalMatches.length > 0) {
-      const bestParenthetical = parentheticalMatches
-        .sort((a, b) => a.length - b.length)[0];
+      const bestParenthetical = parentheticalMatches.sort(
+        (a, b) => a.length - b.length,
+      )[0];
       const compactBase = this.normalizeCompactText(normalized);
       const compactParenthetical = this.normalizeCompactText(bestParenthetical);
 
@@ -1701,7 +1697,9 @@ export class ChatService {
 
   private hasKoreanFinalConsonant(value: string): boolean {
     const chars = Array.from(value.trim()).reverse();
-    const lastMeaningfulChar = chars.find((char) => /[가-힣A-Za-z0-9]/.test(char));
+    const lastMeaningfulChar = chars.find((char) =>
+      /[가-힣A-Za-z0-9]/.test(char),
+    );
 
     if (!lastMeaningfulChar) {
       return false;
@@ -2062,8 +2060,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     const uniqueYValues = new Set(yValues);
 
     return (
-      uniqueYValues.size === 1 &&
-      (uniqueYValues.has(0) || uniqueYValues.has(1))
+      uniqueYValues.size === 1 && (uniqueYValues.has(0) || uniqueYValues.has(1))
     );
   }
 
@@ -2227,7 +2224,10 @@ ${JSON.stringify(
   private async getVectorRecognitionCandidates(params: {
     userId: number;
     texts: string[];
-    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>;
+    context: Pick<
+      MenuBoardRecognitionResult,
+      'inferredBrand' | 'inferredCategory'
+    >;
     limit: number;
     timing?: ChatTimingLogger;
     timingPrefix?: string;
@@ -2279,9 +2279,12 @@ ${JSON.stringify(
 
       return candidates;
     } catch (error) {
-      console.warn('[CHAT] vector recognition search failed, fallback to local', {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      console.warn(
+        '[CHAT] vector recognition search failed, fallback to local',
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
       params.timing?.mark(`${timingPrefix}_vector_search_failed`);
 
       return [];
@@ -2292,7 +2295,10 @@ ${JSON.stringify(
     userId: number,
     predictions: FoodImagePrediction[],
     menus: MenuRecognitionCandidate[],
-    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+    context: Pick<
+      MenuBoardRecognitionResult,
+      'inferredBrand' | 'inferredCategory'
+    >,
     timing?: ChatTimingLogger,
   ): Promise<FoodImageCandidateGroup[]> {
     const groups = await this.getFoodImageVectorCandidateGroupsByPrediction(
@@ -2319,18 +2325,24 @@ ${JSON.stringify(
     }
 
     return predictions
-      .map((prediction, index) => groupMap.get(index) ?? {
-        foodIndex: index,
-        foodName: prediction.foodName,
-        candidates: [],
-      })
+      .map(
+        (prediction, index) =>
+          groupMap.get(index) ?? {
+            foodIndex: index,
+            foodName: prediction.foodName,
+            candidates: [],
+          },
+      )
       .filter((group) => group.candidates.length > 0);
   }
 
   private async getFoodImageVectorCandidateGroupsByPrediction(
     userId: number,
     predictions: FoodImagePrediction[],
-    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+    context: Pick<
+      MenuBoardRecognitionResult,
+      'inferredBrand' | 'inferredCategory'
+    >,
     timing?: ChatTimingLogger,
   ): Promise<FoodImageCandidateGroup[]> {
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
@@ -2371,7 +2383,9 @@ ${JSON.stringify(
           };
         },
       );
-      const nonEmptyGroups = groups.filter((group) => group.candidates.length > 0);
+      const nonEmptyGroups = groups.filter(
+        (group) => group.candidates.length > 0,
+      );
       timing?.mark('food_image_one_to_one_vector_groups_completed', {
         predictionCount: predictions.length,
         groupCount: nonEmptyGroups.length,
@@ -2392,9 +2406,15 @@ ${JSON.stringify(
   }
 
   private getFoodImageLocalCandidateGroupsByPrediction(
-    predictionEntries: Array<{ prediction: FoodImagePrediction; index: number }>,
+    predictionEntries: Array<{
+      prediction: FoodImagePrediction;
+      index: number;
+    }>,
     menus: MenuRecognitionCandidate[],
-    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+    context: Pick<
+      MenuBoardRecognitionResult,
+      'inferredBrand' | 'inferredCategory'
+    >,
   ): FoodImageCandidateGroup[] {
     const perFoodLimit = this.getFoodImagePerFoodVectorCandidateLimit();
 
@@ -2608,7 +2628,10 @@ ${JSON.stringify(
 
   private buildVectorRecognitionQuery(
     texts: string[],
-    context: Pick<MenuBoardRecognitionResult, 'inferredBrand' | 'inferredCategory'>,
+    context: Pick<
+      MenuBoardRecognitionResult,
+      'inferredBrand' | 'inferredCategory'
+    >,
   ): string {
     const expandedTexts = this.expandRecognitionTexts(texts);
     const parts = [
@@ -2657,7 +2680,9 @@ ${JSON.stringify(
 
     return menuIds
       .map((menuId) => candidateMap.get(menuId))
-      .filter((candidate): candidate is MenuRecognitionCandidate => !!candidate);
+      .filter(
+        (candidate): candidate is MenuRecognitionCandidate => !!candidate,
+      );
   }
 
   private buildRecognitionCandidatePool(
@@ -3093,7 +3118,10 @@ ${JSON.stringify(
     let normalized = text.replace(/[()[\]{}]/g, ' ');
 
     brandTokens.forEach((token) => {
-      normalized = normalized.replace(new RegExp(this.escapeRegExp(token), 'gi'), ' ');
+      normalized = normalized.replace(
+        new RegExp(this.escapeRegExp(token), 'gi'),
+        ' ',
+      );
     });
 
     normalized = normalized
@@ -3203,7 +3231,9 @@ ${JSON.stringify(
   }
 
   private getImageDimensions(buffer: Buffer): FoodImageDimensions | null {
-    return this.getPngImageDimensions(buffer) ?? this.getJpegImageDimensions(buffer);
+    return (
+      this.getPngImageDimensions(buffer) ?? this.getJpegImageDimensions(buffer)
+    );
   }
 
   private getPngImageDimensions(buffer: Buffer): FoodImageDimensions | null {
@@ -3415,8 +3445,10 @@ ${JSON.stringify(
     introMessage: string | null;
     intent: ParsedChatIntent;
   }> {
-    const hasUnsupportedBrand =
-      await this.hasUnsupportedBrandRecommendation(userId, intent);
+    const hasUnsupportedBrand = await this.hasUnsupportedBrandRecommendation(
+      userId,
+      intent,
+    );
     const candidateIntent = hasUnsupportedBrand
       ? this.toUnsupportedBrandGenericIntent(intent)
       : intent;
@@ -3566,7 +3598,12 @@ ${JSON.stringify(
     introMessage: string | null;
     generatedCount: number;
   }> {
-    if (!this.shouldUseGeminiGeneratedGenericCandidates(intent, hasUnsupportedBrand)) {
+    if (
+      !this.shouldUseGeminiGeneratedGenericCandidates(
+        intent,
+        hasUnsupportedBrand,
+      )
+    ) {
       const skipReason = this.getGeminiGeneratedGenericCandidateSkipReason(
         intent,
         hasUnsupportedBrand,
@@ -3588,13 +3625,12 @@ ${JSON.stringify(
         userInfo,
         intent,
       );
-      const genericPlan =
-        await this.generateGenericMenuCandidatePlanWithGemini(
-          input,
-          intent,
-          userContext,
-          timing,
-        );
+      const genericPlan = await this.generateGenericMenuCandidatePlanWithGemini(
+        input,
+        intent,
+        userContext,
+        timing,
+      );
       generatedCount = genericPlan.candidates.length;
       timing?.mark('gemini_generic_candidates_generated', {
         generatedCount,
@@ -4022,9 +4058,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             limit: this.getGeminiGenericMenuPerCandidateLimit(),
             brands: brandFilters,
             category: this.getSingleVectorFilter(categoryFilters),
-            namePrefix: !options.disableDefaultNamePrefix && shouldUseDefaultScope
-              ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
-              : null,
+            namePrefix:
+              !options.disableDefaultNamePrefix && shouldUseDefaultScope
+                ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
+                : null,
             maxCalories: intent.nutrition_constraints.max_calories,
             minProtein: intent.nutrition_constraints.min_protein,
           },
@@ -4053,13 +4090,14 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           return matchedMenu;
         }
 
-        const fallbackMenu = await this.findGenericCandidateMenuByKeywordFallback(
-          userId,
-          candidate,
-          intent,
-          supportedCandidateBrandKeys,
-          options,
-        );
+        const fallbackMenu =
+          await this.findGenericCandidateMenuByKeywordFallback(
+            userId,
+            candidate,
+            intent,
+            supportedCandidateBrandKeys,
+            options,
+          );
         matchLogs.push({
           candidateIndex,
           candidate: {
@@ -4089,10 +4127,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     return this.mergeMenusById(
       matchedMenus.filter((menu): menu is MenuEntity => !!menu),
-    ).slice(
-      0,
-      this.getGeminiGenericMenuMatchedMenuLimit(),
-    );
+    ).slice(0, this.getGeminiGenericMenuMatchedMenuLimit());
   }
 
   private async matchGenericMenuCandidatesToFeedbackMenus(
@@ -4208,12 +4243,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           };
         }
 
-        const fallbackMenu = await this.findGenericCandidateMenuByKeywordFallback(
-          userId,
-          candidate,
-          intent,
-          supportedCandidateBrandKeys,
-        );
+        const fallbackMenu =
+          await this.findGenericCandidateMenuByKeywordFallback(
+            userId,
+            candidate,
+            intent,
+            supportedCandidateBrandKeys,
+          );
         matchLogs.push({
           candidateIndex,
           candidate: {
@@ -4305,7 +4341,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         .leftJoinAndSelect('menu.user', 'user')
         .where(
           new Brackets((qb) => {
-            qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+            qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+              userId,
+            });
           }),
         )
         .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 });
@@ -4352,8 +4390,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           new Brackets((qb) => {
             categoryFilters.forEach((category, index) => {
               const parameterName = `fallbackCategory${index}`;
-              const condition =
-                `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName})`;
+              const condition = `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName})`;
 
               if (index === 0) {
                 qb.where(condition, { [parameterName]: `%${category}%` });
@@ -4385,17 +4422,21 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       fallbackMenus = await buildFallbackQuery(false).getMany();
     }
     const candidates = fallbackMenus.sort((left, right) => {
-        const leftExact = left.name === candidateName ? 0 : 1;
-        const rightExact = right.name === candidateName ? 0 : 1;
+      const leftExact = left.name === candidateName ? 0 : 1;
+      const rightExact = right.name === candidateName ? 0 : 1;
 
-        if (leftExact !== rightExact) {
-          return leftExact - rightExact;
-        }
+      if (leftExact !== rightExact) {
+        return leftExact - rightExact;
+      }
 
-        return left.name.length - right.name.length;
-      });
+      return left.name.length - right.name.length;
+    });
 
-    return this.findMostSimilarMenuAboveThreshold(candidateName, candidates, 20);
+    return this.findMostSimilarMenuAboveThreshold(
+      candidateName,
+      candidates,
+      20,
+    );
   }
 
   private getGenericCandidateVectorBrands(
@@ -4407,7 +4448,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       ? this.normalizeCompactText(candidateBrand)
       : null;
 
-    if (!candidateBrand || !supportedCandidateBrandKeys.has(candidateBrandKey ?? '')) {
+    if (
+      !candidateBrand ||
+      !supportedCandidateBrandKeys.has(candidateBrandKey ?? '')
+    ) {
       return null;
     }
 
@@ -4430,7 +4474,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       return new Set();
     }
 
-    const matchedBrands = await this.findMatchedMenuBrands(userId, candidateBrands);
+    const matchedBrands = await this.findMatchedMenuBrands(
+      userId,
+      candidateBrands,
+    );
 
     return new Set(
       matchedBrands.map((brand) => this.normalizeCompactText(brand)),
@@ -4463,7 +4510,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     }
 
     const matchedMenus = genericCandidates
-      .map((candidate) => this.findMostSimilarMenu(candidate.name, candidateMenus))
+      .map((candidate) =>
+        this.findMostSimilarMenu(candidate.name, candidateMenus),
+      )
       .filter((menu): menu is MenuEntity => !!menu);
 
     return this.mergeMenusById(matchedMenus).slice(
@@ -4584,8 +4633,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         new Brackets((qb) => {
           categoryFilters.forEach((category, index) => {
             const parameterName = `category${index}`;
-            const condition =
-              `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName} OR menu.brand LIKE :${parameterName})`;
+            const condition = `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName} OR menu.brand LIKE :${parameterName})`;
 
             if (index === 0) {
               qb.where(condition, { [parameterName]: `%${category}%` });
@@ -4737,7 +4785,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       return false;
     }
 
-    const matchedBrands = await this.findMatchedMenuBrands(userId, brandFilters);
+    const matchedBrands = await this.findMatchedMenuBrands(
+      userId,
+      brandFilters,
+    );
 
     return matchedBrands.length === 0;
   }
@@ -5026,7 +5077,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         while (nextIndex < items.length) {
           const currentIndex = nextIndex;
           nextIndex += 1;
-          results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+          results[currentIndex] = await mapper(
+            items[currentIndex],
+            currentIndex,
+          );
         }
       }),
     );
@@ -5158,7 +5212,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
   }
 
   private getGeminiGenericMenuCandidateLimit(): number {
-    const parsed = Number(process.env.GEMINI_GENERIC_MENU_CANDIDATE_LIMIT ?? 10);
+    const parsed = Number(
+      process.env.GEMINI_GENERIC_MENU_CANDIDATE_LIMIT ?? 10,
+    );
 
     if (!Number.isFinite(parsed)) {
       return 10;
@@ -5247,8 +5303,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     menuNames: string[],
     timing?: ChatTimingLogger,
   ): Promise<MenuEntity[]> {
-    const vectorMatches =
-      await this.getComparisonCandidateMenusByVector(userId, menuNames, timing);
+    const vectorMatches = await this.getComparisonCandidateMenusByVector(
+      userId,
+      menuNames,
+      timing,
+    );
     const vectorMatchMap = new Map(
       vectorMatches.map((match) => [
         this.normalizeComparisonMenuKey(match.inputMenuName),
@@ -5381,7 +5440,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       '가공식품/제품명보다 일반 음식명을 우선한다.',
       '예: 짜장/자장 입력은 짜장면/자장면을 우선한다.',
       '예: 짬뽕 입력은 짬뽕을 우선한다.',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   private applyIntentFilters(
@@ -5431,7 +5492,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     );
   }
 
-  private relaxSoftIncludeConditions(intent: ParsedChatIntent): ParsedChatIntent {
+  private relaxSoftIncludeConditions(
+    intent: ParsedChatIntent,
+  ): ParsedChatIntent {
     return {
       ...intent,
       include: {
@@ -6080,10 +6143,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     return menus
       .map((menu) => ({
         menu,
-        similarity: this.calculateComparisonMenuSimilarity(
-          inputMenuName,
-          menu,
-        ),
+        similarity: this.calculateComparisonMenuSimilarity(inputMenuName, menu),
       }))
       .sort((a, b) => b.similarity - a.similarity)[0];
   }
@@ -6288,7 +6348,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       return 82;
     }
 
-    if (searchable.includes(input) || compactSearchable.includes(compactInput)) {
+    if (
+      searchable.includes(input) ||
+      compactSearchable.includes(compactInput)
+    ) {
       return 72;
     }
 
@@ -6923,9 +6986,7 @@ ${input}
       return ellipticalChoiceMatch[1]
         .split(/\s*(?:랑|하고|과|와|,|vs|VS)\s*|\s+/)
         .map((value) =>
-          value
-            .replace(/^(?:나는|나|오늘|지금|이번에)\s+/g, '')
-            .trim(),
+          value.replace(/^(?:나는|나|오늘|지금|이번에)\s+/g, '').trim(),
         )
         .filter((value) => value.length >= 2)
         .slice(0, 5);
@@ -7442,8 +7503,7 @@ ${JSON.stringify({
       systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
     });
     const introMessage =
-      this.asNonEmptyString(data?.intro_message) ??
-      '핵심부터 정리할게.';
+      this.asNonEmptyString(data?.intro_message) ?? '핵심부터 정리할게.';
     const generalAnswer =
       this.asNonEmptyString(data?.general_answer) ??
       '지금 질문은 일반 질문으로 분류됐어.\n\n원하는 범위를 조금만 더 구체적으로 말해줘.\n그 기준에 맞춰 바로 정리해줄게.';
@@ -7614,16 +7674,18 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
     introMessage: string;
     rankedMenus: RankedMenu[];
   }): Promise<{ shouldReturnMenus: boolean; orderedMenuIds: number[] }> {
-    const menusPayload = params.rankedMenus.slice(0, 10).map(({ menu }, index) => ({
-      rank: index + 1,
-      menu_id: menu.id,
-      menu: menu.name,
-      cleaned_menu: this.toIntroDisplayMenuName(menu.name),
-      brand: menu.brand,
-      category: menu.category,
-      amount: this.formatAmount(menu),
-      calories: roundNullableToOneDecimal(menu.calories) ?? 0,
-    }));
+    const menusPayload = params.rankedMenus
+      .slice(0, 10)
+      .map(({ menu }, index) => ({
+        rank: index + 1,
+        menu_id: menu.id,
+        menu: menu.name,
+        cleaned_menu: this.toIntroDisplayMenuName(menu.name),
+        brand: menu.brand,
+        category: menu.category,
+        amount: this.formatAmount(menu),
+        calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+      }));
     const prompt = `
 최초 Gemini 답변 intro_message와 DB에서 매칭된 메뉴 목록이 서로 자연스럽게 일치하는지 판단해줘.
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
@@ -7975,9 +8037,9 @@ ${JSON.stringify(candidates)}
     const apiKey = process.env.GEMINI_API_KEY;
     const primaryModel = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
     const configuredFallbackModels = [
-      ...(process.env.GEMINI_FALLBACK_MODELS
-        ?.split(',')
-        .map((model) => model.trim()) ?? []),
+      ...(process.env.GEMINI_FALLBACK_MODELS?.split(',').map((model) =>
+        model.trim(),
+      ) ?? []),
       process.env.GEMINI_FALLBACK_MODEL,
     ];
     const hasConfiguredFallbackModels =
@@ -8092,9 +8154,9 @@ ${JSON.stringify(candidates)}
       process.env.GEMINI_MODEL ??
       DEFAULT_GEMINI_MODEL;
     const configuredFallbackModels = [
-      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS
-        ?.split(',')
-        .map((model) => model.trim()) ?? []),
+      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS?.split(',').map((model) =>
+        model.trim(),
+      ) ?? []),
       process.env.GEMINI_IMAGE_FALLBACK_MODEL,
     ];
     const hasConfiguredFallbackModels =
@@ -8318,21 +8380,19 @@ ${JSON.stringify(candidates)}
       fallback.keywords,
     );
     const categories = Array.from(
-      new Set(
-        [
-          ...rawCategories
-            .map(
-              (category) => this.normalizeCategoryKeyword(category) ?? category,
-            )
-            .filter((category) => category.length >= 2),
-          ...rawMenuNames
-            .map((menuName) => this.normalizeCategoryKeyword(menuName))
-            .filter((category): category is string => !!category),
-          ...rawKeywords
-            .map((keyword) => this.normalizeCategoryKeyword(keyword))
-            .filter((category): category is string => !!category),
-        ],
-      ),
+      new Set([
+        ...rawCategories
+          .map(
+            (category) => this.normalizeCategoryKeyword(category) ?? category,
+          )
+          .filter((category) => category.length >= 2),
+        ...rawMenuNames
+          .map((menuName) => this.normalizeCategoryKeyword(menuName))
+          .filter((category): category is string => !!category),
+        ...rawKeywords
+          .map((keyword) => this.normalizeCategoryKeyword(keyword))
+          .filter((category): category is string => !!category),
+      ]),
     );
     const menuNames = rawMenuNames.filter(
       (menuName) => !this.normalizeCategoryKeyword(menuName),
