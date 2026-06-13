@@ -3742,6 +3742,9 @@ ${JSON.stringify(
 - intro_message는 사용자의 입력만 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - 메뉴명/브랜드명/카테고리를 반드시 말해야 한다는 압박 없이, 필요할 때만 자연스럽게 언급해
+- 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
+- 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
+- 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
 - 단, 사용자 정보와 오늘 식사 흐름은 판단에 참고해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
@@ -3751,6 +3754,7 @@ ${JSON.stringify(
 - intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
 - 각 후보는 name, brand, category만 작성해
 - name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- 단, intro_message에 음식점/업종 표현이 등장했다면 menu_candidates에는 그 업종의 대표 메뉴명을 넣어
 - 밥, 공기밥, 쌀밥, 빵, 면, 국, 찌개, 과일, 간식처럼 흔한 기본 음식도 사용자가 먹어도 되는지 묻거나 intro_message에서 식사 판단 대상으로 언급했다면 반드시 후보에 포함해
 - "밥 반공기", "밥 한 공기", "공기밥 조금"처럼 수량/양 표현이 붙으면 name은 대표 음식명으로 정제해서 "밥" 또는 "공기밥"처럼 작성해
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
@@ -3788,17 +3792,8 @@ ${JSON.stringify(userContext)}
       ? data.menu_candidates
       : [];
     const normalizedCandidates = candidates
-      .map((candidate) => ({
-        name: this.asNonEmptyString(candidate?.name) ?? '',
-        brand: this.asNonEmptyString(candidate?.brand),
-        category: this.asNonEmptyString(candidate?.category),
-      }))
-      .filter((candidate) => candidate.name.length >= 2)
-      .map((candidate) => ({
-        name: candidate.name,
-        brand: candidate.brand ?? null,
-        category: candidate.category ?? null,
-      }))
+      .map((candidate) => this.normalizeGenericMenuCandidate(candidate))
+      .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
     const introMessage =
@@ -3832,6 +3827,9 @@ ${JSON.stringify(userContext)}
 - intro_message는 사용자의 입력만 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - 사용자가 먹으려는 음식이나 이미 먹은 음식에 대해 괜찮은지, 어떤 선택이 나은지 짧고 명확하게 답해
+- 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
+- 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
+- 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
 - 단, 사용자 정보와 오늘 식사 흐름은 판단에 참고해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
@@ -3841,6 +3839,9 @@ ${JSON.stringify(userContext)}
 - intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
 - 각 후보는 name, brand, category만 작성해
 - name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- 단, intro_message에 음식점/업종 표현이 등장했다면 menu_candidates에는 그 업종의 대표 메뉴명을 넣어
+- 밥, 공기밥, 쌀밥, 빵, 면, 국, 찌개, 과일, 간식처럼 흔한 기본 음식도 사용자가 먹어도 되는지 묻거나 intro_message에서 식사 판단 대상으로 언급했다면 반드시 후보에 포함해
+- "밥 반공기", "밥 한 공기", "공기밥 조금"처럼 수량/양 표현이 붙으면 name은 대표 음식명으로 정제해서 "밥"처럼 작성해
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
@@ -3876,17 +3877,8 @@ ${JSON.stringify(userContext)}
       ? data.menu_candidates
       : [];
     const normalizedCandidates = candidates
-      .map((candidate) => ({
-        name: this.asNonEmptyString(candidate?.name) ?? '',
-        brand: this.asNonEmptyString(candidate?.brand),
-        category: this.asNonEmptyString(candidate?.category),
-      }))
-      .filter((candidate) => candidate.name.length >= 2)
-      .map((candidate) => ({
-        name: candidate.name,
-        brand: candidate.brand ?? null,
-        category: candidate.category ?? null,
-      }))
+      .map((candidate) => this.normalizeGenericMenuCandidate(candidate))
+      .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
     const introMessage =
@@ -3967,17 +3959,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       ? data.menu_candidates
       : [];
     const normalizedCandidates = candidates
-      .map((candidate) => ({
-        name: this.asNonEmptyString(candidate?.name) ?? '',
-        brand: this.asNonEmptyString(candidate?.brand),
-        category: this.asNonEmptyString(candidate?.category),
-      }))
-      .filter((candidate) => candidate.name.length >= 2)
-      .map((candidate) => ({
-        name: candidate.name,
-        brand: candidate.brand ?? null,
-        category: candidate.category ?? null,
-      }))
+      .map((candidate) => this.normalizeGenericMenuCandidate(candidate))
+      .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
     const introMessage =
       this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
@@ -8316,6 +8299,60 @@ ${JSON.stringify(candidates)}
     return typeof value === 'string' && value.trim().length > 0
       ? value.trim()
       : null;
+  }
+
+  private normalizeGenericMenuCandidate(
+    candidate: unknown,
+  ): GenericMenuCandidate | null {
+    if (!candidate || typeof candidate !== 'object') {
+      return null;
+    }
+
+    const source = candidate as {
+      name?: unknown;
+      brand?: unknown;
+      category?: unknown;
+    };
+    const rawName = this.asNonEmptyString(source.name);
+    const name = this.normalizeGenericMenuCandidateName(rawName);
+
+    if (!name || !this.isValidGenericMenuCandidateName(name)) {
+      return null;
+    }
+
+    return {
+      name,
+      brand: this.asNonEmptyString(source.brand),
+      category: this.asNonEmptyString(source.category),
+    };
+  }
+
+  private normalizeGenericMenuCandidateName(name: string | null): string | null {
+    if (!name) {
+      return null;
+    }
+
+    const normalized = name.replace(/\s+/g, ' ').trim();
+    const compact = normalized.replace(/\s+/g, '');
+
+    if (
+      /^(?:밥|쌀밥|공기밥)(?:반공기|한공기|[0-9.]+공기|조금|약간|소량|반)?$/.test(
+        compact,
+      ) ||
+      /^(?:반공기|한공기|[0-9.]+공기)(?:밥|쌀밥|공기밥)$/.test(compact)
+    ) {
+      return '밥';
+    }
+
+    return normalized;
+  }
+
+  private isValidGenericMenuCandidateName(name: string): boolean {
+    if (name.length >= 2) {
+      return true;
+    }
+
+    return ['밥', '빵', '면', '국', '죽', '떡'].includes(name);
   }
 
   private asNullableNumber(value: unknown): number | null {
