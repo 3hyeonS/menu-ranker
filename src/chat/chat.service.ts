@@ -460,6 +460,8 @@ export class ChatService {
         userInfo,
         input,
         this.applyChatContextToClassification(classification, chatContext),
+        analysis.intent,
+        timing,
       );
     }
 
@@ -1013,29 +1015,70 @@ export class ChatService {
     userInfo: UserInfoEntity,
     input: string,
     classification: ChatClassification,
+    intent: ParsedChatIntent,
+    timing?: ChatTimingLogger,
   ): Promise<ChatRecommendResponseDto> {
-    if (classification.menu_names.length === 0) {
+    let feedbackIntroMessage: string | null = null;
+    let feedbackCandidates: GenericMenuCandidate[] = [];
+
+    try {
+      const userContext = await this.buildGenericMenuCandidateUserContext(
+        user.id,
+        userInfo,
+        intent,
+      );
+      const feedbackPlan = await this.generateFeedbackMenuCandidatePlanWithGemini(
+        input,
+        intent,
+        userContext,
+        timing,
+      );
+      feedbackIntroMessage = feedbackPlan.introMessage;
+      feedbackCandidates = feedbackPlan.candidates;
+      timing?.mark('gemini_feedback_candidates_generated', {
+        generatedCount: feedbackCandidates.length,
+      });
+    } catch (error) {
+      console.warn('[CHAT] Gemini feedback candidate generation failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      timing?.mark('gemini_feedback_candidates_failed');
+    }
+
+    if (feedbackCandidates.length === 0) {
+      feedbackCandidates = classification.menu_names.map((menuName) => ({
+        name: menuName,
+        brand: null,
+        category: null,
+      }));
+    }
+
+    if (feedbackCandidates.length === 0) {
       throw new BadRequestException('No menus found in feedback request');
     }
 
-    const candidateMenus = await this.getAllCandidateMenus(user.id);
+    const matchedMenus = await this.matchGenericMenuCandidatesToFeedbackMenus(
+      user.id,
+      feedbackCandidates,
+      intent,
+      timing,
+    );
 
-    if (candidateMenus.length === 0) {
+    if (matchedMenus.length === 0) {
       throw new BadRequestException('No menus available for feedback');
     }
-
-    const matchedMenus = classification.menu_names.map((menuName) => ({
-      inputMenuName: menuName,
-      menu: this.findMostSimilarMenu(menuName, candidateMenus),
-    }));
 
     return await this.buildFeedbackChatResponse({
       user,
       userInfo,
       input,
       matchedMenus,
-      introMessage: `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록 기준으로 봤어.`,
+      introMessage:
+        feedbackIntroMessage ??
+        `${this.goalToLabel(userInfo.goal)} 목표와 오늘 식사 기록 기준으로 봤어.`,
+      preparedIntroMessage: feedbackIntroMessage,
       introSource: 'text_feedback',
+      timing,
     });
   }
 
@@ -1045,6 +1088,7 @@ export class ChatService {
     input: string;
     matchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>;
     introMessage: string;
+    preparedIntroMessage?: string | null;
     introSource?: ChatIntroMessageSource;
     extractedItems?: unknown[];
     skipHistorySave?: boolean;
@@ -1056,6 +1100,7 @@ export class ChatService {
       input,
       matchedMenus,
       introMessage,
+      preparedIntroMessage = null,
       introSource = 'text_feedback',
       extractedItems,
       timing,
@@ -1098,18 +1143,24 @@ export class ChatService {
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'feedback';
     response.feedback = feedback;
-    response.intro_message = await this.generateIntroMessageWithGemini({
-      source: introSource,
-      input,
-      userInfo,
-      dailyNutrition,
-      basis: rankingBasis,
-      feedback,
-      matchedMenus,
-      extractedItems,
-      fallback: introMessage,
-    });
-    timing?.mark('feedback_gemini_intro_completed');
+    response.intro_message =
+      preparedIntroMessage ??
+      (await this.generateIntroMessageWithGemini({
+        source: introSource,
+        input,
+        userInfo,
+        dailyNutrition,
+        basis: rankingBasis,
+        feedback,
+        matchedMenus,
+        extractedItems,
+        fallback: introMessage,
+      }));
+    timing?.mark(
+      preparedIntroMessage
+        ? 'feedback_gemini_intro_skipped_prepared_intro'
+        : 'feedback_gemini_intro_completed',
+    );
 
     if (!params.skipHistorySave) {
       await this.chatHistoryRepository.save(
@@ -3613,6 +3664,94 @@ ${JSON.stringify(userContext)}
     };
   }
 
+  private async generateFeedbackMenuCandidatePlanWithGemini(
+    input: string,
+    intent: ParsedChatIntent,
+    userContext: GenericMenuCandidateUserContext,
+    timing?: ChatTimingLogger,
+  ): Promise<GenericMenuCandidatePlan> {
+    const prompt = `
+메뉴 피드백 요청에 대해, 먼저 사용자에게 보낼 자연스러운 intro_message를 작성하고,
+그 intro_message 안에 실제로 언급한 메뉴/음식/브랜드/카테고리 후보만 menu_candidates로 추출해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+작성 규칙:
+- intro_message는 사용자의 입력만 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
+- intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
+- 사용자가 먹으려는 음식이나 이미 먹은 음식에 대해 괜찮은지, 어떤 선택이 나은지 짧고 명확하게 답해
+- 단, 사용자 정보와 오늘 식사 흐름은 판단에 참고해
+- target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
+- intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
+- 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
+- menu_candidates는 intro_message 안에 실제로 등장한 특정 메뉴/음식/브랜드/카테고리만 추출해
+- intro_message에 메뉴가 명확히 등장하지 않으면 menu_candidates는 빈 배열로 둬
+- intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
+- 각 후보는 name, brand, category만 작성해
+- name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
+- category는 명확할 때만 넣어. 불명확하면 null
+- 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
+- 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
+
+사용자 입력:
+${input}
+
+정규화 의도:
+${JSON.stringify(intent)}
+
+사용자 식사 정보:
+${JSON.stringify(userContext)}
+
+반환 shape:
+{
+  "intro_message": "string",
+  "menu_candidates": [
+    {
+      "name": "싸이버거",
+      "brand": "맘스터치",
+      "category": "버거"
+    }
+  ]
+}
+`.trim();
+
+    const data = await this.callGeminiJson(prompt, {
+      context: 'feedback-menu-candidates',
+      systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
+    });
+    const candidates = Array.isArray(data?.menu_candidates)
+      ? data.menu_candidates
+      : [];
+    const normalizedCandidates = candidates
+      .map((candidate) => ({
+        name: this.asNonEmptyString(candidate?.name) ?? '',
+        brand: this.asNonEmptyString(candidate?.brand),
+        category: this.asNonEmptyString(candidate?.category),
+      }))
+      .filter((candidate) => candidate.name.length >= 2)
+      .map((candidate) => ({
+        name: candidate.name,
+        brand: candidate.brand ?? null,
+        category: candidate.category ?? null,
+      }))
+      .slice(0, this.getGeminiGenericMenuCandidateLimit());
+
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    console.log('[CHAT] Gemini feedback plan', {
+      introMessage,
+      candidates: normalizedCandidates,
+    });
+    timing?.mark('gemini_feedback_candidate_names_logged', {
+      generatedCount: normalizedCandidates.length,
+    });
+
+    return {
+      introMessage,
+      candidates: normalizedCandidates,
+    };
+  }
+
   private async matchGenericMenuCandidatesToDbMenusByVector(
     userId: number,
     genericCandidates: GenericMenuCandidate[],
@@ -3740,6 +3879,179 @@ ${JSON.stringify(userContext)}
       0,
       this.getGeminiGenericMenuMatchedMenuLimit(),
     );
+  }
+
+  private async matchGenericMenuCandidatesToFeedbackMenus(
+    userId: number,
+    genericCandidates: GenericMenuCandidate[],
+    intent: ParsedChatIntent,
+    timing?: ChatTimingLogger,
+  ): Promise<Array<{ inputMenuName: string; menu: MenuEntity }>> {
+    if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
+      const candidateMenus = await this.getAllCandidateMenus(userId);
+
+      if (candidateMenus.length === 0) {
+        return [];
+      }
+
+      return genericCandidates
+        .map((candidate) => {
+          const menu = this.findMostSimilarMenu(candidate.name, candidateMenus);
+
+          return menu
+            ? {
+                inputMenuName: candidate.name,
+                menu,
+              }
+            : null;
+        })
+        .filter(
+          (
+            item,
+          ): item is {
+            inputMenuName: string;
+            menu: MenuEntity;
+          } => !!item,
+        );
+    }
+
+    const menuVectorService = this.menuVectorService;
+    const matchLogs: Array<{
+      candidateIndex: number;
+      candidate: Pick<GenericMenuCandidate, 'name' | 'brand' | 'category'>;
+      source: 'vector' | 'keyword_fallback' | 'none';
+      menuId: number | null;
+      menuName: string | null;
+      menuBrand: string | null;
+    }> = [];
+    const supportedCandidateBrandKeys =
+      await this.getSupportedGenericCandidateBrandKeys(
+        userId,
+        genericCandidates,
+      );
+    const matchedPairs = await this.mapWithConcurrency(
+      genericCandidates.map((candidate, candidateIndex) => ({
+        candidate,
+        candidateIndex,
+      })),
+      this.getGeminiGenericMenuVectorConcurrency(),
+      async ({ candidate, candidateIndex }) => {
+        const brandFilters = this.hasBrandIntent(intent)
+          ? this.getGenericCandidateVectorBrands(
+              candidate,
+              supportedCandidateBrandKeys,
+            )
+          : null;
+        const shouldUseDefaultScope =
+          !this.hasBrandIntent(intent) ||
+          this.shouldUseDefaultGenericCandidateMenuScope(
+            candidate,
+            supportedCandidateBrandKeys,
+          );
+        const vectorResults = await menuVectorService.searchMenusByText(
+          this.buildSingleGenericCandidateVectorQuery(candidate, intent),
+          {
+            userId,
+            limit: this.getGeminiGenericMenuPerCandidateLimit(),
+            brands: brandFilters,
+            category: this.getSingleVectorFilter([
+              candidate.category,
+              intent.desired_category,
+              ...intent.include.categories,
+            ]),
+            namePrefix: shouldUseDefaultScope
+              ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
+              : null,
+            maxCalories: intent.nutrition_constraints.max_calories,
+            minProtein: intent.nutrition_constraints.min_protein,
+          },
+        );
+        const menuIds = vectorResults.map((result) => result.menuId);
+        const vectorMenus = await this.getMenusByIds(userId, menuIds);
+        const matchedMenu = this.findMostSimilarMenuAboveThreshold(
+          candidate.name,
+          vectorMenus,
+          25,
+        );
+
+        if (matchedMenu) {
+          matchLogs.push({
+            candidateIndex,
+            candidate: {
+              name: candidate.name,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'vector',
+            menuId: matchedMenu.id,
+            menuName: stripPublicMenuSourcePrefix(matchedMenu.name),
+            menuBrand: matchedMenu.brand ?? null,
+          });
+
+          return {
+            inputMenuName: candidate.name,
+            menu: matchedMenu,
+          };
+        }
+
+        const fallbackMenu = await this.findGenericCandidateMenuByKeywordFallback(
+          userId,
+          candidate,
+          intent,
+          supportedCandidateBrandKeys,
+        );
+        matchLogs.push({
+          candidateIndex,
+          candidate: {
+            name: candidate.name,
+            brand: candidate.brand,
+            category: candidate.category,
+          },
+          source: fallbackMenu ? 'keyword_fallback' : 'none',
+          menuId: fallbackMenu?.id ?? null,
+          menuName: fallbackMenu
+            ? stripPublicMenuSourcePrefix(fallbackMenu.name)
+            : null,
+          menuBrand: fallbackMenu?.brand ?? null,
+        });
+
+        return fallbackMenu
+          ? {
+              inputMenuName: candidate.name,
+              menu: fallbackMenu,
+            }
+          : null;
+      },
+    );
+
+    matchLogs.sort((a, b) => a.candidateIndex - b.candidateIndex);
+    console.log('[CHAT] Gemini feedback candidate DB matches', {
+      matches: matchLogs.map(({ candidateIndex, ...log }) => log),
+    });
+    timing?.mark('gemini_feedback_candidate_match_details_logged', {
+      matches: matchLogs.map(({ candidateIndex, ...log }) => log),
+    });
+
+    const seenMenuIds = new Set<number>();
+
+    return matchedPairs
+      .filter(
+        (
+          item,
+        ): item is {
+          inputMenuName: string;
+          menu: MenuEntity;
+        } => !!item,
+      )
+      .filter(({ menu }) => {
+        if (seenMenuIds.has(menu.id)) {
+          return false;
+        }
+
+        seenMenuIds.add(menu.id);
+        return true;
+      })
+      .slice(0, this.getGeminiGenericMenuMatchedMenuLimit());
   }
 
   private async findGenericCandidateMenuByKeywordFallback(
