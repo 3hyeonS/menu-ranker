@@ -4026,21 +4026,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             candidate,
             supportedCandidateBrandKeys,
           );
-        const categoryFilters =
-          options.useIntentCategoryFilters === false
-            ? [candidate.category]
-            : [
-                candidate.category,
-                intent.desired_category,
-                ...intent.include.categories,
-              ];
         const vectorResults = await menuVectorService.searchMenusByText(
           this.buildSingleGenericCandidateVectorQuery(candidate, intent),
           {
             userId,
             limit: this.getGeminiGenericMenuPerCandidateLimit(),
             brands: brandFilters,
-            category: this.getSingleVectorFilter(categoryFilters),
+            category: null,
             namePrefix:
               !options.disableDefaultNamePrefix && shouldUseDefaultScope
                 ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
@@ -4186,11 +4178,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             userId,
             limit: this.getGeminiGenericMenuPerCandidateLimit(),
             brands: brandFilters,
-            category: this.getSingleVectorFilter([
-              candidate.category,
-              intent.desired_category,
-              ...intent.include.categories,
-            ]),
+            category: null,
             namePrefix: shouldUseDefaultScope
               ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
               : null,
@@ -4300,18 +4288,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       return null;
     }
 
-    const categoryFilters =
-      options.useIntentCategoryFilters === false
-        ? [candidate.category].filter(
-            (category): category is string => !!this.asNonEmptyString(category),
-          )
-        : [
-            candidate.category,
-            intent.desired_category,
-            ...intent.include.categories,
-          ].filter(
-            (category): category is string => !!this.asNonEmptyString(category),
-          );
     const brandFilters = this.hasBrandIntent(intent)
       ? this.getGenericCandidateVectorBrands(
           candidate,
@@ -4368,24 +4344,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         );
       }
 
-      if (categoryFilters.length > 0) {
-        builder.andWhere(
-          new Brackets((qb) => {
-            categoryFilters.forEach((category, index) => {
-              const parameterName = `fallbackCategory${index}`;
-              const condition = `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName})`;
-
-              if (index === 0) {
-                qb.where(condition, { [parameterName]: `%${category}%` });
-                return;
-              }
-
-              qb.orWhere(condition, { [parameterName]: `%${category}%` });
-            });
-          }),
-        );
-      }
-
       if (intent.nutrition_constraints.max_calories != null) {
         builder.andWhere('menu.calories <= :fallbackMaxCalories', {
           fallbackMaxCalories: intent.nutrition_constraints.max_calories,
@@ -4401,9 +4359,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     };
 
     let fallbackMenus = await buildFallbackQuery(true).getMany();
-    if (fallbackMenus.length === 0 && categoryFilters.length > 0) {
-      fallbackMenus = await buildFallbackQuery(false).getMany();
-    }
     const candidates = fallbackMenus.sort((left, right) => {
       const leftExact = left.name === candidateName ? 0 : 1;
       const rightExact = right.name === candidateName ? 0 : 1;
