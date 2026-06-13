@@ -80,7 +80,7 @@ const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 - "[결론]", "[이유]", "[Action]" 같은 라벨 텍스트는 답변에 쓰지 마세요.
 - 정보가 길어질 경우 무조건 불렛포인트를 사용하여 텍스트 덩어리를 분리하세요.
 - 사용자가 구체적으로 길게 설명해달라고 요청하지 않는 한, 모든 답변은 3~4문장 이내로 압축하세요.
-- 볼드는 핵심 결정어, 수치 데이터, 실행 Action 키워드에만 단어/구 단위로 사용하세요.
+- 볼드는 핵심 결정어와 실행 Action 키워드에만 단어/구 단위로 사용하세요.
 - 문장 전체를 볼드 처리하지 마세요.
 `.trim();
 
@@ -260,10 +260,8 @@ type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
 
 type GenericMenuCandidate = {
   name: string;
-  rank: number;
   brand: string | null;
   category: string | null;
-  reason: string | null;
 };
 
 type GenericMenuCandidatePlan = {
@@ -803,13 +801,18 @@ export class ChatService {
       });
     }
 
-    filteredCandidateMenus = this.filterRecommendationMainMenuCandidates(
-      filteredCandidateMenus,
-      intent,
-    );
+    const shouldApplyMainMenuFilter = !preparedIntroMessage;
+    filteredCandidateMenus = shouldApplyMainMenuFilter
+      ? this.filterRecommendationMainMenuCandidates(
+          filteredCandidateMenus,
+          intent,
+        )
+      : filteredCandidateMenus;
     timing?.mark('main_menu_filter_completed', {
       filteredCount: filteredCandidateMenus.length,
-      applied: this.shouldPreferMainMenuForRecommendation(intent),
+      applied:
+        shouldApplyMainMenuFilter &&
+        this.shouldPreferMainMenuForRecommendation(intent),
     });
 
     if (filteredCandidateMenus.length === 0) {
@@ -1276,6 +1279,27 @@ export class ChatService {
       meal_time: null,
     };
   }
+
+  private toLightweightChatContext(chatContext: ChatContextSummary): {
+    previous_user_input: string | null;
+    previous_category: ChatCategory | null;
+    previous_recommended_menu_names: string[];
+    previous_feedback_menu_names: string[];
+    previous_brand: string | null;
+    previous_category_name: string | null;
+  } {
+    return {
+      previous_user_input: chatContext.previous_user_input,
+      previous_category: chatContext.previous_category,
+      previous_recommended_menu_names:
+        chatContext.previous_recommended_menu_names.slice(0, 5),
+      previous_feedback_menu_names:
+        chatContext.previous_feedback_menu_names.slice(0, 5),
+      previous_brand: chatContext.previous_brand,
+      previous_category_name: chatContext.previous_category_name,
+    };
+  }
+
 
   async recordMealFromChat(
     user: UserEntity,
@@ -3287,10 +3311,7 @@ ${JSON.stringify(
     }
 
     if (vectorMenus.length > 0) {
-      const sqlMenus = this.filterRecommendationMainMenuCandidates(
-        await this.getSqlCandidateMenus(userId, intent),
-        intent,
-      );
+      const sqlMenus = await this.getSqlCandidateMenus(userId, intent);
       timing?.mark('sql_fallback_candidates_loaded', {
         sqlCandidateCount: sqlMenus.length,
       });
@@ -3301,10 +3322,7 @@ ${JSON.stringify(
       };
     }
 
-    const sqlMenus = this.filterRecommendationMainMenuCandidates(
-      await this.getSqlCandidateMenus(userId, intent),
-      intent,
-    );
+    const sqlMenus = await this.getSqlCandidateMenus(userId, intent);
     timing?.mark('sql_candidates_loaded', {
       sqlCandidateCount: sqlMenus.length,
     });
@@ -3345,9 +3363,6 @@ ${JSON.stringify(
             : null,
           maxCalories: intent.nutrition_constraints.max_calories,
           minProtein: intent.nutrition_constraints.min_protein,
-          excludeTextTerms: this.shouldPreferMainMenuForRecommendation(intent)
-            ? this.getSideDrinkOrDessertMenuTerms()
-            : null,
         },
       );
       timing?.mark('vector_search_completed', {
@@ -3360,15 +3375,10 @@ ${JSON.stringify(
       }
 
       const menus = await this.getMenusByIds(userId, menuIds);
-      const filteredMenus = this.filterRecommendationMainMenuCandidates(
-        menus,
-        intent,
-      );
       timing?.mark('vector_mysql_detail_loaded', {
-        menuCount: filteredMenus.length,
-        beforeMainMenuFilterCount: menus.length,
+        menuCount: menus.length,
       });
-      return filteredMenus;
+      return menus;
     } catch (error) {
       console.warn('[CHAT] vector candidate search failed, fallback to mysql', {
         message: error instanceof Error ? error.message : String(error),
@@ -3532,14 +3542,15 @@ ${JSON.stringify(
 - 메뉴명/브랜드명/카테고리를 반드시 말해야 한다는 압박 없이, 필요할 때만 자연스럽게 언급해
 - 단, 사용자 정보와 오늘 식사 흐름은 판단에 참고해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
+- intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
+- 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
 - menu_candidates는 intro_message 안에 실제로 등장한 특정 메뉴/음식/브랜드/카테고리만 추출해
 - intro_message에 메뉴가 명확히 등장하지 않으면 menu_candidates는 빈 배열로 둬
 - intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
-- 각 후보는 name, brand, category, reason만 작성해
+- 각 후보는 name, brand, category만 작성해
 - name은 intro_message에 등장한 표현을 최대한 그대로 사용해
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
-- reason은 후보를 추출한 이유를 내부 참고용으로 40자 이내로 작성해
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
 - 아래 사용자 식사 정보는 후보 생성을 위한 내부 참고 정보야
 
@@ -3557,11 +3568,9 @@ ${JSON.stringify(userContext)}
   "intro_message": "string",
   "menu_candidates": [
     {
-      "rank": 1,
       "name": "치킨",
       "brand": null,
-      "category": "치킨",
-      "reason": "intro에서 언급됨"
+      "category": "치킨"
     }
   ]
 }
@@ -3576,25 +3585,15 @@ ${JSON.stringify(userContext)}
       : [];
     const normalizedCandidates = candidates
       .map((candidate) => ({
-        rank: Number(candidate?.rank),
         name: this.asNonEmptyString(candidate?.name) ?? '',
         brand: this.asNonEmptyString(candidate?.brand),
         category: this.asNonEmptyString(candidate?.category),
-        reason: this.asNonEmptyString(candidate?.reason),
       }))
       .filter((candidate) => candidate.name.length >= 2)
-      .sort((a, b) => {
-        const leftRank = Number.isFinite(a.rank) ? a.rank : Number.MAX_SAFE_INTEGER;
-        const rightRank = Number.isFinite(b.rank) ? b.rank : Number.MAX_SAFE_INTEGER;
-
-        return leftRank - rightRank;
-      })
-      .map((candidate, index) => ({
+      .map((candidate) => ({
         name: candidate.name,
-        rank: Number.isFinite(candidate.rank) ? candidate.rank : index + 1,
         brand: candidate.brand ?? null,
         category: candidate.category ?? null,
-        reason: candidate.reason ?? null,
       }))
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
@@ -3629,7 +3628,8 @@ ${JSON.stringify(userContext)}
 
     const menuVectorService = this.menuVectorService;
     const matchLogs: Array<{
-      candidate: Pick<GenericMenuCandidate, 'name' | 'rank' | 'brand' | 'category'>;
+      candidateIndex: number;
+      candidate: Pick<GenericMenuCandidate, 'name' | 'brand' | 'category'>;
       source: 'vector' | 'keyword_fallback' | 'none';
       menuId: number | null;
       menuName: string | null;
@@ -3641,9 +3641,12 @@ ${JSON.stringify(userContext)}
         genericCandidates,
       );
     const matchedMenus = await this.mapWithConcurrency(
-      genericCandidates,
+      genericCandidates.map((candidate, candidateIndex) => ({
+        candidate,
+        candidateIndex,
+      })),
       this.getGeminiGenericMenuVectorConcurrency(),
-      async (candidate) => {
+      async ({ candidate, candidateIndex }) => {
         const brandFilters = this.hasBrandIntent(intent)
           ? this.getGenericCandidateVectorBrands(
               candidate,
@@ -3672,9 +3675,6 @@ ${JSON.stringify(userContext)}
               : null,
             maxCalories: intent.nutrition_constraints.max_calories,
             minProtein: intent.nutrition_constraints.min_protein,
-            excludeTextTerms: this.shouldPreferMainMenuForRecommendation(intent)
-              ? this.getSideDrinkOrDessertMenuTerms()
-              : null,
           },
         );
         const menuIds = vectorResults.map((result) => result.menuId);
@@ -3687,9 +3687,9 @@ ${JSON.stringify(userContext)}
 
         if (matchedMenu) {
           matchLogs.push({
+            candidateIndex,
             candidate: {
               name: candidate.name,
-              rank: candidate.rank,
               brand: candidate.brand,
               category: candidate.category,
             },
@@ -3708,9 +3708,9 @@ ${JSON.stringify(userContext)}
           supportedCandidateBrandKeys,
         );
         matchLogs.push({
+          candidateIndex,
           candidate: {
             name: candidate.name,
-            rank: candidate.rank,
             brand: candidate.brand,
             category: candidate.category,
           },
@@ -3726,12 +3726,12 @@ ${JSON.stringify(userContext)}
       },
     );
 
-    matchLogs.sort((a, b) => a.candidate.rank - b.candidate.rank);
+    matchLogs.sort((a, b) => a.candidateIndex - b.candidateIndex);
     console.log('[CHAT] Gemini candidate DB matches', {
-      matches: matchLogs,
+      matches: matchLogs.map(({ candidateIndex, ...log }) => log),
     });
     timing?.mark('gemini_generic_candidate_match_details_logged', {
-      matches: matchLogs,
+      matches: matchLogs.map(({ candidateIndex, ...log }) => log),
     });
 
     return this.mergeMenusById(
@@ -3849,8 +3849,7 @@ ${JSON.stringify(userContext)}
     if (fallbackMenus.length === 0 && categoryFilters.length > 0) {
       fallbackMenus = await buildFallbackQuery(false).getMany();
     }
-    const candidates = this.filterRecommendationMainMenuCandidates(
-      fallbackMenus.sort((left, right) => {
+    const candidates = fallbackMenus.sort((left, right) => {
         const leftExact = left.name === candidateName ? 0 : 1;
         const rightExact = right.name === candidateName ? 0 : 1;
 
@@ -3859,9 +3858,7 @@ ${JSON.stringify(userContext)}
         }
 
         return left.name.length - right.name.length;
-      }),
-      intent,
-    );
+      });
 
     return this.findMostSimilarMenuAboveThreshold(candidateName, candidates, 20);
   }
@@ -3948,7 +3945,6 @@ ${JSON.stringify(userContext)}
       `추천 후보 음식명: ${candidate.name}`,
       candidate.brand ? `후보 브랜드/매장: ${candidate.brand}` : null,
       candidate.category ? `후보 카테고리: ${candidate.category}` : null,
-      candidate.reason ? `후보 판단 근거: ${candidate.reason}` : null,
       '이 후보와 같은 음식명/대표 음식만 DB에서 찾는다.',
       '재료가 비슷해도 조리 방식이나 음식 종류가 다르면 제외한다.',
       '예: 삼겹살 후보는 삼겹살/삼겹살구이를 우선하고 돼지고기 수육, 제육, 김치찌개는 제외한다.',
@@ -5870,66 +5866,30 @@ ${JSON.stringify(userContext)}
     chatContext: ChatContextSummary,
   ): Promise<ChatAnalysis> {
     const fallbackIntent = this.buildFallbackIntent(input);
+    const lightweightContext = this.toLightweightChatContext(chatContext);
     const prompt = `
-사용자 입력을 채팅 카테고리와 메뉴 추천 의도로 동시에 분석하고 JSON object만 반환해.
+사용자 입력을 채팅 라우팅용으로 가볍게 분석하고 JSON object만 반환해.
 반드시 JSON만 반환하고 마크다운, 설명, 코드펜스는 금지.
 
 채팅 분류:
 - recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
-- recommendation: "A와 B 중 뭐 먹을까?", "A랑 B 중 뭐가 나아?", "A vs B 추천"처럼 구체적인 음식 메뉴명 중 하나를 골라달라는 비교 선택 요청
-- recommendation: "맥도날드, 버거킹, 롯데리아 중 어디갈까?", "중국집, 샤브샤브, 삼겹살 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리 중 어디를 갈지 묻는 요청은 비교 선택이 아니라 일반 추천 요청으로 분류해
-- recommendation: 브랜드 별칭, 줄임말, 외래어 표기가 섞인 브랜드/매장 선택 요청도 브랜드 선택형 일반 추천이고, 구체 메뉴 비교가 아니야
 - feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
 - general: 메뉴 추천 또는 메뉴/식단 피드백이 아닌 모든 일반 질문, 설명, 상담, 대화 요청
 
-맥락 규칙:
-- feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
-- recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
-- 비교 선택 recommendation일 때는 비교 대상이 실제로 먹을 수 있는 구체적인 음식 메뉴명일 때만 menu_names와 intent.include.menu_names에 넣어
-- 브랜드/매장명/장소명/음식 카테고리 비교는 menu_names와 intent.include.menu_names에 넣지 말고, include.brands/categories/keywords 또는 desired_brand/desired_category에 반영해
-- 비교 선택 recommendation의 menu_names는 DB 검색에 바로 쓸 수 있는 완성 음식명으로 정규화해
-- 비교 대상 중 한쪽이 "후라이", "프라이", "구이", "볶음", "찜", "탕", "국"처럼 조리 방식만 말한 생략 표현이면, 같은 문장 안의 다른 비교 대상이나 문맥에서 공통 재료를 추론해 완성 음식명으로 복원해
-- 예: "삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> menu_names=["삶은 달걀","달걀 프라이"], intent.include.menu_names도 동일
-- 예: "삶은 계란이랑 프라이 중에는?" -> menu_names=["삶은 계란","계란 프라이"], intent.include.menu_names도 동일
-- 예: "돼지고기 구이랑 찜 중 뭐가 나아?" -> menu_names=["돼지고기 구이","돼지고기 찜"], intent.include.menu_names도 동일
-- 예: "맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> recommendation, menu_names=[], intent.include.menu_names=[]
-- 예: "중국집, 샤브샤브, 삼겹살 중 어디갈까?" -> recommendation, menu_names=[], intent.include.menu_names=[]
-- 단, 원문에 재료 단서가 전혀 없으면 억지로 추론하지 말고 원문 표현을 유지해
+추출 규칙:
+- feedback일 때만 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
+- recommendation일 때 menu_names는 빈 배열로 둬. 메뉴 후보 선택은 다음 Gemini 단계가 담당해
 - general일 때는 menu_names를 빈 배열로 반환해
+- 브랜드/매장명이 명확하면 intent.desired_brand 또는 intent.include.brands에 넣어
+- 카테고리/음식 범주가 명확하면 intent.desired_category 또는 intent.include.categories에 넣어
+- 숫자 영양 조건, 칼로리 조건, 탄단지 조건은 추출하지 마. nutrition_constraints는 항상 모두 null로 둬
 - 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
 - "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
 - "그 조건으로", "비슷한 걸로", "아까처럼"처럼 이전 조건을 유지해야 하면 context_action은 "reuse_previous_conditions"
 - "그거 먹어도 돼?", "아까 거 괜찮아?"처럼 이전 메뉴를 평가해야 하면 feedback 및 "evaluate_previous_menus"
 
-추천 의도 규칙:
-- meal_time: 0(아침), 1(점심), 2(저녁), 3(간식), 4(야식), 불명확하면 null
-- desired_brand, desired_category: 문자열 또는 null
-- 사용자가 여러 브랜드/매장 후보 중 하나를 고르는 요청이면 desired_brand는 반드시 null로 두고, 모든 브랜드/매장명은 include.brands에 넣어
-- 예: "맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> desired_brand=null, include.brands=["맥도날드","버거킹","롯데리아"]
-- 브랜드 별칭, 줄임말, 오타, 외래어 표기는 문맥상 가장 일반적인 표준 브랜드명으로 정규화해
-- 브랜드/매장 후보를 고르는 요청이면 구체 메뉴 비교로 보지 말고 desired_brand=null, include.brands에 정규화된 브랜드들을 넣고 menu_names는 비워
-- nutrition_focus: 다음 값만 사용 ["high_protein","high_fat","low_carb","low_sugar","light_meal","hearty_meal"]
-- amount_preference: "light" | "regular" | "hearty" | null
-- keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
-- normalized_request: 사용자의 의도를 한 문장으로 정리
-- include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
-- "A와 B 중 뭐 먹을까?" 같은 구체적인 음식 메뉴명 비교 선택 요청은 include.menu_names에 정규화된 A, B를 넣어
-- "A, B, C 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리를 고르는 요청은 include.menu_names를 비워두고, 브랜드/매장명은 include.brands에 넣고 desired_brand는 null로 둬
-- 브랜드 별칭이 포함된 선택 요청도 구체 메뉴 비교가 아니라 브랜드 선택형 일반 추천이야
-- 비교 선택 요청에서 classification.menu_names와 intent.include.menu_names는 같은 정규화 메뉴명 목록을 사용해
-- exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
-- nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
-- caffeine_allowed: "카페인 없는", "디카페인", "카페인 빼고"는 false, 명확하지 않으면 null
-- context_action이 "exclude_previous_recommendations"이면 이전 추천 메뉴명은 exclude.menu_names에 넣어
-- context_action이 "reuse_previous_conditions"이면 이전 요청의 브랜드/카테고리/끼니 맥락은 유지하고, 현재 입력에서 바꾼 조건만 덮어써
-
-사용자 프로필:
-goal=${this.goalToLabel(userInfo.goal)}
-target_calories=${userInfo.target_calories}
-target_ratio=${JSON.stringify(this.normalizeTargetRatio(userInfo.target_ratio))}
-
 최근 대화 요약:
-${JSON.stringify(chatContext)}
+${JSON.stringify(lightweightContext)}
 
 입력:
 ${input}
@@ -5945,30 +5905,13 @@ ${input}
     "meal_time": null,
     "desired_brand": null,
     "desired_category": null,
-    "nutrition_focus": [],
-    "amount_preference": "regular",
-    "keywords": [],
     "include": {
       "brands": [],
-      "categories": [],
-      "menu_names": [],
-      "keywords": []
+      "categories": []
     },
     "exclude": {
       "brands": [],
-      "categories": [],
-      "menu_names": [],
-      "keywords": []
-    },
-    "nutrition_constraints": {
-      "max_calories": null,
-      "min_calories": null,
-      "min_protein": null,
-      "max_carbs": null,
-      "max_sugars": null,
-      "max_fat": null,
-      "max_sodium": null,
-      "caffeine_allowed": null
+      "menu_names": []
     }
   }
 }
@@ -6020,37 +5963,18 @@ ${input}
         this.normalizeCategoryKeyword(
           this.asNonEmptyString(intentSource.desired_category),
         ) ?? fallbackIntent.desired_category,
-      nutrition_focus: this.normalizeStringArray(
-        intentSource.nutrition_focus,
-        [
-          'high_protein',
-          'high_fat',
-          'low_carb',
-          'low_sugar',
-          'light_meal',
-          'hearty_meal',
-        ],
-        fallbackIntent.nutrition_focus,
-      ),
-      amount_preference:
-        this.normalizeAmountPreference(intentSource.amount_preference) ??
-        fallbackIntent.amount_preference,
-      keywords: this.normalizeKeywordArray(
-        intentSource.keywords,
-        fallbackIntent.keywords,
-      ),
-      include: this.normalizeIntentConditionGroup(
+      nutrition_focus: [],
+      amount_preference: null,
+      keywords: [],
+      include: this.normalizeLightweightIntentConditionGroup(
         intentSource.include,
         fallbackIntent.include,
       ),
-      exclude: this.normalizeIntentConditionGroup(
+      exclude: this.normalizeLightweightIntentConditionGroup(
         intentSource.exclude,
         fallbackIntent.exclude,
       ),
-      nutrition_constraints: this.normalizeNutritionConstraints(
-        intentSource.nutrition_constraints,
-        fallbackIntent.nutrition_constraints,
-      ),
+      nutrition_constraints: this.emptyNutritionConstraints(),
     };
 
     return {
@@ -6657,7 +6581,6 @@ JSON shape:
 
   private buildFallbackIntent(input: string): ParsedChatIntent {
     const normalizedInput = input.trim();
-    const lowerInput = normalizedInput.toLowerCase();
     const meal_time = normalizedInput.includes('아침')
       ? 0
       : normalizedInput.includes('점심')
@@ -6670,54 +6593,20 @@ JSON shape:
               ? 4
               : null;
 
-    const nutrition_focus: string[] = [];
-    if (normalizedInput.includes('단백질')) {
-      nutrition_focus.push('high_protein');
-    }
-    if (normalizedInput.includes('고지방')) {
-      nutrition_focus.push('high_fat');
-    }
-    if (
-      normalizedInput.includes('저탄수') ||
-      normalizedInput.includes('로우카브')
-    ) {
-      nutrition_focus.push('low_carb');
-    }
-    if (normalizedInput.includes('저당') || normalizedInput.includes('당')) {
-      nutrition_focus.push('low_sugar');
-    }
-    if (normalizedInput.includes('간단') || normalizedInput.includes('가볍')) {
-      nutrition_focus.push('light_meal');
-    }
-    if (normalizedInput.includes('든든') || normalizedInput.includes('포만')) {
-      nutrition_focus.push('hearty_meal');
-    }
-
     const include = this.extractFallbackIncludeConditions(normalizedInput);
     const exclude = this.extractFallbackExcludeConditions(normalizedInput);
-    const nutritionConstraints =
-      this.extractFallbackNutritionConstraints(normalizedInput);
 
     return {
       normalized_request: normalizedInput,
       meal_time,
       desired_brand: this.extractBrandKeyword(normalizedInput),
       desired_category: this.extractCategoryKeyword(normalizedInput),
-      nutrition_focus,
-      amount_preference:
-        lowerInput.includes('간단') || lowerInput.includes('가볍')
-          ? 'light'
-          : lowerInput.includes('든든') || lowerInput.includes('포만')
-            ? 'hearty'
-            : 'regular',
-      keywords: normalizedInput
-        .split(/\s+/)
-        .map((token) => token.replace(/[^\w가-힣]/g, ''))
-        .filter((token) => token.length >= 2)
-        .slice(0, 6),
+      nutrition_focus: [],
+      amount_preference: null,
+      keywords: [],
       include,
       exclude,
-      nutrition_constraints: nutritionConstraints,
+      nutrition_constraints: this.emptyNutritionConstraints(),
     };
   }
 
@@ -6970,6 +6859,8 @@ JSON shape:
 - 질문이 식단/영양과 관련 없으면 건강/식단/운동 이야기로 억지 전환하지 말고 질문 자체에 답해
 - 실시간 날씨, 최신 뉴스, 주가처럼 현재 조회가 필요한 질문은 실시간 조회가 어렵다고 짧게 말하고, 사용자가 확인할 수 있는 방법을 안내해
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
+- 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치는 말하지 않기
+- 영양 설명이 필요하면 정성적인 표현으로만 말하기
 - intro_message는 1~2문장으로 짧게 작성
 - general_answer는 사용자가 길게 설명해달라고 요청하지 않는 한 3~4문장 이내로 작성
 - 핵심 결론을 먼저 말하고, 이어서 짧은 이유나 실행 팁을 자연문으로 덧붙여
@@ -7100,6 +6991,8 @@ ${JSON.stringify({
 - 추천 메뉴나 피드백 메뉴명은 가장 중요한 상위 1개만 언급
 - 나머지 분량은 현재 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
+- 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치는 말하지 않기
+- 영양 설명이 필요하면 정성적인 표현으로만 말하기
 - 단품/조합/다음 끼니 조절 같은 실행 가능한 팁은 1개만 포함
 - 과장, 의학적 단정, 확정적인 건강 효과 표현은 피하기
 - 죄책감을 자극하지 말고, 지속 가능한 선택을 돕는 방향으로 작성
@@ -7318,6 +7211,8 @@ ${JSON.stringify(menusPayload)}
 - 원본명이 길거나 제품명/문장형이면 가장 가까운 일반 음식명으로 말해. 예: "두마리같은한마리치킨주세요 닭튀김"은 "치킨", "옛날중국집간짜장곱빼기"는 "짜장면"처럼 말해
 - 나머지는 현재 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
+- 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치는 말하지 않기
+- 영양 설명이 필요하면 정성적인 표현으로만 말하기
 - 과장, 의학적 단정, 확정적인 건강 효과 표현은 피하기
 - 죄책감을 자극하지 말고, 지속 가능한 선택을 돕는 방향으로 작성
 - 느낌표는 필요할 때만 최대 1개 사용
@@ -7913,6 +7808,45 @@ ${JSON.stringify(candidates)}
       categories,
       menu_names: menuNames,
       keywords,
+    };
+  }
+
+  private normalizeLightweightIntentConditionGroup(
+    value: unknown,
+    fallback: IntentConditionGroup,
+  ): IntentConditionGroup {
+    if (!value || typeof value !== 'object') {
+      return {
+        brands: fallback.brands,
+        categories: fallback.categories,
+        menu_names: fallback.menu_names,
+        keywords: [],
+      };
+    }
+
+    const source = value as Partial<
+      Record<keyof IntentConditionGroup, unknown>
+    >;
+    const brands = this.normalizeFreeTextArray(source.brands, fallback.brands);
+    const categories = Array.from(
+      new Set(
+        this.normalizeFreeTextArray(source.categories, fallback.categories)
+          .map(
+            (category) => this.normalizeCategoryKeyword(category) ?? category,
+          )
+          .filter((category) => category.length >= 2),
+      ),
+    );
+    const menuNames = this.normalizeFreeTextArray(
+      source.menu_names,
+      fallback.menu_names,
+    );
+
+    return {
+      brands,
+      categories,
+      menu_names: menuNames,
+      keywords: [],
     };
   }
 
