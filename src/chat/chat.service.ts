@@ -3530,10 +3530,13 @@ ${JSON.stringify(
 - 사용자의 표현이 구체 메뉴 추천을 원하는 맥락이면 name을 실제 메뉴명 수준으로 구체화해
 - 후보명 추상도는 사용자 질문의 선택지 단위, 비교 단위, 식사 맥락을 종합해서 스스로 판단해
 - 서로 비교되는 후보들은 가능한 한 같은 추상도와 같은 단위로 작성해
+- 사용자 정보와 영양 목표는 후보의 순위와 reason 판단에 반영하되, 사용자가 제시한 후보명을 불필요하게 구체화하는 근거로 쓰지 마
+- 넓은 음식 범주끼리 고르는 요청이라면 조리법, 맛, 세부 메뉴명을 임의로 붙이지 말고 범주명을 유지해
+- 선택지의 추상도가 애매하면 더 구체적인 메뉴명보다 사용자가 말한 후보 단위에 가까운 표현을 우선해
 - brand는 사용자가 특정 브랜드/매장을 명시했고 그 후보가 그 브랜드 메뉴일 때만 넣어. 불명확하면 null
 - category는 음식 카테고리나 메뉴군이 명확할 때만 넣어. 불명확하면 null
 - reason은 후보를 고른 짧은 판단 근거야. 사용자에게 그대로 노출하지 않는 내부 참고용으로 40자 이내로 작성해
-- DB에 없는 브랜드가 언급됐으면 그 브랜드의 메뉴 성격을 추론하되, name은 DB에서 일반 음식으로 매칭 가능한 후보명으로 만들어
+- DB에 없는 브랜드가 언급됐으면 그 브랜드의 메뉴 성격을 추론하되, name은 사용자 요청에 자연스러운 음식 후보명으로 만들어
 - 사용자가 특정 카테고리를 말했으면 그 범위 안에서 후보를 만들어
 - 사용자가 여러 선택지를 제시하면 반드시 그 선택지의 의미 범위 안에서만 순위를 정해
 - 선택지형 입력에서는 사용자가 제시한 선택지보다 과하게 좁히거나 넓히지 마
@@ -3722,91 +3725,98 @@ ${JSON.stringify(userContext)}
       return null;
     }
 
-    const builder = this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoinAndSelect('menu.user', 'user')
-      .where(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .andWhere('menu.name LIKE :candidateName', {
-        candidateName: `%${candidateName}%`,
-      });
-
-    if (
-      this.shouldUseDefaultGenericCandidateMenuScope(
-        candidate,
-        supportedCandidateBrandKeys,
-      )
-    ) {
-      builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
-        defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
-      });
-    }
-
-    const brandFilters = this.getGenericCandidateVectorBrands(
-      candidate,
-      supportedCandidateBrandKeys,
-    );
-    if (brandFilters && brandFilters.length > 0) {
-      builder.andWhere(
-        new Brackets((qb) => {
-          brandFilters.forEach((brand, index) => {
-            const parameterName = `fallbackBrand${index}`;
-            const condition = `menu.brand LIKE :${parameterName}`;
-
-            if (index === 0) {
-              qb.where(condition, { [parameterName]: `%${brand}%` });
-              return;
-            }
-
-            qb.orWhere(condition, { [parameterName]: `%${brand}%` });
-          });
-        }),
-      );
-    }
-
     const categoryFilters = [
       candidate.category,
       intent.desired_category,
       ...intent.include.categories,
     ].filter((category): category is string => !!this.asNonEmptyString(category));
-    if (categoryFilters.length > 0) {
-      builder.andWhere(
-        new Brackets((qb) => {
-          categoryFilters.forEach((category, index) => {
-            const parameterName = `fallbackCategory${index}`;
-            const condition =
-              `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName})`;
+    const brandFilters = this.getGenericCandidateVectorBrands(
+      candidate,
+      supportedCandidateBrandKeys,
+    );
+    const buildFallbackQuery = (useCandidateName: boolean) => {
+      const builder = this.menuRepository
+        .createQueryBuilder('menu')
+        .leftJoinAndSelect('menu.user', 'user')
+        .where(
+          new Brackets((qb) => {
+            qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+          }),
+        )
+        .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 });
 
-            if (index === 0) {
-              qb.where(condition, { [parameterName]: `%${category}%` });
-              return;
-            }
+      if (useCandidateName) {
+        builder.andWhere('menu.name LIKE :candidateName', {
+          candidateName: `%${candidateName}%`,
+        });
+      }
 
-            qb.orWhere(condition, { [parameterName]: `%${category}%` });
-          });
-        }),
-      );
+      if (
+        this.shouldUseDefaultGenericCandidateMenuScope(
+          candidate,
+          supportedCandidateBrandKeys,
+        )
+      ) {
+        builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
+          defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
+        });
+      }
+
+      if (brandFilters && brandFilters.length > 0) {
+        builder.andWhere(
+          new Brackets((qb) => {
+            brandFilters.forEach((brand, index) => {
+              const parameterName = `fallbackBrand${index}`;
+              const condition = `menu.brand LIKE :${parameterName}`;
+
+              if (index === 0) {
+                qb.where(condition, { [parameterName]: `%${brand}%` });
+                return;
+              }
+
+              qb.orWhere(condition, { [parameterName]: `%${brand}%` });
+            });
+          }),
+        );
+      }
+
+      if (categoryFilters.length > 0) {
+        builder.andWhere(
+          new Brackets((qb) => {
+            categoryFilters.forEach((category, index) => {
+              const parameterName = `fallbackCategory${index}`;
+              const condition =
+                `(menu.category LIKE :${parameterName} OR menu.name LIKE :${parameterName})`;
+
+              if (index === 0) {
+                qb.where(condition, { [parameterName]: `%${category}%` });
+                return;
+              }
+
+              qb.orWhere(condition, { [parameterName]: `%${category}%` });
+            });
+          }),
+        );
+      }
+
+      if (intent.nutrition_constraints.max_calories != null) {
+        builder.andWhere('menu.calories <= :fallbackMaxCalories', {
+          fallbackMaxCalories: intent.nutrition_constraints.max_calories,
+        });
+      }
+      if (intent.nutrition_constraints.min_protein != null) {
+        builder.andWhere('menu.protein >= :fallbackMinProtein', {
+          fallbackMinProtein: intent.nutrition_constraints.min_protein,
+        });
+      }
+
+      return builder.orderBy('menu.id', 'ASC').take(20);
+    };
+
+    let fallbackMenus = await buildFallbackQuery(true).getMany();
+    if (fallbackMenus.length === 0 && categoryFilters.length > 0) {
+      fallbackMenus = await buildFallbackQuery(false).getMany();
     }
-
-    if (intent.nutrition_constraints.max_calories != null) {
-      builder.andWhere('menu.calories <= :fallbackMaxCalories', {
-        fallbackMaxCalories: intent.nutrition_constraints.max_calories,
-      });
-    }
-    if (intent.nutrition_constraints.min_protein != null) {
-      builder.andWhere('menu.protein >= :fallbackMinProtein', {
-        fallbackMinProtein: intent.nutrition_constraints.min_protein,
-      });
-    }
-
-    const fallbackMenus = await builder
-      .orderBy('CHAR_LENGTH(menu.name)', 'ASC')
-      .take(20)
-      .getMany();
     const candidates = this.filterRecommendationMainMenuCandidates(
       fallbackMenus.sort((left, right) => {
         const leftExact = left.name === candidateName ? 0 : 1;
