@@ -5,12 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, MoreThan, Repository } from 'typeorm';
+import { DataSource, In, MoreThan, Repository } from 'typeorm';
 import { UserEntity } from './entity/user/user.entity';
 import { UserInfoEntity } from './entity/user/userInfo.entity';
 import { SubscriptionCodeEntity } from './entity/subscription-code.entity';
 import { UserSubscriptionEntity } from './entity/user-subscription.entity';
-import { CreateSubscriptionCodeRequestDto } from './dto/subscription-code-dto/request-dto/create-subscription-code-request-dto';
+import {
+  CreateSubscriptionCodeRequestDto,
+  CreateSubscriptionCodesRequestDto,
+} from './dto/subscription-code-dto/request-dto/create-subscription-code-request-dto';
 
 @Injectable()
 export class SubscriptionService {
@@ -96,6 +99,54 @@ export class SubscriptionService {
         benefit_days: dto.benefit_days ?? 30,
       }),
     );
+  }
+
+  async createSubscriptionCodes(
+    dto: CreateSubscriptionCodesRequestDto,
+  ): Promise<SubscriptionCodeEntity[]> {
+    const codes = dto.codes.map((code) => this.normalizeCode(code));
+
+    if (codes.some((code) => !code)) {
+      throw new BadRequestException('code must not be empty');
+    }
+
+    const uniqueCodes = new Set(codes);
+
+    if (uniqueCodes.size !== codes.length) {
+      throw new ConflictException('Subscription code already exists');
+    }
+
+    const startsAt = dto.starts_at ? new Date(dto.starts_at) : null;
+    const expiresAt = dto.expires_at ? new Date(dto.expires_at) : null;
+
+    if (startsAt && expiresAt && startsAt >= expiresAt) {
+      throw new BadRequestException('expires_at must be after starts_at');
+    }
+
+    return await this.dataSource.transaction(async (manager) => {
+      const existingCodes = await manager.find(SubscriptionCodeEntity, {
+        where: { code: In(codes) },
+      });
+
+      if (existingCodes.length > 0) {
+        throw new ConflictException('Subscription code already exists');
+      }
+
+      const subscriptionCodes = codes.map((code) =>
+        manager.create(SubscriptionCodeEntity, {
+          code,
+          type: dto.type ?? 'PROMOTION',
+          status: 'ACTIVE',
+          max_uses: dto.max_uses ?? 1,
+          used_count: 0,
+          starts_at: startsAt,
+          expires_at: expiresAt,
+          benefit_days: dto.benefit_days ?? 30,
+        }),
+      );
+
+      return await manager.save(subscriptionCodes);
+    });
   }
 
   async authorizeSubscriptionCode(

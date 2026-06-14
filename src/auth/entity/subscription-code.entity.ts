@@ -7,7 +7,12 @@ import {
 } from 'typeorm';
 import { UserSubscriptionEntity } from './user-subscription.entity';
 
-export type SubscriptionCodeType = 'TRIAL' | 'PAID' | 'PROMOTION' | 'ADMIN';
+export type SubscriptionCodeType =
+  | 'TRIAL'
+  | 'PAID'
+  | 'PROMOTION'
+  | 'ADMIN'
+  | 'TUMBLBUG';
 export type SubscriptionCodeStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'REVOKED';
 
 @Entity({ name: 'subscription_code' })

@@ -13,8 +13,8 @@ export class SubscriptionCodeResponseDto {
   code: string;
 
   @ApiProperty({
-    enum: ['TRIAL', 'PAID', 'PROMOTION', 'ADMIN'],
-    example: 'PROMOTION',
+    enum: ['TRIAL', 'PAID', 'PROMOTION', 'ADMIN', 'TUMBLBUG'],
+    example: 'TUMBLBUG',
   })
   type: SubscriptionCodeType;
 
