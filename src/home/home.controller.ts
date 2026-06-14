@@ -345,9 +345,10 @@ export class HomeController {
   @ResponseMsg('Nutrition label recognized successfully')
   @Post('recognizeNutritionLabel')
   async recognizeNutritionLabel(
+    @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<NutritionLabelRecognitionResponseDto> {
-    return await this.homeService.recognizeNutritionLabel(file);
+    return await this.homeService.recognizeNutritionLabel(user, file);
   }
 
   @ApiBearerAuth('accessToken')

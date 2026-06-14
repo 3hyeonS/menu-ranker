@@ -1428,6 +1428,7 @@ failure_reason enum:
 
   // 영양성분표 사진 인식
   async recognizeNutritionLabel(
+    user: UserEntity,
     file: Express.Multer.File,
   ): Promise<NutritionLabelRecognitionResponseDto> {
     if (!file) {
@@ -1475,6 +1476,7 @@ failure_reason enum:
 `.trim();
 
     const data = await this.callGeminiJsonWithImage(prompt, file);
+    await this.uploadNutritionLabelImage(user, file);
 
     return new NutritionLabelRecognitionResponseDto(
       this.normalizeNutritionLabelRecognition(data),
@@ -2515,6 +2517,28 @@ failure_reason enum:
     const randomString = Math.random().toString(36).substring(2, 12);
     const fileExtension = this.getImageExtension(file.mimetype);
     const fileKey = `meal-recognition/${user.id}/${date}/${randomString}.${fileExtension}`;
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: fileKey,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
+
+    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+  }
+
+  // 영양성분표 인식용 사진 S3 업로드
+  private async uploadNutritionLabelImage(
+    user: UserEntity,
+    file: Express.Multer.File,
+  ): Promise<string> {
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomString = Math.random().toString(36).substring(2, 12);
+    const fileExtension = this.getImageExtension(file.mimetype);
+    const fileKey = `nutrition-label-recognition/${user.id}/${date}/${randomString}.${fileExtension}`;
 
     await this.s3.send(
       new PutObjectCommand({

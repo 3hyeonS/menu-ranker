@@ -451,20 +451,72 @@ export class AuthService {
   }
 
   private async requestAmplitudeUserDeletion(userId: number): Promise<void> {
-    const amplitudeApiKey = process.env.AMPLITUDE_API_KEY;
-    const amplitudeApiSecret = process.env.AMPLITUDE_API_SECRET;
     const amplitudeUserId = this.buildAmplitudeUserId(userId);
+    const credentials = [
+      {
+        label: 'primary',
+        apiKey: process.env.AMPLITUDE_API_KEY,
+        apiSecret: process.env.AMPLITUDE_API_SECRET,
+      },
+      {
+        label: 'secondary',
+        apiKey: process.env.AMPLITUDE_API_KEY_SECOND,
+        apiSecret: process.env.AMPLITUDE_API_SECRET_SECOND,
+      },
+    ].filter((credential) => credential.apiKey && credential.apiSecret);
 
-    if (!amplitudeApiKey || !amplitudeApiSecret) {
+    if (credentials.length === 0) {
       this.logger.error('Amplitude credentials are not configured');
       throw new InternalServerErrorException(
         'Amplitude credentials are not configured',
       );
     }
 
-    const authorization = Buffer.from(
-      `${amplitudeApiKey}:${amplitudeApiSecret}`,
-    ).toString('base64');
+    let lastError: unknown = null;
+
+    for (const credential of credentials) {
+      try {
+        await this.requestAmplitudeUserDeletionWithCredential(
+          userId,
+          amplitudeUserId,
+          credential.apiKey,
+          credential.apiSecret,
+          credential.label,
+        );
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    const amplitudeError = lastError as {
+      response?: {
+        status?: number;
+        data?: unknown;
+      };
+      message?: string;
+    };
+
+    this.logger.error('Amplitude deletion failed', {
+      userId,
+      amplitudeUserId,
+      status: amplitudeError.response?.status,
+      data: amplitudeError.response?.data,
+      message: amplitudeError.message,
+    });
+    throw new InternalServerErrorException('Amplitude deletion failed');
+  }
+
+  private async requestAmplitudeUserDeletionWithCredential(
+    userId: number,
+    amplitudeUserId: string,
+    apiKey: string,
+    apiSecret: string,
+    credentialLabel: string,
+  ): Promise<void> {
+    const authorization = Buffer.from(`${apiKey}:${apiSecret}`).toString(
+      'base64',
+    );
 
     try {
       await firstValueFrom(
@@ -493,14 +545,15 @@ export class AuthService {
         message?: string;
       };
 
-      this.logger.error('Amplitude deletion failed', {
+      this.logger.warn('Amplitude deletion attempt failed', {
         userId,
         amplitudeUserId,
+        credentialLabel,
         status: amplitudeError.response?.status,
         data: amplitudeError.response?.data,
         message: amplitudeError.message,
       });
-      throw new InternalServerErrorException('Amplitude deletion failed');
+      throw error;
     }
   }
 
