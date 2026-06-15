@@ -663,133 +663,143 @@ export class ChatService {
       throw new BadRequestException('image file must be an image');
     }
 
-    const userInfo = await this.getRequiredUserInfo(user.id);
-    timing.mark('user_info_loaded');
-    const chatContext = await this.getRecentChatContext(user.id);
-    timing.mark('chat_context_loaded');
-    const mealTime = this.inferMealTimeFromClock(new Date());
-    const baseIntent: ParsedChatIntent = {
-      normalized_request: '음식 사진 기반 피드백',
-      meal_time: mealTime,
-      desired_brand: null,
-      desired_category: null,
-      nutrition_focus: [],
-      amount_preference: 'regular',
-      keywords: [],
-      include: this.emptyIntentConditionGroup(),
-      exclude: this.emptyIntentConditionGroup(),
-      nutrition_constraints: this.emptyNutritionConstraints(),
-    };
-    const userContext = await this.buildGenericMenuCandidateUserContext(
-      user.id,
-      userInfo,
-      baseIntent,
-    );
-    const availableMenus = await this.getAvailableMenuRecognitionCandidates(
-      user.id,
-    );
-    timing.mark('recognition_candidates_loaded', {
-      availableMenuCount: availableMenus.length,
-    });
-
-    if (availableMenus.length === 0) {
-      throw new BadRequestException('No menus available for feedback');
-    }
-
-    const foodImageRecognition = await this.recognizeFoodImageMenusWithGemini(
-      user.id,
-      file,
-      availableMenus,
-      userContext,
-      chatContext,
-      timing,
-    );
-    const recognizedFoods = foodImageRecognition.foods;
-    timing.mark('food_image_recognition_completed', {
-      recognizedFoodCount: recognizedFoods.length,
-    });
-    const recognizedIds = Array.from(
-      new Set(recognizedFoods.map((food) => food.id)),
-    );
-    const candidateMenus = await this.menuRepository.find({
-      where: recognizedIds.map((id) => ({ id, is_deleted: 0 })),
-      relations: { user: true },
-    });
-    timing.mark('recognized_menu_details_loaded', {
-      menuCount: candidateMenus.length,
-    });
-    const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
-    const matchedMenus = recognizedFoods
-      .map((food) => {
-        const menu = menuMap.get(food.id);
-
-        return menu
-          ? {
-              inputMenuName: food.name,
-              menu,
-            }
-          : null;
-      })
-      .filter(
-        (
-          item,
-        ): item is {
-          inputMenuName: string;
-          menu: MenuEntity;
-        } => !!item,
+    try {
+      const userInfo = await this.getRequiredUserInfo(user.id);
+      timing.mark('user_info_loaded');
+      const chatContext = await this.getRecentChatContext(user.id);
+      timing.mark('chat_context_loaded');
+      const mealTime = this.inferMealTimeFromClock(new Date());
+      const baseIntent: ParsedChatIntent = {
+        normalized_request: '음식 사진 기반 피드백',
+        meal_time: mealTime,
+        desired_brand: null,
+        desired_category: null,
+        nutrition_focus: [],
+        amount_preference: 'regular',
+        keywords: [],
+        include: this.emptyIntentConditionGroup(),
+        exclude: this.emptyIntentConditionGroup(),
+        nutrition_constraints: this.emptyNutritionConstraints(),
+      };
+      const userContext = await this.buildGenericMenuCandidateUserContext(
+        user.id,
+        userInfo,
+        baseIntent,
       );
-
-    if (matchedMenus.length === 0) {
-      throw new BadRequestException(
-        FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
+      const availableMenus = await this.getAvailableMenuRecognitionCandidates(
+        user.id,
       );
-    }
+      timing.mark('recognition_candidates_loaded', {
+        availableMenuCount: availableMenus.length,
+      });
 
-    const response = (await this.buildFeedbackChatResponse({
-      user,
-      userInfo,
-      input: '음식 사진 기반 피드백',
-      matchedMenus,
-      introMessage:
-        foodImageRecognition.introMessage ??
-        '사진에서 인식한 메뉴 기준으로 봤어.',
-      preparedIntroMessage: foodImageRecognition.introMessage,
-      introSource: 'food_image_feedback',
-      extractedItems: recognizedFoods.map((food, index) => ({
-        rank: index + 1,
-        menu: food.name,
-        brand: food.brand,
-        category: food.category,
-        confidence: food.confidence,
-        position: food.position,
-      })),
-      skipHistorySave: true,
-      timing,
-    })) as ChatFoodImageFeedbackResponseDto;
+      if (availableMenus.length === 0) {
+        throw new BadRequestException('No menus available for feedback');
+      }
 
-    response.recognized_foods = recognizedFoods.map((food) =>
-      this.toFoodImageRecognizedMenuResponse(food),
-    );
-    response.image_url = await this.uploadChatImage(
-      user,
-      file,
-      'food-image-feedback',
-    );
-    timing.mark('image_uploaded');
+      const foodImageRecognition = await this.recognizeFoodImageMenusWithGemini(
+        user.id,
+        file,
+        availableMenus,
+        userContext,
+        chatContext,
+        timing,
+      );
+      const recognizedFoods = foodImageRecognition.foods;
+      timing.mark('food_image_recognition_completed', {
+        recognizedFoodCount: recognizedFoods.length,
+      });
+      const recognizedIds = Array.from(
+        new Set(recognizedFoods.map((food) => food.id)),
+      );
+      const candidateMenus = await this.menuRepository.find({
+        where: recognizedIds.map((id) => ({ id, is_deleted: 0 })),
+        relations: { user: true },
+      });
+      timing.mark('recognized_menu_details_loaded', {
+        menuCount: candidateMenus.length,
+      });
+      const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
+      const matchedMenus = recognizedFoods
+        .map((food) => {
+          const menu = menuMap.get(food.id);
 
-    await this.chatHistoryRepository.save(
-      this.chatHistoryRepository.create({
-        input_text: '음식 사진 기반 피드백',
-        response_payload: response as unknown as Record<string, any>,
+          return menu
+            ? {
+                inputMenuName: food.name,
+                menu,
+              }
+            : null;
+        })
+        .filter(
+          (
+            item,
+          ): item is {
+            inputMenuName: string;
+            menu: MenuEntity;
+          } => !!item,
+        );
+
+      if (matchedMenus.length === 0) {
+        throw new BadRequestException(
+          FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
+        );
+      }
+
+      const response = (await this.buildFeedbackChatResponse({
         user,
-      }),
-    );
-    timing.mark('history_saved');
-    timing.end({
-      recognizedFoodCount: response.recognized_foods?.length ?? 0,
-    });
+        userInfo,
+        input: '음식 사진 기반 피드백',
+        matchedMenus,
+        introMessage:
+          foodImageRecognition.introMessage ??
+          '사진에서 인식한 메뉴 기준으로 봤어.',
+        preparedIntroMessage: foodImageRecognition.introMessage,
+        introSource: 'food_image_feedback',
+        extractedItems: recognizedFoods.map((food, index) => ({
+          rank: index + 1,
+          menu: food.name,
+          brand: food.brand,
+          category: food.category,
+          confidence: food.confidence,
+          position: food.position,
+        })),
+        skipHistorySave: true,
+        timing,
+      })) as ChatFoodImageFeedbackResponseDto;
 
-    return response;
+      response.recognized_foods = recognizedFoods.map((food) =>
+        this.toFoodImageRecognizedMenuResponse(food),
+      );
+      response.image_url = await this.uploadChatImage(
+        user,
+        file,
+        'food-image-feedback',
+      );
+      timing.mark('image_uploaded');
+
+      await this.chatHistoryRepository.save(
+        this.chatHistoryRepository.create({
+          input_text: '음식 사진 기반 피드백',
+          response_payload: response as unknown as Record<string, any>,
+          user,
+        }),
+      );
+      timing.mark('history_saved');
+      timing.end({
+        recognizedFoodCount: response.recognized_foods?.length ?? 0,
+      });
+
+      return response;
+    } catch (error) {
+      await this.uploadFailedChatImageIfPossible(
+        user,
+        file,
+        'food-image-feedback',
+        error,
+      );
+      throw error;
+    }
   }
 
   private async recommendWithPreparedContext(params: {
@@ -8299,6 +8309,55 @@ ${JSON.stringify(candidates)}
     const randomString = Math.random().toString(36).substring(2, 12);
     const fileExtension = this.getImageExtension(file.mimetype);
     const fileKey = `chat-images/${imageType}/${user.id}/${date}/${randomString}.${fileExtension}`;
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: fileKey,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
+
+    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+  }
+
+  private async uploadFailedChatImageIfPossible(
+    user: UserEntity,
+    file: Express.Multer.File,
+    imageType: 'food-image-feedback',
+    error: unknown,
+  ): Promise<void> {
+    try {
+      const imageUrl = await this.uploadFailedChatImage(user, file, imageType);
+
+      console.warn('[CHAT] failed chat image uploaded', {
+        userId: user.id,
+        imageType,
+        imageUrl,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    } catch (uploadError) {
+      console.warn('[CHAT] failed chat image upload failed', {
+        userId: user.id,
+        imageType,
+        originalErrorMessage:
+          error instanceof Error ? error.message : String(error),
+        uploadErrorMessage:
+          uploadError instanceof Error ? uploadError.message : String(uploadError),
+      });
+    }
+  }
+
+  private async uploadFailedChatImage(
+    user: UserEntity,
+    file: Express.Multer.File,
+    imageType: 'food-image-feedback',
+  ): Promise<string> {
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomString = Math.random().toString(36).substring(2, 12);
+    const fileExtension = this.getImageExtension(file.mimetype);
+    const fileKey = `chat-images/failed/${imageType}/${user.id}/${date}/${randomString}.${fileExtension}`;
 
     await this.s3.send(
       new PutObjectCommand({
