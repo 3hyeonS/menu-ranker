@@ -115,6 +115,7 @@ type ChatContextSummaryItem = {
   user_input: string;
   chat_category: ChatCategory;
   intro_message: string | null;
+  image_summary: string | null;
   recommended_menu_names: string[];
   feedback_menu_names: string[];
   desired_brand: string | null;
@@ -131,6 +132,24 @@ type ChatContextSummary = {
   previous_brand: string | null;
   previous_category_name: string | null;
   previous_meal_time: number | null;
+};
+
+type LightweightChatContext = {
+  recent_messages: Array<{
+    user_input: string;
+    chat_category: ChatCategory;
+    assistant_intro: string | null;
+    image_summary: string | null;
+    recommended_menu_names: string[];
+    feedback_menu_names: string[];
+    brand: string | null;
+  }>;
+  previous_user_input: string | null;
+  previous_category: ChatCategory | null;
+  previous_recommended_menu_names: string[];
+  previous_feedback_menu_names: string[];
+  previous_brand: string | null;
+  previous_category_name: string | null;
 };
 
 type ParsedChatIntent = {
@@ -273,11 +292,13 @@ type GenericMenuCandidateMatchOptions = {
 
 type GenericMenuCandidatePlan = {
   introMessage: string | null;
+  imageSummary?: string | null;
   candidates: GenericMenuCandidate[];
 };
 
 type FoodImageMenuRecognitionResult = {
   introMessage: string | null;
+  imageSummary: string | null;
   foods: RecognizedFoodImageMenu[];
 };
 
@@ -473,6 +494,7 @@ export class ChatService {
         input,
         this.applyChatContextToClassification(classification, chatContext),
         analysis.intent,
+        chatContext,
         timing,
       );
     }
@@ -497,6 +519,7 @@ export class ChatService {
       userInfo,
       finalizedIntent,
       input,
+      chatContext,
       timing,
     );
     const candidateMenus = candidateResult.menus;
@@ -637,6 +660,7 @@ export class ChatService {
       chatContext,
       timing,
       preparedIntroMessage: menuBoardPlan.introMessage,
+      imageSummary: menuBoardPlan.imageSummary,
     })) as ChatMenuBoardRecommendResponseDto;
     timing.end({
       recommendationCount: response.recommendations?.length ?? 0,
@@ -771,6 +795,7 @@ export class ChatService {
       response.recognized_foods = recognizedFoods.map((food) =>
         this.toFoodImageRecognizedMenuResponse(food),
       );
+      response.image_summary = foodImageRecognition.imageSummary ?? undefined;
       response.image_url = await this.uploadChatImage(
         user,
         file,
@@ -811,6 +836,7 @@ export class ChatService {
     recognizedCandidates?: MenuRecognitionCandidate[];
     skipGeneratedDescriptions?: boolean;
     imageUrl?: string;
+    imageSummary?: string | null;
     introSource?: ChatIntroMessageSource;
     chatContext?: ChatContextSummary;
     timing?: ChatTimingLogger;
@@ -826,6 +852,7 @@ export class ChatService {
       recognizedCandidates,
       skipGeneratedDescriptions = false,
       imageUrl,
+      imageSummary,
       introSource = 'text_recommendation',
       chatContext,
       timing,
@@ -892,6 +919,9 @@ export class ChatService {
         response.intro_message = preparedIntroMessage;
         if (imageUrl) {
           (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
+        }
+        if (imageSummary) {
+          response.image_summary = imageSummary;
         }
 
         await this.chatHistoryRepository.save(
@@ -983,6 +1013,9 @@ export class ChatService {
       const response = new ChatRecommendResponseDto();
       response.chat_category = 'recommendation';
       response.intro_message = introMessage;
+      if (imageSummary) {
+        response.image_summary = imageSummary;
+      }
 
       await this.chatHistoryRepository.save(
         this.chatHistoryRepository.create({
@@ -1034,6 +1067,9 @@ export class ChatService {
     if (imageUrl) {
       (response as ChatMenuBoardRecommendResponseDto).image_url = imageUrl;
     }
+    if (imageSummary) {
+      response.image_summary = imageSummary;
+    }
     response.recommendations = rankedMenus.map(({ menu, score }) => {
       const item = new ChatRecommendItemResponseDto();
 
@@ -1073,6 +1109,7 @@ export class ChatService {
     input: string,
     classification: ChatClassification,
     intent: ParsedChatIntent,
+    chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
   ): Promise<ChatRecommendResponseDto> {
     let feedbackIntroMessage: string | null = null;
@@ -1089,6 +1126,7 @@ export class ChatService {
           input,
           intent,
           userContext,
+          chatContext,
           timing,
         );
       feedbackIntroMessage = feedbackPlan.introMessage;
@@ -1383,7 +1421,7 @@ export class ChatService {
     chatHistory: ChatHistoryEntity,
   ): ChatContextSummaryItem | null {
     const payload = chatHistory.response_payload as
-      | ChatRecommendResponseDto
+      | (ChatRecommendResponseDto & { image_summary?: string })
       | undefined;
     const chatCategory = payload?.chat_category;
 
@@ -1418,6 +1456,10 @@ export class ChatService {
       user_input: chatHistory.input_text,
       chat_category: chatCategory,
       intro_message: payload.intro_message ?? null,
+      image_summary: this.asNonEmptyString(payload.image_summary)?.slice(
+        0,
+        500,
+      ) ?? null,
       recommended_menu_names: recommendedMenus,
       feedback_menu_names: feedbackMenus,
       desired_brand: this.inferDominantValue([
@@ -1429,15 +1471,19 @@ export class ChatService {
     };
   }
 
-  private toLightweightChatContext(chatContext: ChatContextSummary): {
-    previous_user_input: string | null;
-    previous_category: ChatCategory | null;
-    previous_recommended_menu_names: string[];
-    previous_feedback_menu_names: string[];
-    previous_brand: string | null;
-    previous_category_name: string | null;
-  } {
+  private toLightweightChatContext(
+    chatContext: ChatContextSummary,
+  ): LightweightChatContext {
     return {
+      recent_messages: chatContext.messages.map((message) => ({
+        user_input: message.user_input,
+        chat_category: message.chat_category,
+        assistant_intro: message.intro_message,
+        image_summary: message.image_summary,
+        recommended_menu_names: message.recommended_menu_names.slice(0, 5),
+        feedback_menu_names: message.feedback_menu_names.slice(0, 5),
+        brand: message.desired_brand,
+      })),
       previous_user_input: chatContext.previous_user_input,
       previous_category: chatContext.previous_category,
       previous_recommended_menu_names:
@@ -1884,12 +1930,15 @@ export class ChatService {
   ): Promise<FoodImageMenuRecognitionResult> {
     const prompt = `
 음식 사진을 보고, 먼저 사용자에게 보낼 자연스러운 intro_message를 작성하고,
+사진 내용을 이후 대화에서 참고할 수 있도록 image_summary로 요약하고,
 사진에 실제로 포함된 음식명을 detected_foods로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 - intro_message는 사진 속 음식과 사용자 식사 피드백 맥락을 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
+- image_summary는 이후 대화에서 원본 사진 없이도 맥락을 이해할 수 있게 사진 속 음식 구성, 식사 형태, 눈에 띄는 특징을 1~2문장으로 요약해
+- image_summary에는 확실히 보이는 내용만 쓰고, 구체적인 영양 수치는 쓰지 마
 - 단, 사용자 목표, 섭취 흐름, 최근 먹은 메뉴, 이전 채팅 맥락은 판단에 적극 반영해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력이나 사진/메뉴판 맥락에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
@@ -1912,6 +1961,7 @@ export class ChatService {
 반환 shape:
 {
   "intro_message": "string",
+  "image_summary": "사진에는 밥, 국, 김치, 고기 반찬이 함께 보이는 한식 식사 구성이 담겨 있어.",
   "recognition_status": "recognized",
   "failure_reason": null,
   "detected_foods": [
@@ -1947,6 +1997,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     this.assertFoodImageRecognizable(data);
     const introMessage =
       this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const imageSummary =
+      this.asNonEmptyString(data?.image_summary)?.slice(0, 500) ?? null;
     const imageDimensions = this.getImageDimensions(file.buffer);
     if (imageDimensions) {
       timing?.mark('food_image_dimensions_detected', imageDimensions);
@@ -1960,6 +2012,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       .filter((food): food is FoodImagePrediction => food !== null);
     console.log('[CHAT] food image Gemini detected foods', {
       introMessage,
+      imageSummary,
       foods: predictions.map((prediction) => ({
         foodName: prediction.foodName,
         confidence: prediction.confidence,
@@ -2031,6 +2084,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     return {
       introMessage,
+      imageSummary,
       foods: uniqueRecognizedFoods,
     };
   }
@@ -3454,6 +3508,7 @@ ${JSON.stringify(
     userInfo: UserInfoEntity,
     intent: ParsedChatIntent,
     input: string,
+    chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
   ): Promise<{
     menus: MenuEntity[];
@@ -3480,6 +3535,7 @@ ${JSON.stringify(
         candidateIntent,
         input,
         hasUnsupportedBrand,
+        chatContext,
         timing,
       );
     const geminiGeneratedMenus = geminiGeneratedResult.menus;
@@ -3607,6 +3663,7 @@ ${JSON.stringify(
     intent: ParsedChatIntent,
     input: string,
     hasUnsupportedBrand: boolean,
+    chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
   ): Promise<{
     menus: MenuEntity[];
@@ -3644,6 +3701,7 @@ ${JSON.stringify(
         input,
         intent,
         userContext,
+        chatContext,
         timing,
       );
       generatedCount = genericPlan.candidates.length;
@@ -3746,6 +3804,7 @@ ${JSON.stringify(
     input: string,
     intent: ParsedChatIntent,
     userContext: GenericMenuCandidateUserContext,
+    chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
@@ -3778,6 +3837,8 @@ ${JSON.stringify(
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
+- 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
+- 이전 답변을 이어받아 조건을 바꾸는 요청이면, 현재 입력에서 바꾼 조건만 덮어쓰고 나머지 맥락은 유지해
 
 사용자 입력:
 ${input}
@@ -3787,6 +3848,9 @@ ${JSON.stringify(intent)}
 
 사용자 식사 정보:
 ${JSON.stringify(userContext)}
+
+최근 대화 맥락:
+${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
 반환 shape:
 {
@@ -3832,6 +3896,7 @@ ${JSON.stringify(userContext)}
     input: string,
     intent: ParsedChatIntent,
     userContext: GenericMenuCandidateUserContext,
+    chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
@@ -3864,6 +3929,8 @@ ${JSON.stringify(userContext)}
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
+- 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
+- 이전 답변을 이어받아 조건을 바꾸는 요청이면, 현재 입력에서 바꾼 조건만 덮어쓰고 나머지 맥락은 유지해
 
 사용자 입력:
 ${input}
@@ -3873,6 +3940,9 @@ ${JSON.stringify(intent)}
 
 사용자 식사 정보:
 ${JSON.stringify(userContext)}
+
+최근 대화 맥락:
+${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
 반환 shape:
 {
@@ -3923,12 +3993,15 @@ ${JSON.stringify(userContext)}
   ): Promise<GenericMenuCandidatePlan> {
     const prompt = `
 메뉴판 사진을 보고, 먼저 사용자에게 보낼 자연스러운 intro_message를 작성하고,
+메뉴판 내용을 이후 대화에서 참고할 수 있도록 image_summary로 요약하고,
 그 intro_message 안에 실제로 언급한 메뉴/음식/브랜드/카테고리 후보만 menu_candidates로 추출해줘.
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.
 
 작성 규칙:
 - intro_message는 사진 속 메뉴판과 사용자 식사 정보를 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
+- image_summary는 이후 대화에서 원본 메뉴판 없이도 맥락을 이해할 수 있게 메뉴판 종류, 확인된 주요 메뉴, 브랜드/업종 단서를 1~2문장으로 요약해
+- image_summary에는 확실히 보이는 내용만 쓰고, 구체적인 영양 수치는 쓰지 마
 - 가격, 원산지, 알레르기 안내, 광고 문구, 주류/음료 메뉴는 음식 추천에 필요할 때가 아니면 언급하지 마
 - 메뉴판에 보이는 음식 중 사용자에게 추천할 만한 메뉴만 자연스럽게 언급해
 - 사용자 목표, 섭취 흐름, 최근 먹은 메뉴, 이전 채팅 맥락은 판단에 적극 반영해
@@ -3962,6 +4035,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 반환 shape:
 {
   "intro_message": "string",
+  "image_summary": "중식 메뉴판으로 보이며 소고기건두부볶음, 유린기, 꿔바로우, 고기만두 같은 메뉴가 확인돼.",
   "menu_candidates": [
     {
       "name": "꿔바로우",
@@ -3982,9 +4056,12 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
     const introMessage = this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const imageSummary =
+      this.asNonEmptyString(data?.image_summary)?.slice(0, 500) ?? null;
 
     console.log('[CHAT] menu board Gemini plan', {
       introMessage,
+      imageSummary,
       candidates: normalizedCandidates,
     });
     timing?.mark('menu_board_gemini_candidate_names_logged', {
@@ -3993,6 +4070,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     return {
       introMessage,
+      imageSummary,
       candidates: normalizedCandidates,
     };
   }

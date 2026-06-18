@@ -19,6 +19,16 @@ export class ChatFoodImageFeedbackResponseDto {
 
   @ApiProperty({
     type: String,
+    description:
+      '이후 대화 맥락에 활용할 음식 사진 내용 요약',
+    required: false,
+    example:
+      '사진에는 밥, 국, 김치, 고기 반찬이 함께 보이는 한식 식사 구성이 담겨 있어.',
+  })
+  image_summary?: string;
+
+  @ApiProperty({
+    type: String,
     description: 'S3에 저장된 음식 이미지 url',
     example:
       'https://bucket.s3.ap-northeast-2.amazonaws.com/chat-images/food-image-feedback/1/20260518/abc123.jpg',

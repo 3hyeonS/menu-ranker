@@ -20,6 +20,16 @@ export class ChatMenuBoardRecommendResponseDto {
 
   @ApiProperty({
     type: String,
+    description:
+      '이후 대화 맥락에 활용할 메뉴판 사진 내용 요약',
+    required: false,
+    example:
+      '중식 메뉴판으로 보이며 유린기, 꿔바로우, 소고기건두부볶음 같은 메뉴가 확인돼.',
+  })
+  image_summary?: string;
+
+  @ApiProperty({
+    type: String,
     description: 'S3에 저장된 메뉴판 이미지 url',
     example:
       'https://bucket.s3.ap-northeast-2.amazonaws.com/chat-images/menu-board/1/20260518/abc123.jpg',

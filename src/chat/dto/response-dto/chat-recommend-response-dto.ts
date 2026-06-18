@@ -20,6 +20,16 @@ export class ChatRecommendResponseDto {
   intro_message: string;
 
   @ApiProperty({
+    type: String,
+    description:
+      '이미지 기반 채팅인 경우 이후 대화 맥락에 활용할 이미지 내용 요약',
+    required: false,
+    example:
+      '사진에는 밥, 국, 김치, 고기 반찬이 함께 보이는 한식 식사 구성이 담겨 있어.',
+  })
+  image_summary?: string;
+
+  @ApiProperty({
     type: [ChatRecommendItemResponseDto],
     description: '상위 10개 추천 메뉴',
     required: false,
