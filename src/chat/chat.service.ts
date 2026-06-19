@@ -140,14 +140,14 @@ type LightweightChatContext = {
     chat_category: ChatCategory;
     assistant_intro: string | null;
     image_summary: string | null;
-    recommended_menu_names: string[];
-    feedback_menu_names: string[];
+    recommendation_card_menu_names_not_consumed: string[];
+    feedback_card_menu_names_not_consumed: string[];
     brand: string | null;
   }>;
   previous_user_input: string | null;
   previous_category: ChatCategory | null;
-  previous_recommended_menu_names: string[];
-  previous_feedback_menu_names: string[];
+  previous_recommendation_card_menu_names_not_consumed: string[];
+  previous_feedback_card_menu_names_not_consumed: string[];
   previous_brand: string | null;
   previous_category_name: string | null;
 };
@@ -307,6 +307,8 @@ type GenericMenuCandidateUserContext = {
   remainingCalories: number;
   remainingMacros: MacroAmounts;
   recentMenuSummary: string;
+  todayLoggedMealSummary: string;
+  contextCaution: string;
 };
 
 type ChatTimingLogger = {
@@ -478,6 +480,11 @@ export class ChatService {
     timing.mark('user_info_loaded');
     const chatContext = await this.getRecentChatContext(user.id);
     timing.mark('chat_context_loaded');
+    const guardedAnswer = this.getGuardedGeneralAnswer(input);
+    if (guardedAnswer) {
+      timing.mark('guarded_general_answer_selected');
+      return await this.saveGeneralChatResponse(user, input, guardedAnswer);
+    }
     const analysis = await this.analyzeChatWithGemini(
       input,
       userInfo,
@@ -500,7 +507,7 @@ export class ChatService {
     }
 
     if (classification.chat_category === 'general') {
-      return await this.answerGeneralQuestion(user, userInfo, input);
+      return await this.answerGeneralQuestion(user, userInfo, input, chatContext);
     }
 
     const parsedIntent = analysis.intent;
@@ -1316,7 +1323,14 @@ export class ChatService {
     user: UserEntity,
     userInfo: UserInfoEntity,
     input: string,
+    chatContext: ChatContextSummary,
   ): Promise<ChatRecommendResponseDto> {
+    const guardedAnswer = this.getGuardedGeneralAnswer(input);
+
+    if (guardedAnswer) {
+      return await this.saveGeneralChatResponse(user, input, guardedAnswer);
+    }
+
     const targetDate = this.resolveTargetDate();
     const dailyNutrition = await this.getDailyNutrition(user.id, targetDate);
     const mealTime = this.inferMealTimeFromClock(new Date());
@@ -1331,6 +1345,7 @@ export class ChatService {
       userInfo,
       dailyNutrition,
       basis,
+      chatContext,
     });
 
     const response = new ChatRecommendResponseDto();
@@ -1347,6 +1362,71 @@ export class ChatService {
     );
 
     return response;
+  }
+
+  private async saveGeneralChatResponse(
+    user: UserEntity,
+    input: string,
+    answer: { intro_message: string; general_answer: string },
+  ): Promise<ChatRecommendResponseDto> {
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'general';
+    response.intro_message = answer.intro_message;
+    response.general_answer = answer.general_answer;
+
+    await this.chatHistoryRepository.save(
+      this.chatHistoryRepository.create({
+        input_text: input,
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
+
+    return response;
+  }
+
+  private getGuardedGeneralAnswer(
+    input: string,
+  ): { intro_message: string; general_answer: string } | null {
+    const normalizedInput = input.replace(/\s+/g, '').toLowerCase();
+
+    if (this.isUnsupportedChatActionRequest(normalizedInput)) {
+      return {
+        intro_message:
+          '채팅에서 바로 기록을 추가하거나 수정하는 기능은 아직 준비 중이야.',
+        general_answer:
+          '식사 기록은 홈이나 기록 화면에서 직접 추가해줘.\n\n여기서는 메뉴 선택, 식단 피드백, 영양 방향 정리는 바로 도와줄 수 있어.',
+      };
+    }
+
+    if (this.isAppSupportQuestion(normalizedInput)) {
+      return {
+        intro_message:
+          '앱 기능이나 오류는 내가 단정해서 안내하면 틀릴 수 있어.',
+        general_answer:
+          '[설정 - 문의하기/아이디어 보내기]로 상황을 보내줘.\n\n사진 인식, 기록, 계정, 결제, 구독처럼 앱 동작과 관련된 건 그 경로로 문의하는 게 가장 정확해.',
+      };
+    }
+
+    return null;
+  }
+
+  private isUnsupportedChatActionRequest(normalizedInput: string): boolean {
+    const actionPattern =
+      /(기록해줘|기록해|등록해줘|등록해|저장해줘|저장해|추가해줘|추가해|삭제해줘|삭제해|수정해줘|수정해|입력해줘|입력해)/;
+    const actionTargetPattern =
+      /(먹었|먹은|식사|메뉴|음식|운동|칼로리|단백질|탄수|지방|몸무게|체중|물|수분)/;
+
+    return actionPattern.test(normalizedInput) && actionTargetPattern.test(normalizedInput);
+  }
+
+  private isAppSupportQuestion(normalizedInput: string): boolean {
+    const appPattern =
+      /(앱|서비스|기능|사용법|어떻게써|어떻게사용|오류|버그|안돼|안되|문의|아이디어|사진인식|메뉴판인식|영양성분표|구독|결제|탈퇴|계정|로그인|대화초기화|초기화|운동기록|기록이어디|어디에적어)/;
+    const foodConversationPattern =
+      /(먹어도돼|뭐먹|추천|피드백|칼로리|단백질|탄수|지방|영양|식단)/;
+
+    return appPattern.test(normalizedInput) && !foodConversationPattern.test(normalizedInput);
   }
 
   private async getRequiredUserInfo(userId: number): Promise<UserInfoEntity> {
@@ -1480,15 +1560,17 @@ export class ChatService {
         chat_category: message.chat_category,
         assistant_intro: message.intro_message,
         image_summary: message.image_summary,
-        recommended_menu_names: message.recommended_menu_names.slice(0, 5),
-        feedback_menu_names: message.feedback_menu_names.slice(0, 5),
+        recommendation_card_menu_names_not_consumed:
+          message.recommended_menu_names.slice(0, 5),
+        feedback_card_menu_names_not_consumed:
+          message.feedback_menu_names.slice(0, 5),
         brand: message.desired_brand,
       })),
       previous_user_input: chatContext.previous_user_input,
       previous_category: chatContext.previous_category,
-      previous_recommended_menu_names:
+      previous_recommendation_card_menu_names_not_consumed:
         chatContext.previous_recommended_menu_names.slice(0, 5),
-      previous_feedback_menu_names:
+      previous_feedback_card_menu_names_not_consumed:
         chatContext.previous_feedback_menu_names.slice(0, 5),
       previous_brand: chatContext.previous_brand,
       previous_category_name: chatContext.previous_category_name,
@@ -1939,7 +2021,11 @@ export class ChatService {
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - image_summary는 이후 대화에서 원본 사진 없이도 맥락을 이해할 수 있게 사진 속 음식 구성, 식사 형태, 눈에 띄는 특징을 1~2문장으로 요약해
 - image_summary에는 확실히 보이는 내용만 쓰고, 구체적인 영양 수치는 쓰지 마
-- 단, 사용자 목표, 섭취 흐름, 최근 먹은 메뉴, 이전 채팅 맥락은 판단에 적극 반영해
+- intro_message에는 특정 브랜드명/매장명을 직접 언급하지 마. 브랜드 단서가 있어도 "이 구성은", "사진 속 메뉴는"처럼 표현해
+- 단, 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유, 이전 채팅 맥락은 판단에 적극 반영해
+- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력이나 사진/메뉴판 맥락에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
@@ -3785,6 +3871,11 @@ ${JSON.stringify(
       intent.amount_preference,
     );
 
+    const todayLoggedMealSummary =
+      snapshot.recentMenuNames.length > 0
+        ? snapshot.recentMenuNames.join(', ')
+        : '기록된 식사 없음';
+
     return {
       goal: this.goalToLabel(userInfo.goal),
       remainingCalories: roundToOneDecimal(basis.remainingCalories),
@@ -3793,10 +3884,10 @@ ${JSON.stringify(
         protein: roundToOneDecimal(basis.remainingMacros.protein),
         fat: roundToOneDecimal(basis.remainingMacros.fat),
       },
-      recentMenuSummary:
-        snapshot.recentMenuNames.length > 0
-          ? snapshot.recentMenuNames.join(', ')
-          : '기록된 식사 없음',
+      recentMenuSummary: todayLoggedMealSummary,
+      todayLoggedMealSummary,
+      contextCaution:
+        '오늘 실제 섭취 메뉴는 todayLoggedMealSummary만 기준으로 판단해. 최근 대화의 추천/피드백 카드 메뉴는 사용자가 먹은 음식이 아니라 이전 답변에서 제안하거나 평가한 후보일 수 있어.',
     };
   }
 
@@ -3816,10 +3907,12 @@ ${JSON.stringify(
 - intro_message는 사용자의 입력만 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - 메뉴명/브랜드명/카테고리를 반드시 말해야 한다는 압박 없이, 필요할 때만 자연스럽게 언급해
+- intro_message에는 특정 브랜드명/매장명을 직접 언급하지 마. 브랜드 조건이 있어도 "그 매장에서는", "해당 브랜드에서는"처럼 표현해
+- menu_candidates의 brand는 DB 매칭용이므로 사용자 입력이나 intro_message 맥락에서 명확할 때만 넣어도 돼
 - 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
 - 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
 - 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
-- 단, 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴는 판단에 적극 반영해
+- 단, 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유는 판단에 적극 반영해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
@@ -3837,6 +3930,10 @@ ${JSON.stringify(
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
+- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
+- 오늘 실제 기록 메뉴와 최근 추천 메뉴가 있다면 같은 메뉴를 반복 추천하지 말고 사용자의 목표와 남은 섭취 여유에 맞춰 다양하게 제안해
 - 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
 - 이전 답변을 이어받아 조건을 바꾸는 요청이면, 현재 입력에서 바꾼 조건만 덮어쓰고 나머지 맥락은 유지해
 
@@ -3908,10 +4005,12 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - intro_message는 사용자의 입력만 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - 사용자가 먹으려는 음식이나 이미 먹은 음식에 대해 괜찮은지, 어떤 선택이 나은지 짧고 명확하게 답해
+- intro_message에는 특정 브랜드명/매장명을 직접 언급하지 마. 브랜드 조건이 있어도 "그 매장에서는", "해당 브랜드에서는"처럼 표현해
+- menu_candidates의 brand는 DB 매칭용이므로 사용자 입력이나 intro_message 맥락에서 명확할 때만 넣어도 돼
 - 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
 - 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
 - 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
-- 단, 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴는 판단에 적극 반영해
+- 단, 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유는 판단에 적극 반영해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
@@ -3929,6 +4028,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
+- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
 - 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
 - 이전 답변을 이어받아 조건을 바꾸는 요청이면, 현재 입력에서 바꾼 조건만 덮어쓰고 나머지 맥락은 유지해
 
@@ -4002,9 +4104,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - image_summary는 이후 대화에서 원본 메뉴판 없이도 맥락을 이해할 수 있게 메뉴판 종류, 확인된 주요 메뉴, 브랜드/업종 단서를 1~2문장으로 요약해
 - image_summary에는 확실히 보이는 내용만 쓰고, 구체적인 영양 수치는 쓰지 마
+- intro_message에는 특정 브랜드명/매장명을 직접 언급하지 마. 브랜드 단서가 있어도 "이 메뉴판에서는", "이 구성에서는"처럼 표현해
 - 가격, 원산지, 알레르기 안내, 광고 문구, 주류/음료 메뉴는 음식 추천에 필요할 때가 아니면 언급하지 마
 - 메뉴판에 보이는 음식 중 사용자에게 추천할 만한 메뉴만 자연스럽게 언급해
-- 사용자 목표, 섭취 흐름, 최근 먹은 메뉴, 이전 채팅 맥락은 판단에 적극 반영해
+- 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유, 이전 채팅 맥락은 판단에 적극 반영해
+- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 메뉴판 이미지나 이전 채팅 맥락에서 시간 관련 표현이 직접 제공된 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
@@ -6593,6 +6699,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
 - "그 조건으로", "비슷한 걸로", "아까처럼"처럼 이전 조건을 유지해야 하면 context_action은 "reuse_previous_conditions"
 - "그거 먹어도 돼?", "아까 거 괜찮아?"처럼 이전 메뉴를 평가해야 하면 feedback 및 "evaluate_previous_menus"
+- "칼로리 몇이야?", "단백질은?", "탄수화물 얼마나 돼?", "영양성분 알려줘"처럼 주어가 생략된 영양/칼로리 후속 질문이고 최근 대화에 음식/메뉴가 있으면 feedback 및 "evaluate_previous_menus"로 분류해
+- 이때 menu_names는 최근 대화의 피드백/추천 메뉴명을 참고하거나, 이전 사용자 입력에 나온 음식명을 넣어
 
 최근 대화 요약:
 ${JSON.stringify(lightweightContext)}
@@ -6651,6 +6759,16 @@ ${input}
       context_dependent: contextDependent,
       context_action: contextAction,
     };
+    if (
+      classification.chat_category === 'general' &&
+      this.isContextualNutritionQuestion(input) &&
+      this.hasPreviousFoodContext(chatContext)
+    ) {
+      classification.chat_category = 'feedback';
+      classification.context_dependent = true;
+      classification.context_action = 'evaluate_previous_menus';
+      classification.menu_names = this.getContextMenuNames(chatContext);
+    }
     const intentSource = data?.intent ?? {};
     const intent: ParsedChatIntent = {
       normalized_request:
@@ -6801,6 +6919,50 @@ ${input}
     );
   }
 
+  private isContextualNutritionQuestion(input: string): boolean {
+    const normalized = input.replace(/\s+/g, '');
+    return /(칼로리|열량|단백질|탄수화물|탄수|지방|당류|나트륨|영양성분|몇kcal|몇칼로리|얼마나|몇이야|얼마야)/.test(
+      normalized,
+    );
+  }
+
+  private hasPreviousFoodContext(chatContext: ChatContextSummary): boolean {
+    return this.getContextMenuNames(chatContext).length > 0;
+  }
+
+  private getContextMenuNames(chatContext: ChatContextSummary): string[] {
+    return this.mergeTextValues(
+      chatContext.previous_feedback_menu_names,
+      chatContext.previous_recommended_menu_names,
+      this.extractMenuNamesFromPreviousUserInput(chatContext.previous_user_input),
+    ).slice(0, 5);
+  }
+
+  private extractMenuNamesFromPreviousUserInput(input: string | null): string[] {
+    if (!input) {
+      return [];
+    }
+
+    const normalized = input
+      .replace(
+        /(?:오늘|어제|방금|아까|지금|이번에|나는|나|내가|저는|제가|먹었어|먹었는데|먹음|먹었다|먹었어요|먹은|먹고|먹어도|돼|괜찮아|어때|칼로리|열량|단백질|탄수화물|지방|몇이야|얼마야|알려줘)/g,
+        ' ',
+      )
+      .replace(/[^\w가-힣\s,]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!normalized) {
+      return [];
+    }
+
+    return normalized
+      .split(/\s*(?:랑|하고|과|와|,)\s*|\s+/)
+      .map((value) => value.trim())
+      .filter((value) => value.length >= 2 && !this.isContextPointerText(value))
+      .slice(0, 5);
+  }
+
   private inferContextAction(
     input: string,
     chatCategory: ChatCategory,
@@ -6897,6 +7059,7 @@ ${input}
     const contextMenuNames = this.mergeTextValues(
       chatContext.previous_feedback_menu_names,
       chatContext.previous_recommended_menu_names,
+      this.extractMenuNamesFromPreviousUserInput(chatContext.previous_user_input),
     ).slice(0, 5);
 
     if (contextMenuNames.length === 0) {
@@ -7546,6 +7709,7 @@ JSON shape:
     userInfo: UserInfoEntity;
     dailyNutrition: DailyNutrition;
     basis: ReturnType<ChatService['buildRecommendationBasis']>;
+    chatContext: ChatContextSummary;
   }): Promise<{ intro_message: string; general_answer: string }> {
     const prompt = `
 사용자의 범용 질문에 답변하는 한국어 JSON object를 작성해줘.
@@ -7559,6 +7723,13 @@ JSON shape:
 - 문장은 "~야.", "~있어.", "~해.", "~먹어.", "~가.", "~나아.", "~괜찮아." 같은 편한 반말로 끝내
 - 특정 메뉴를 추천하거나 DB 메뉴를 고르지 말고, 사용자의 질문에 직접 답해
 - 질문이 식단/영양/운동/생활습관과 관련될 때만 사용자의 목표, 섭취 흐름, 남은 섭취량을 자연스럽게 참고해
+- 최근 대화 맥락이 있고 사용자가 주어를 생략한 짧은 후속 질문을 하면, 바로 이전 사용자 입력과 assistant_intro를 우선 참고해
+- 예: 이전에 "참치캔 먹었어"라고 했고 현재 "칼로리 몇이야?"라고 물으면, 현재 질문은 참치캔의 칼로리를 묻는 뜻으로 해석해
+- 단, DB 영양정보를 받은 상황이 아니면 특정 칼로리 수치를 단정하지 말고 "제품마다 다르다"처럼 범위를 조심스럽게 안내해
+- 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 사용자가 직접 먹었다고 말한 이전 입력이나 실제 오늘 섭취 정보만 섭취 근거로 사용해
+- 앱 기능, 오류, 사진 인식 문제, 기록 기능, 계정, 결제, 구독, 대화 초기화처럼 서비스 동작에 관한 질문에는 기능을 추측해서 설명하지 말고 "[설정 - 문의하기/아이디어 보내기]로 문의해줘"라고 안내해
+- "기록해줘", "등록해줘", "저장해줘", "수정해줘", "삭제해줘"처럼 실제 앱 동작을 대신 수행해 달라는 요청에는 수행했다고 말하지 말고 채팅 직접 기록 기능은 준비 중이니 사용자가 직접 기록해야 한다고 말해
 - 질문이 식단/영양과 관련 없으면 사용자 식단 정보는 언급하지 말고, system_instruction의 코치 페르소나와 반말 해체를 유지해
 - 질문이 식단/영양과 관련 없으면 건강/식단/운동 이야기로 억지 전환하지 말고 질문 자체에 답해
 - 실시간 날씨, 최신 뉴스, 주가처럼 현재 조회가 필요한 질문은 실시간 조회가 어렵다고 짧게 말하고, 사용자가 확인할 수 있는 방법을 안내해
@@ -7581,6 +7752,9 @@ JSON shape:
 
 사용자 질문:
 ${params.input}
+
+최근 대화 맥락:
+${JSON.stringify(this.toLightweightChatContext(params.chatContext))}
 
 사용자 정보:
 ${JSON.stringify({
@@ -7690,7 +7864,9 @@ ${JSON.stringify({
 - "안녕하세요", "안녕하세요!", "반가워요" 같은 인사 문구로 시작하지 않기
 - 딱딱한 템플릿처럼 쓰지 말고, 실제 코치가 말하듯 현실적인 톤으로 작성
 - 메뉴명/목표/섭취 흐름/사진 인식 맥락 중 중요한 것을 자연스럽게 반영
-- 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴 중 중요한 정보를 반영해 개인화해
+- 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유 중 중요한 정보를 반영해 개인화해
+- intro_message에는 특정 브랜드명/매장명을 직접 언급하지 마. 브랜드 조건이 있어도 "그 매장에서는", "해당 브랜드에서는"처럼 표현해
+- 최근 대화 맥락의 추천/피드백 카드 메뉴는 사용자가 먹은 음식이 아니야. 실제 섭취는 사용자가 직접 먹었다고 말했거나 오늘 식사 기록에 있는 메뉴만 기준으로 해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - 추천 메뉴나 피드백 메뉴명은 가장 중요한 상위 1개만 언급
@@ -7704,7 +7880,6 @@ ${JSON.stringify({
 - 장황한 응원 문구나 반복 설명은 쓰지 않기
 - 느낌표는 필요할 때만 최대 1개 사용
 - 사용자 텍스트의 종류가 메뉴 피드백이어도 위 분량, 줄바꿈, 상위 1개 메뉴명 언급, 내부 계산 기준 미노출 규칙을 동일하게 적용
-- 사용자 텍스트의 종류가 이미지 기반이면 특정 브랜드명을 절대 언급하지 않기
 - 이미지 기반 답변에서 "보내주신 사진은 {브랜드}의 {메뉴}로 보이네요"처럼 브랜드를 추정하거나 단정하는 표현 금지
 
 사용자 텍스트의 종류:
@@ -7917,7 +8092,9 @@ ${JSON.stringify(menusPayload)}
 - "(식약처_음식)", "(식약처_가공)" 같은 DB prefix, 브랜드/제품명처럼 긴 원본명, 광고 문구형 이름은 절대 그대로 말하지 마
 - 원본명이 길거나 제품명/문장형이면 가장 가까운 일반 음식명으로 말해. 예: "두마리같은한마리치킨주세요 닭튀김"은 "치킨", "옛날중국집간짜장곱빼기"는 "짜장면"처럼 말해
 - 나머지는 사용자 목표와의 관계 또는 현실적인 조절 팁 중 핵심 1가지만 짧게 말하기
-- 사용자 목표, 섭취 흐름, 남은 섭취 여유, 최근 먹은 메뉴 중 중요한 정보를 반영해 개인화해
+- 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유 중 중요한 정보를 반영해 개인화해
+- intro_message에는 특정 브랜드명/매장명을 직접 언급하지 마. 브랜드 조건이 있어도 "그 매장에서는", "해당 브랜드에서는"처럼 표현해
+- 최근 대화 맥락의 추천/피드백 카드 메뉴는 사용자가 먹은 음식이 아니야. 실제 섭취는 사용자가 직접 먹었다고 말했거나 오늘 식사 기록에 있는 메뉴만 기준으로 해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 않기
