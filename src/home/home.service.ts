@@ -443,8 +443,14 @@ export class HomeService {
   }
 
   private dedupeMenusByDisplayName(menus: MenuEntity[]): MenuEntity[] {
-    const menuByDisplayKey = new Map<string, MenuEntity>();
-    const displayKeys: string[] = [];
+    const nonPrefixedDisplayKeys = new Set(
+      menus
+        .filter((menu) => !this.hasPublicMenuSourcePrefix(menu.name))
+        .map((menu) => this.normalizeMenuDisplayDedupeKey(menu.name))
+        .filter((displayKey) => displayKey.length > 0),
+    );
+    const seenNonPrefixedDisplayKeys = new Set<string>();
+    const dedupedMenus: MenuEntity[] = [];
 
     menus.forEach((menu) => {
       const displayKey = this.normalizeMenuDisplayDedupeKey(menu.name);
@@ -453,43 +459,27 @@ export class HomeService {
         return;
       }
 
-      const previousMenu = menuByDisplayKey.get(displayKey);
+      const hasPublicSourcePrefix = this.hasPublicMenuSourcePrefix(menu.name);
 
-      if (!previousMenu) {
-        displayKeys.push(displayKey);
-        menuByDisplayKey.set(displayKey, menu);
+      if (hasPublicSourcePrefix && nonPrefixedDisplayKeys.has(displayKey)) {
         return;
       }
 
-      if (this.shouldPreferMenuForDisplayDedupe(menu, previousMenu)) {
-        menuByDisplayKey.set(displayKey, menu);
+      if (!hasPublicSourcePrefix) {
+        if (seenNonPrefixedDisplayKeys.has(displayKey)) {
+          return;
+        }
+        seenNonPrefixedDisplayKeys.add(displayKey);
       }
+
+      dedupedMenus.push(menu);
     });
 
-    return displayKeys
-      .map((displayKey) => menuByDisplayKey.get(displayKey))
-      .filter((menu): menu is MenuEntity => !!menu);
+    return dedupedMenus;
   }
 
   private normalizeMenuDisplayDedupeKey(menuName: string): string {
     return this.normalizeCompactSearchText(stripPublicMenuSourcePrefix(menuName));
-  }
-
-  private shouldPreferMenuForDisplayDedupe(
-    candidate: MenuEntity,
-    current: MenuEntity,
-  ): boolean {
-    const candidateHasPublicSourcePrefix =
-      this.hasPublicMenuSourcePrefix(candidate.name);
-    const currentHasPublicSourcePrefix = this.hasPublicMenuSourcePrefix(
-      current.name,
-    );
-
-    if (candidateHasPublicSourcePrefix !== currentHasPublicSourcePrefix) {
-      return !candidateHasPublicSourcePrefix;
-    }
-
-    return false;
   }
 
   private hasPublicMenuSourcePrefix(menuName: string): boolean {
@@ -914,17 +904,25 @@ export class HomeService {
             .getMany()
         : [];
     const remainingRawLimit = Math.max(rawFetchLimit - exactMenus.length, 0);
+    const exactMenuIds = exactMenus.map((menu) => menu.id);
     const rawMenuList = this.dedupeMenusById(
       remainingRawLimit > 0
         ? [
             ...exactMenus,
-            ...(await buildSearchQuery()
-              .andWhere('menu.name NOT IN (:...exactNameCandidates)', {
-                exactNameCandidates,
-              })
-              .orderBy('menu.id', 'ASC')
-              .take(remainingRawLimit)
-              .getMany()),
+            ...(await (() => {
+              const query = buildSearchQuery();
+
+              if (exactMenuIds.length > 0) {
+                query.andWhere('menu.id NOT IN (:...exactMenuIds)', {
+                  exactMenuIds,
+                });
+              }
+
+              return query
+                .orderBy('menu.id', 'ASC')
+                .take(remainingRawLimit)
+                .getMany();
+            })()),
           ]
         : exactMenus,
     ).sort((left, right) => {

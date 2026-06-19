@@ -142,12 +142,14 @@ type LightweightChatContext = {
     image_summary: string | null;
     recommendation_card_menu_names_not_consumed: string[];
     feedback_card_menu_names_not_consumed: string[];
+    discussed_food_names_not_consumed: string[];
     brand: string | null;
   }>;
   previous_user_input: string | null;
   previous_category: ChatCategory | null;
   previous_recommendation_card_menu_names_not_consumed: string[];
   previous_feedback_card_menu_names_not_consumed: string[];
+  previous_discussed_food_names_not_consumed: string[];
   previous_brand: string | null;
   previous_category_name: string | null;
 };
@@ -1564,6 +1566,11 @@ export class ChatService {
           message.recommended_menu_names.slice(0, 5),
         feedback_card_menu_names_not_consumed:
           message.feedback_menu_names.slice(0, 5),
+        discussed_food_names_not_consumed: this.mergeTextValues(
+          message.feedback_menu_names,
+          message.recommended_menu_names,
+          this.extractMenuNamesFromPreviousUserInput(message.user_input),
+        ).slice(0, 5),
         brand: message.desired_brand,
       })),
       previous_user_input: chatContext.previous_user_input,
@@ -1572,6 +1579,13 @@ export class ChatService {
         chatContext.previous_recommended_menu_names.slice(0, 5),
       previous_feedback_card_menu_names_not_consumed:
         chatContext.previous_feedback_menu_names.slice(0, 5),
+      previous_discussed_food_names_not_consumed: this.mergeTextValues(
+        chatContext.previous_feedback_menu_names,
+        chatContext.previous_recommended_menu_names,
+        this.extractMenuNamesFromPreviousUserInput(
+          chatContext.previous_user_input,
+        ),
+      ).slice(0, 5),
       previous_brand: chatContext.previous_brand,
       previous_category_name: chatContext.previous_category_name,
     };
@@ -2025,6 +2039,8 @@ export class ChatService {
 - 단, 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유, 이전 채팅 맥락은 판단에 적극 반영해
 - 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
+- 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
 - 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력이나 사진/메뉴판 맥락에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
@@ -3932,6 +3948,8 @@ ${JSON.stringify(
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
 - 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
+- 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
 - 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
 - 오늘 실제 기록 메뉴와 최근 추천 메뉴가 있다면 같은 메뉴를 반복 추천하지 말고 사용자의 목표와 남은 섭취 여유에 맞춰 다양하게 제안해
 - 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
@@ -4030,6 +4048,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
 - 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
+- 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
 - 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
 - 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
 - 이전 답변을 이어받아 조건을 바꾸는 요청이면, 현재 입력에서 바꾼 조건만 덮어쓰고 나머지 맥락은 유지해
@@ -4110,6 +4130,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유, 이전 채팅 맥락은 판단에 적극 반영해
 - 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
+- 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
 - 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 메뉴판 이미지나 이전 채팅 맥락에서 시간 관련 표현이 직접 제공된 경우 그 표현은 그대로 반영해도 돼
@@ -6696,10 +6718,12 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - 카테고리/음식 범주가 명확하면 intent.desired_category 또는 intent.include.categories에 넣어
 - 숫자 영양 조건, 칼로리 조건, 탄단지 조건은 추출하지 마. nutrition_constraints는 항상 모두 null로 둬
 - 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
+- previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 생략된 주어 해석용 현재 대화 주제야
 - "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
 - "그 조건으로", "비슷한 걸로", "아까처럼"처럼 이전 조건을 유지해야 하면 context_action은 "reuse_previous_conditions"
 - "그거 먹어도 돼?", "아까 거 괜찮아?"처럼 이전 메뉴를 평가해야 하면 feedback 및 "evaluate_previous_menus"
 - "칼로리 몇이야?", "단백질은?", "탄수화물 얼마나 돼?", "영양성분 알려줘"처럼 주어가 생략된 영양/칼로리 후속 질문이고 최근 대화에 음식/메뉴가 있으면 feedback 및 "evaluate_previous_menus"로 분류해
+- "반찬없이 밥이랑만 먹어도 돼?", "같이 먹어도 돼?", "거기에 밥 추가해도 돼?", "그 음식에 곁들여도 돼?"처럼 직전 음식과 함께 먹는지 묻는 표현도 feedback 및 "evaluate_previous_menus"로 분류해
 - 이때 menu_names는 최근 대화의 피드백/추천 메뉴명을 참고하거나, 이전 사용자 입력에 나온 음식명을 넣어
 
 최근 대화 요약:
@@ -6760,8 +6784,11 @@ ${input}
       context_action: contextAction,
     };
     if (
-      classification.chat_category === 'general' &&
-      this.isContextualNutritionQuestion(input) &&
+      classification.menu_names.length === 0 &&
+      (classification.chat_category === 'general' ||
+        classification.chat_category === 'feedback') &&
+      (this.isContextualNutritionQuestion(input) ||
+        this.isContextualFoodFollowUp(input)) &&
       this.hasPreviousFoodContext(chatContext)
     ) {
       classification.chat_category = 'feedback';
@@ -6926,6 +6953,13 @@ ${input}
     );
   }
 
+  private isContextualFoodFollowUp(input: string): boolean {
+    const normalized = input.replace(/\s+/g, '');
+    return /(그거|그것|이거|이것|거기에|여기에|같이|함께|곁들|반찬없이|밥이랑만|밥이랑|밥만|밥추가|국물이랑|먹어도돼|괜찮아|어때)/.test(
+      normalized,
+    );
+  }
+
   private hasPreviousFoodContext(chatContext: ChatContextSummary): boolean {
     return this.getContextMenuNames(chatContext).length > 0;
   }
@@ -7072,7 +7106,7 @@ ${input}
 
     return {
       ...classification,
-      menu_names: menuNames.length > 0 ? menuNames : contextMenuNames,
+      menu_names: this.mergeTextValues(contextMenuNames, menuNames).slice(0, 5),
     };
   }
 
@@ -7727,6 +7761,8 @@ JSON shape:
 - 예: 이전에 "참치캔 먹었어"라고 했고 현재 "칼로리 몇이야?"라고 물으면, 현재 질문은 참치캔의 칼로리를 묻는 뜻으로 해석해
 - 단, DB 영양정보를 받은 상황이 아니면 특정 칼로리 수치를 단정하지 말고 "제품마다 다르다"처럼 범위를 조심스럽게 안내해
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
+- 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
 - 사용자가 직접 먹었다고 말한 이전 입력이나 실제 오늘 섭취 정보만 섭취 근거로 사용해
 - 앱 기능, 오류, 사진 인식 문제, 기록 기능, 계정, 결제, 구독, 대화 초기화처럼 서비스 동작에 관한 질문에는 기능을 추측해서 설명하지 말고 "[설정 - 문의하기/아이디어 보내기]로 문의해줘"라고 안내해
 - "기록해줘", "등록해줘", "저장해줘", "수정해줘", "삭제해줘"처럼 실제 앱 동작을 대신 수행해 달라는 요청에는 수행했다고 말하지 말고 채팅 직접 기록 기능은 준비 중이니 사용자가 직접 기록해야 한다고 말해
