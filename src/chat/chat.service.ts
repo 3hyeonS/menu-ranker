@@ -290,6 +290,7 @@ type GenericMenuCandidate = {
 type GenericMenuCandidateMatchOptions = {
   disableDefaultNamePrefix?: boolean;
   useIntentCategoryFilters?: boolean;
+  exactOnly?: boolean;
 };
 
 type GenericMenuCandidatePlan = {
@@ -4296,7 +4297,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             candidate,
             intent,
             supportedCandidateBrandKeys,
-            options,
+            {
+              ...options,
+              exactOnly: true,
+            },
           );
 
         if (exactFallbackMenu) {
@@ -4315,28 +4319,35 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           return exactFallbackMenu;
         }
 
-        const vectorResults = await menuVectorService.searchMenusByText(
-          this.buildSingleGenericCandidateVectorQuery(candidate, intent),
-          {
-            userId,
-            limit: this.getGeminiGenericMenuPerCandidateLimit(),
-            brands: brandFilters,
-            category: null,
-            namePrefix:
-              !options.disableDefaultNamePrefix && shouldUseDefaultScope
-                ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
-                : null,
-            maxCalories: intent.nutrition_constraints.max_calories,
-            minProtein: intent.nutrition_constraints.min_protein,
-          },
-        );
-        const menuIds = vectorResults.map((result) => result.menuId);
-        const vectorMenus = await this.getMenusByIds(userId, menuIds);
-        const matchedMenu = this.findMostSimilarMenuAboveThreshold(
-          candidate.name,
-          vectorMenus,
-          25,
-        );
+        const matchByVector = async (useDefaultPrefix: boolean) => {
+          const vectorResults = await menuVectorService.searchMenusByText(
+            this.buildSingleGenericCandidateVectorQuery(candidate, intent),
+            {
+              userId,
+              limit: this.getGeminiGenericMenuPerCandidateLimit(),
+              brands: brandFilters,
+              category: null,
+              namePrefix:
+                useDefaultPrefix &&
+                !options.disableDefaultNamePrefix &&
+                shouldUseDefaultScope
+                  ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
+                  : null,
+              maxCalories: intent.nutrition_constraints.max_calories,
+              minProtein: intent.nutrition_constraints.min_protein,
+            },
+          );
+          const menuIds = vectorResults.map((result) => result.menuId);
+          const vectorMenus = await this.getMenusByIds(userId, menuIds);
+
+          return this.findMostSimilarMenuAboveThreshold(
+            candidate.name,
+            vectorMenus,
+            25,
+          );
+        };
+
+        const matchedMenu = await matchByVector(true);
 
         if (matchedMenu) {
           matchLogs.push({
@@ -4352,6 +4363,83 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             menuBrand: matchedMenu.brand ?? null,
           });
           return matchedMenu;
+        }
+
+        const keywordFallbackMenu =
+          await this.findGenericCandidateMenuByKeywordFallback(
+            userId,
+            candidate,
+            intent,
+            supportedCandidateBrandKeys,
+            options,
+          );
+
+        if (keywordFallbackMenu) {
+          matchLogs.push({
+            candidateIndex,
+            candidate: {
+              name: candidate.name,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'keyword_fallback',
+            menuId: keywordFallbackMenu.id,
+            menuName: stripPublicMenuSourcePrefix(keywordFallbackMenu.name),
+            menuBrand: keywordFallbackMenu.brand ?? null,
+          });
+          return keywordFallbackMenu;
+        }
+
+        if (shouldUseDefaultScope && !options.disableDefaultNamePrefix) {
+          const broadVectorMatchedMenu = await matchByVector(false);
+
+          if (broadVectorMatchedMenu) {
+            matchLogs.push({
+              candidateIndex,
+              candidate: {
+                name: candidate.name,
+                brand: candidate.brand,
+                category: candidate.category,
+              },
+              source: 'vector',
+              menuId: broadVectorMatchedMenu.id,
+              menuName: stripPublicMenuSourcePrefix(
+                broadVectorMatchedMenu.name,
+              ),
+              menuBrand: broadVectorMatchedMenu.brand ?? null,
+            });
+            return broadVectorMatchedMenu;
+          }
+
+          const broadKeywordFallbackMenu =
+            await this.findGenericCandidateMenuByKeywordFallback(
+              userId,
+              candidate,
+              intent,
+              supportedCandidateBrandKeys,
+              {
+                ...options,
+                disableDefaultNamePrefix: true,
+              },
+            );
+
+          if (broadKeywordFallbackMenu) {
+            matchLogs.push({
+              candidateIndex,
+              candidate: {
+                name: candidate.name,
+                brand: candidate.brand,
+                category: candidate.category,
+              },
+              source: 'keyword_fallback',
+              menuId: broadKeywordFallbackMenu.id,
+              menuName: stripPublicMenuSourcePrefix(
+                broadKeywordFallbackMenu.name,
+              ),
+              menuBrand: broadKeywordFallbackMenu.brand ?? null,
+            });
+            return broadKeywordFallbackMenu;
+          }
         }
 
         matchLogs.push({
@@ -4457,6 +4545,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             candidate,
             intent,
             supportedCandidateBrandKeys,
+            {
+              exactOnly: true,
+            },
           );
 
         if (exactFallbackMenu) {
@@ -4479,27 +4570,33 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           };
         }
 
-        const vectorResults = await menuVectorService.searchMenusByText(
-          this.buildSingleGenericCandidateVectorQuery(candidate, intent),
-          {
-            userId,
-            limit: this.getGeminiGenericMenuPerCandidateLimit(),
-            brands: brandFilters,
-            category: null,
-            namePrefix: shouldUseDefaultScope
-              ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
-              : null,
-            maxCalories: intent.nutrition_constraints.max_calories,
-            minProtein: intent.nutrition_constraints.min_protein,
-          },
-        );
-        const menuIds = vectorResults.map((result) => result.menuId);
-        const vectorMenus = await this.getMenusByIds(userId, menuIds);
-        const matchedMenu = this.findMostSimilarMenuAboveThreshold(
-          candidate.name,
-          vectorMenus,
-          25,
-        );
+        const matchByVector = async (useDefaultPrefix: boolean) => {
+          const vectorResults = await menuVectorService.searchMenusByText(
+            this.buildSingleGenericCandidateVectorQuery(candidate, intent),
+            {
+              userId,
+              limit: this.getGeminiGenericMenuPerCandidateLimit(),
+              brands: brandFilters,
+              category: null,
+              namePrefix:
+                useDefaultPrefix && shouldUseDefaultScope
+                  ? DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX
+                  : null,
+              maxCalories: intent.nutrition_constraints.max_calories,
+              minProtein: intent.nutrition_constraints.min_protein,
+            },
+          );
+          const menuIds = vectorResults.map((result) => result.menuId);
+          const vectorMenus = await this.getMenusByIds(userId, menuIds);
+
+          return this.findMostSimilarMenuAboveThreshold(
+            candidate.name,
+            vectorMenus,
+            25,
+          );
+        };
+
+        const matchedMenu = await matchByVector(true);
 
         if (matchedMenu) {
           matchLogs.push({
@@ -4519,6 +4616,93 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
             inputMenuName: candidate.name,
             menu: matchedMenu,
           };
+        }
+
+        const keywordFallbackMenu =
+          await this.findGenericCandidateMenuByKeywordFallback(
+            userId,
+            candidate,
+            intent,
+            supportedCandidateBrandKeys,
+          );
+
+        if (keywordFallbackMenu) {
+          matchLogs.push({
+            candidateIndex,
+            candidate: {
+              name: candidate.name,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'keyword_fallback',
+            menuId: keywordFallbackMenu.id,
+            menuName: stripPublicMenuSourcePrefix(keywordFallbackMenu.name),
+            menuBrand: keywordFallbackMenu.brand ?? null,
+          });
+
+          return {
+            inputMenuName: candidate.name,
+            menu: keywordFallbackMenu,
+          };
+        }
+
+        if (shouldUseDefaultScope) {
+          const broadVectorMatchedMenu = await matchByVector(false);
+
+          if (broadVectorMatchedMenu) {
+            matchLogs.push({
+              candidateIndex,
+              candidate: {
+                name: candidate.name,
+                brand: candidate.brand,
+                category: candidate.category,
+              },
+              source: 'vector',
+              menuId: broadVectorMatchedMenu.id,
+              menuName: stripPublicMenuSourcePrefix(
+                broadVectorMatchedMenu.name,
+              ),
+              menuBrand: broadVectorMatchedMenu.brand ?? null,
+            });
+
+            return {
+              inputMenuName: candidate.name,
+              menu: broadVectorMatchedMenu,
+            };
+          }
+
+          const broadKeywordFallbackMenu =
+            await this.findGenericCandidateMenuByKeywordFallback(
+              userId,
+              candidate,
+              intent,
+              supportedCandidateBrandKeys,
+              {
+                disableDefaultNamePrefix: true,
+              },
+            );
+
+          if (broadKeywordFallbackMenu) {
+            matchLogs.push({
+              candidateIndex,
+              candidate: {
+                name: candidate.name,
+                brand: candidate.brand,
+                category: candidate.category,
+              },
+              source: 'keyword_fallback',
+              menuId: broadKeywordFallbackMenu.id,
+              menuName: stripPublicMenuSourcePrefix(
+                broadKeywordFallbackMenu.name,
+              ),
+              menuBrand: broadKeywordFallbackMenu.brand ?? null,
+            });
+
+            return {
+              inputMenuName: candidate.name,
+              menu: broadKeywordFallbackMenu,
+            };
+          }
         }
 
         matchLogs.push({
@@ -4675,7 +4859,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     };
 
     let fallbackMenus = await buildFallbackQuery('exact').getMany();
-    if (fallbackMenus.length === 0) {
+    if (fallbackMenus.length === 0 && !options.exactOnly) {
       fallbackMenus = await buildFallbackQuery('contains').getMany();
     }
     const candidates = fallbackMenus.sort((left, right) => {
