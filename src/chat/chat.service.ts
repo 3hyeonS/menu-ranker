@@ -4737,67 +4737,82 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       "REPLACE(%s, '\n', '')",
     ].reduce((expression, template) => template.replace('%s', expression));
 
-    const builder = this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoinAndSelect('menu.user', 'user')
-      .where(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
-            userId,
-          });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .andWhere(`${normalizedMenuNameExpression} = :normalizedCandidateName`, {
-        normalizedCandidateName,
-      });
-
-    if (
+    const shouldUseDefaultPrefix =
       !options.disableDefaultNamePrefix &&
       (!this.hasBrandIntent(intent) ||
         this.shouldUseDefaultGenericCandidateMenuScope(
           candidate,
           supportedCandidateBrandKeys,
-        ))
-    ) {
-      builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
-        defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
-      });
+        ));
+
+    const queryNormalizedExact = async (useDefaultPrefix: boolean) => {
+      const builder = this.menuRepository
+        .createQueryBuilder('menu')
+        .leftJoinAndSelect('menu.user', 'user')
+        .where(
+          new Brackets((qb) => {
+            qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+              userId,
+            });
+          }),
+        )
+        .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+        .andWhere(`${normalizedMenuNameExpression} = :normalizedCandidateName`, {
+          normalizedCandidateName,
+        });
+
+      if (useDefaultPrefix) {
+        builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
+          defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
+        });
+      }
+
+      if (brandFilters && brandFilters.length > 0) {
+        builder.andWhere(
+          new Brackets((qb) => {
+            brandFilters.forEach((brand, index) => {
+              const parameterName = `normalizedFallbackBrand${index}`;
+              const condition = `menu.brand LIKE :${parameterName}`;
+
+              if (index === 0) {
+                qb.where(condition, { [parameterName]: `%${brand}%` });
+                return;
+              }
+
+              qb.orWhere(condition, { [parameterName]: `%${brand}%` });
+            });
+          }),
+        );
+      }
+
+      if (intent.nutrition_constraints.max_calories != null) {
+        builder.andWhere('menu.calories <= :normalizedFallbackMaxCalories', {
+          normalizedFallbackMaxCalories:
+            intent.nutrition_constraints.max_calories,
+        });
+      }
+      if (intent.nutrition_constraints.min_protein != null) {
+        builder.andWhere('menu.protein >= :normalizedFallbackMinProtein', {
+          normalizedFallbackMinProtein:
+            intent.nutrition_constraints.min_protein,
+        });
+      }
+
+      return await builder
+        .orderBy('CHAR_LENGTH(menu.name)', 'ASC')
+        .addOrderBy('menu.id', 'ASC')
+        .getOne();
+    };
+
+    const defaultScopedMenu = shouldUseDefaultPrefix
+      ? await queryNormalizedExact(true)
+      : null;
+
+    if (defaultScopedMenu) {
+      return defaultScopedMenu;
     }
 
-    if (brandFilters && brandFilters.length > 0) {
-      builder.andWhere(
-        new Brackets((qb) => {
-          brandFilters.forEach((brand, index) => {
-            const parameterName = `normalizedFallbackBrand${index}`;
-            const condition = `menu.brand LIKE :${parameterName}`;
-
-            if (index === 0) {
-              qb.where(condition, { [parameterName]: `%${brand}%` });
-              return;
-            }
-
-            qb.orWhere(condition, { [parameterName]: `%${brand}%` });
-          });
-        }),
-      );
-    }
-
-    if (intent.nutrition_constraints.max_calories != null) {
-      builder.andWhere('menu.calories <= :normalizedFallbackMaxCalories', {
-        normalizedFallbackMaxCalories: intent.nutrition_constraints.max_calories,
-      });
-    }
-    if (intent.nutrition_constraints.min_protein != null) {
-      builder.andWhere('menu.protein >= :normalizedFallbackMinProtein', {
-        normalizedFallbackMinProtein: intent.nutrition_constraints.min_protein,
-      });
-    }
-
-    return await builder
-      .orderBy('CHAR_LENGTH(menu.name)', 'ASC')
-      .addOrderBy('menu.id', 'ASC')
-      .getOne();
+    return await queryNormalizedExact(false);
   }
 
   private getExactGenericCandidateMenuNames(candidateName: string): string[] {
@@ -8968,11 +8983,7 @@ ${JSON.stringify(candidates)}
   }
 
   private isValidGenericMenuCandidateName(name: string): boolean {
-    if (name.length >= 2) {
-      return true;
-    }
-
-    return ['밥', '빵', '면', '국', '죽', '떡'].includes(name);
+    return name.trim().length > 0;
   }
 
   private asNullableNumber(value: unknown): number | null {
