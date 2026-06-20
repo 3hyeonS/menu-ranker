@@ -8359,6 +8359,8 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
 - intro_message에서 사용자가 먹으라고 권한 메뉴/음식/브랜드/카테고리와 DB 메뉴가 자연스럽게 같은 대상이면 유지해
 - intro_message가 특정 메뉴를 말하지 않았거나, DB 메뉴들이 intro_message의 추천 대상과 잘 맞지 않으면 should_return_menus를 false로 해
 - 메뉴명이 DB 제품명처럼 길어도 cleaned_menu, brand, category를 보고 실제 음식 의미가 맞는지 판단해
+- 원본 후보나 intro의 대상이 소스/음료/단일 재료인데 DB 메뉴가 그 재료를 포함한 별도 요리라면 불일치로 판단해
+- 예: 케첩 -> 소시지 케첩볶음은 불일치, 귤 -> 귤차는 불일치, 밥 -> 국밥은 불일치
 - 맞는 메뉴가 일부만 있으면 그 메뉴들만 ordered_menu_ids에 넣어
 - intro_message에서 더 중요하게 말한 메뉴와 가장 가까운 DB 메뉴를 맨 앞으로 둬
 - ordered_menu_ids는 입력된 menu_id 중에서만 고르고 최대 10개야
@@ -8443,6 +8445,8 @@ ${JSON.stringify(menusPayload)}
 - intro_message에서 사용자가 먹어도 되는지 묻거나 피드백한 음식과 DB 메뉴가 자연스럽게 같은 대상이면 유지해
 - intro_message가 특정 메뉴를 말하지 않았거나, DB 메뉴들이 intro_message의 피드백 대상과 잘 맞지 않으면 should_return_menus를 false로 해
 - 메뉴명이 DB 제품명처럼 길어도 cleaned_menu, brand, category를 보고 실제 음식 의미가 맞는지 판단해
+- input_menu_name이 소스/음료/단일 재료인데 DB 메뉴가 그 재료를 포함한 별도 요리라면 불일치로 판단해
+- 예: 케첩 -> 소시지 케첩볶음은 불일치, 귤 -> 귤차는 불일치, 밥 -> 국밥은 불일치
 - 맞는 메뉴가 일부만 있으면 그 메뉴들만 ordered_menu_ids에 넣어
 - intro_message에서 더 중요하게 말한 메뉴와 가장 가까운 DB 메뉴를 맨 앞으로 둬
 - ordered_menu_ids는 입력된 menu_id 중에서만 고르고 최대 10개야
