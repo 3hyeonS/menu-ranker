@@ -1259,34 +1259,43 @@ export class ChatService {
       mealTime,
       'regular',
     );
-    const combinationNutrition = this.sumFeedbackNutrition(
-      matchedMenus.map(({ menu }) => menu),
-    );
-    const combinationScore = this.scoreFeedbackCombination(
-      combinationNutrition,
-      userInfo,
-      rankingBasis,
-    );
-    const feedback = new ChatFeedbackResponseDto();
     const feedbackIntent = this.buildFeedbackIntent('개별 메뉴 피드백');
 
-    feedback.menus = matchedMenus.map(({ inputMenuName, menu }) =>
-      this.toFeedbackMenuResponse(
-        inputMenuName,
-        menu,
-        this.scoreMenu(menu, feedbackIntent, userInfo, rankingBasis),
-      ),
-    );
-    feedback.total_calories = roundToOneDecimal(combinationNutrition.calories);
-    feedback.score = roundToOneDecimal(combinationScore.finalScore);
-    feedback.is_appropriate = combinationScore.finalScore >= 65;
+    const buildFeedbackPayload = (
+      targetMatchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>,
+    ) => {
+      const combinationNutrition = this.sumFeedbackNutrition(
+        targetMatchedMenus.map(({ menu }) => menu),
+      );
+      const combinationScore = this.scoreFeedbackCombination(
+        combinationNutrition,
+        userInfo,
+        rankingBasis,
+      );
+      const feedback = new ChatFeedbackResponseDto();
+
+      feedback.menus = targetMatchedMenus.map(({ inputMenuName, menu }) =>
+        this.toFeedbackMenuResponse(
+          inputMenuName,
+          menu,
+          this.scoreMenu(menu, feedbackIntent, userInfo, rankingBasis),
+        ),
+      );
+      feedback.total_calories = roundToOneDecimal(combinationNutrition.calories);
+      feedback.score = roundToOneDecimal(combinationScore.finalScore);
+      feedback.is_appropriate = combinationScore.finalScore >= 65;
+
+      return feedback;
+    };
+
+    let validatedMatchedMenus = matchedMenus;
+    let feedback = buildFeedbackPayload(validatedMatchedMenus);
     timing?.mark('feedback_score_completed', {
-      matchedMenuCount: matchedMenus.length,
+      matchedMenuCount: validatedMatchedMenus.length,
     });
 
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'feedback';
-    response.feedback = feedback;
     const generatedIntroMessage =
       preparedIntroMessage ??
       (await this.generateIntroMessageWithGemini({
@@ -1301,6 +1310,37 @@ export class ChatService {
         fallback: introMessage,
       }));
     response.intro_message = generatedIntroMessage;
+    const validation = await this.validateFeedbackMenusAgainstIntro({
+      input,
+      introMessage: generatedIntroMessage,
+      matchedMenus: validatedMatchedMenus,
+    });
+    timing?.mark('feedback_intro_menu_validation_completed', {
+      shouldReturnMenus: validation.shouldReturnMenus,
+      orderedMenuIds: validation.orderedMenuIds,
+    });
+
+    if (validation.shouldReturnMenus) {
+      if (validation.orderedMenuIds.length > 0) {
+        const matchedMenuMap = new Map(
+          validatedMatchedMenus.map((matchedMenu) => [
+            matchedMenu.menu.id,
+            matchedMenu,
+          ]),
+        );
+        validatedMatchedMenus = validation.orderedMenuIds
+          .map((menuId) => matchedMenuMap.get(menuId))
+          .filter(
+            (
+              matchedMenu,
+            ): matchedMenu is { inputMenuName: string; menu: MenuEntity } =>
+              !!matchedMenu,
+          );
+        feedback = buildFeedbackPayload(validatedMatchedMenus);
+      }
+
+      response.feedback = feedback;
+    }
     timing?.mark(
       preparedIntroMessage
         ? 'feedback_gemini_intro_skipped_prepared_intro'
@@ -4550,6 +4590,20 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     const exactCandidateNames = this.getExactGenericCandidateMenuNames(
       candidateName,
     );
+    const normalizedExactFallbackMenu =
+      await this.findGenericCandidateMenuByNormalizedExactName(
+        userId,
+        candidateName,
+        intent,
+        candidate,
+        supportedCandidateBrandKeys,
+        options,
+      );
+
+    if (normalizedExactFallbackMenu) {
+      return normalizedExactFallbackMenu;
+    }
+
     const buildFallbackQuery = (matchMode: 'exact' | 'contains') => {
       const builder = this.menuRepository
         .createQueryBuilder('menu')
@@ -4653,6 +4707,97 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       candidates,
       20,
     );
+  }
+
+  private async findGenericCandidateMenuByNormalizedExactName(
+    userId: number,
+    candidateName: string,
+    intent: ParsedChatIntent,
+    candidate: GenericMenuCandidate,
+    supportedCandidateBrandKeys: Set<string>,
+    options: GenericMenuCandidateMatchOptions = {},
+  ): Promise<MenuEntity | null> {
+    const normalizedCandidateName = this.normalizeMenuMatchText(candidateName);
+
+    if (!normalizedCandidateName) {
+      return null;
+    }
+
+    const brandFilters = this.hasBrandIntent(intent)
+      ? this.getGenericCandidateVectorBrands(
+          candidate,
+          supportedCandidateBrandKeys,
+        )
+      : null;
+    const normalizedMenuNameExpression = [
+      "REPLACE(LOWER(menu.name), '(식약처_음식)', '')",
+      "REPLACE(%s, '(식약처_가공)', '')",
+      "REPLACE(%s, ' ', '')",
+      "REPLACE(%s, '\t', '')",
+      "REPLACE(%s, '\n', '')",
+    ].reduce((expression, template) => template.replace('%s', expression));
+
+    const builder = this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+            userId,
+          });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(`${normalizedMenuNameExpression} = :normalizedCandidateName`, {
+        normalizedCandidateName,
+      });
+
+    if (
+      !options.disableDefaultNamePrefix &&
+      (!this.hasBrandIntent(intent) ||
+        this.shouldUseDefaultGenericCandidateMenuScope(
+          candidate,
+          supportedCandidateBrandKeys,
+        ))
+    ) {
+      builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
+        defaultMenuNamePrefix: `${DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX}%`,
+      });
+    }
+
+    if (brandFilters && brandFilters.length > 0) {
+      builder.andWhere(
+        new Brackets((qb) => {
+          brandFilters.forEach((brand, index) => {
+            const parameterName = `normalizedFallbackBrand${index}`;
+            const condition = `menu.brand LIKE :${parameterName}`;
+
+            if (index === 0) {
+              qb.where(condition, { [parameterName]: `%${brand}%` });
+              return;
+            }
+
+            qb.orWhere(condition, { [parameterName]: `%${brand}%` });
+          });
+        }),
+      );
+    }
+
+    if (intent.nutrition_constraints.max_calories != null) {
+      builder.andWhere('menu.calories <= :normalizedFallbackMaxCalories', {
+        normalizedFallbackMaxCalories: intent.nutrition_constraints.max_calories,
+      });
+    }
+    if (intent.nutrition_constraints.min_protein != null) {
+      builder.andWhere('menu.protein >= :normalizedFallbackMinProtein', {
+        normalizedFallbackMinProtein: intent.nutrition_constraints.min_protein,
+      });
+    }
+
+    return await builder
+      .orderBy('CHAR_LENGTH(menu.name)', 'ASC')
+      .addOrderBy('menu.id', 'ASC')
+      .getOne();
   }
 
   private getExactGenericCandidateMenuNames(candidateName: string): string[] {
@@ -8064,6 +8209,90 @@ ${JSON.stringify(menusPayload)}
         orderedMenuIds: params.rankedMenus
           .slice(0, 10)
           .map((rankedMenu) => rankedMenu.menu.id),
+      };
+    }
+  }
+
+  private async validateFeedbackMenusAgainstIntro(params: {
+    input: string;
+    introMessage: string;
+    matchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>;
+  }): Promise<{ shouldReturnMenus: boolean; orderedMenuIds: number[] }> {
+    const menusPayload = params.matchedMenus
+      .slice(0, 10)
+      .map(({ inputMenuName, menu }, index) => ({
+        rank: index + 1,
+        input_menu_name: inputMenuName,
+        menu_id: menu.id,
+        menu: menu.name,
+        cleaned_menu: this.toIntroDisplayMenuName(menu.name),
+        brand: menu.brand,
+        category: menu.category,
+        amount: this.formatAmount(menu),
+        calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+      }));
+
+    if (menusPayload.length === 0) {
+      return { shouldReturnMenus: false, orderedMenuIds: [] };
+    }
+
+    const prompt = `
+최초 Gemini 피드백 intro_message와 DB에서 매칭된 메뉴 목록이 서로 자연스럽게 일치하는지 판단해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+판단 규칙:
+- intro_message에서 사용자가 먹어도 되는지 묻거나 피드백한 음식과 DB 메뉴가 자연스럽게 같은 대상이면 유지해
+- intro_message가 특정 메뉴를 말하지 않았거나, DB 메뉴들이 intro_message의 피드백 대상과 잘 맞지 않으면 should_return_menus를 false로 해
+- 메뉴명이 DB 제품명처럼 길어도 cleaned_menu, brand, category를 보고 실제 음식 의미가 맞는지 판단해
+- 맞는 메뉴가 일부만 있으면 그 메뉴들만 ordered_menu_ids에 넣어
+- intro_message에서 더 중요하게 말한 메뉴와 가장 가까운 DB 메뉴를 맨 앞으로 둬
+- ordered_menu_ids는 입력된 menu_id 중에서만 고르고 최대 10개야
+
+사용자 입력:
+${params.input}
+
+intro_message:
+${params.introMessage}
+
+DB 매칭 메뉴:
+${JSON.stringify(menusPayload)}
+
+반환 shape:
+{
+  "should_return_menus": true,
+  "ordered_menu_ids": [1, 2]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt, {
+        context: 'feedback-menu-intro-validation',
+        systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
+      });
+      const allowedMenuIds = new Set(menusPayload.map((menu) => menu.menu_id));
+      const orderedMenuIds = Array.isArray(data?.ordered_menu_ids)
+        ? data.ordered_menu_ids
+            .map((menuId) => Number(menuId))
+            .filter((menuId) => allowedMenuIds.has(menuId))
+            .slice(0, 10)
+        : [];
+      const shouldReturnMenus =
+        data?.should_return_menus === true && orderedMenuIds.length > 0;
+      console.log('[CHAT] feedback intro menu validation', {
+        shouldReturnMenus,
+        orderedMenuIds,
+      });
+
+      return {
+        shouldReturnMenus,
+        orderedMenuIds,
+      };
+    } catch {
+      return {
+        shouldReturnMenus: true,
+        orderedMenuIds: params.matchedMenus
+          .slice(0, 10)
+          .map((matchedMenu) => matchedMenu.menu.id),
       };
     }
   }
