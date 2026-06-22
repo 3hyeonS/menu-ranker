@@ -32,8 +32,10 @@ import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-respon
 import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
 import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
+import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-nutrition-label-feedback-response-dto';
 import { ChatFoodImageRecognizedMenuResponseDto } from './dto/response-dto/chat-food-image-recognized-menu-response-dto';
 import { ChatFoodImagePositionResponseDto } from './dto/response-dto/chat-food-image-position-response-dto';
+import { NutritionLabelRecognitionResponseDto } from '../home/dto/response-dto/nutrition-label-recognition-response-dto';
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
@@ -91,7 +93,27 @@ type ChatIntroMessageSource =
   | 'text_recommendation'
   | 'text_feedback'
   | 'menu_board_recommendation'
-  | 'food_image_feedback';
+  | 'food_image_feedback'
+  | 'nutrition_label_feedback';
+type NutritionLabelRecognitionValue = {
+  unit: number;
+  weight: number;
+  calories: number;
+  carbs: number | null;
+  sugars: number | null;
+  sugar_alchol: number | null;
+  dietary_fiber: number | null;
+  protein: number | null;
+  fat: number | null;
+  sat_fat: number | null;
+  trans_fat: number | null;
+  un_sat_fat: number | null;
+  sodium: number | null;
+  caffeine: number | null;
+  potassium: number | null;
+  cholesterol: number | null;
+  alcohol: number | null;
+};
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
 
@@ -831,6 +853,94 @@ export class ChatService {
         user,
         file,
         'food-image-feedback',
+        error,
+      );
+      throw error;
+    }
+  }
+
+  async feedbackFromNutritionLabel(
+    user: UserEntity,
+    file: Express.Multer.File,
+  ): Promise<ChatNutritionLabelFeedbackResponseDto> {
+    const timing = this.createChatTimingLogger('nutrition_label_feedback', {
+      userId: user.id,
+      fileSize: file?.size ?? 0,
+      mimeType: file?.mimetype ?? null,
+    });
+
+    if (!file) {
+      throw new BadRequestException('image file is required');
+    }
+
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('image file must be an image');
+    }
+
+    try {
+      const userInfo = await this.getRequiredUserInfo(user.id);
+      timing.mark('user_info_loaded');
+      const chatContext = await this.getRecentChatContext(user.id);
+      timing.mark('chat_context_loaded');
+      const mealTime = this.inferMealTimeFromClock(new Date());
+      const baseIntent: ParsedChatIntent = {
+        normalized_request: '영양성분표 사진 기반 피드백',
+        meal_time: mealTime,
+        desired_brand: null,
+        desired_category: null,
+        nutrition_focus: [],
+        amount_preference: 'regular',
+        keywords: [],
+        include: this.emptyIntentConditionGroup(),
+        exclude: this.emptyIntentConditionGroup(),
+        nutrition_constraints: this.emptyNutritionConstraints(),
+      };
+      const userContext = await this.buildGenericMenuCandidateUserContext(
+        user.id,
+        userInfo,
+        baseIntent,
+      );
+      timing.mark('nutrition_label_user_context_loaded');
+
+      const recognition = await this.recognizeNutritionLabelWithGemini(
+        file,
+        userContext,
+        chatContext,
+      );
+      timing.mark('nutrition_label_recognition_completed');
+
+      const response = new ChatNutritionLabelFeedbackResponseDto();
+      response.chat_category = 'feedback';
+      response.intro_message =
+        recognition.introMessage ??
+        this.buildNutritionLabelFallbackIntro(recognition.nutrition);
+      response.image_summary = recognition.imageSummary ?? undefined;
+      response.recognized_nutrition = new NutritionLabelRecognitionResponseDto(
+        recognition.nutrition,
+      );
+      response.image_url = await this.uploadChatImage(
+        user,
+        file,
+        'nutrition-label-feedback',
+      );
+      timing.mark('image_uploaded');
+
+      await this.chatHistoryRepository.save(
+        this.chatHistoryRepository.create({
+          input_text: '영양성분표 사진 기반 피드백',
+          response_payload: response as unknown as Record<string, any>,
+          user,
+        }),
+      );
+      timing.mark('history_saved');
+      timing.end();
+
+      return response;
+    } catch (error) {
+      await this.uploadFailedChatImageIfPossible(
+        user,
+        file,
+        'nutrition-label-feedback',
         error,
       );
       throw error;
@@ -2055,6 +2165,80 @@ export class ChatService {
     });
 
     return matchedCandidates;
+  }
+
+  private async recognizeNutritionLabelWithGemini(
+    file: Express.Multer.File,
+    userContext: GenericMenuCandidateUserContext,
+    chatContext: ChatContextSummary,
+  ): Promise<{
+    introMessage: string | null;
+    imageSummary: string | null;
+    nutrition: NutritionLabelRecognitionValue;
+  }> {
+    const prompt = `
+영양성분표 사진을 분석해서 사용자에게 보낼 피드백과 인식한 영양성분 값을 JSON으로 반환해.
+반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지.
+
+작성 규칙:
+- intro_message는 영양성분표 내용과 사용자 식사 목표/오늘 실제 식사 기록을 보고 가장 자연스럽게 작성해
+- intro_message 작성 시 메뉴 카드나 DB 매칭 가능성은 의식하지 마
+- 특정 브랜드명/제품명은 직접 언급하지 말고 "이 제품은", "이 구성은"처럼 표현해
+- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 이전 대화는 주어가 생략된 후속 질문의 맥락을 이해하는 용도로만 사용해
+- 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
+- 단, 사용자가 입력이나 사진 맥락에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
+- target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
+- intro_message에는 영양성분표에서 읽은 정확한 숫자를 길게 나열하지 마
+- 숫자 설명이 필요하면 recognized_nutrition에만 담고, intro_message는 "단백질은 괜찮은 편", "나트륨 부담이 있는 편"처럼 정성적으로 말해
+- image_summary는 이후 대화에서 원본 사진 없이도 맥락을 이해할 수 있게 1~2문장으로 요약해
+- 영양성분표에 없는 값은 null로 반환해
+- unit은 g 기준이면 0, ml 기준이면 1로 반환해
+- weight와 calories는 반드시 숫자로 반환해. 1회 제공량 또는 표기 기준량을 우선 사용해
+
+반환 shape:
+{
+  "intro_message": "단백질은 챙기기 좋지만 나트륨과 지방 부담은 있는 편이야. 오늘 실제 식사 흐름에 맞춰 양을 조절해서 먹어.",
+  "image_summary": "영양성분표에는 1회 제공량, 열량, 탄수화물, 단백질, 지방, 나트륨 정보가 표시되어 있어.",
+  "nutrition": {
+    "unit": 0,
+    "weight": 100,
+    "calories": 210,
+    "carbs": 14,
+    "sugars": 5,
+    "sugar_alchol": null,
+    "dietary_fiber": 3,
+    "protein": 24,
+    "fat": 7,
+    "sat_fat": 1.5,
+    "trans_fat": 0,
+    "un_sat_fat": null,
+    "sodium": 420,
+    "caffeine": null,
+    "potassium": null,
+    "cholesterol": 45,
+    "alcohol": null
+  }
+}
+
+사용자 식사 정보:
+${JSON.stringify(userContext, null, 2)}
+
+최근 대화 맥락:
+${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
+`;
+
+    const data = await this.callGeminiJsonWithImage(prompt, file);
+    const nutrition = this.normalizeNutritionLabelRecognition(
+      data?.nutrition ?? data,
+    );
+
+    return {
+      introMessage: this.asNonEmptyString(data?.intro_message),
+      imageSummary: this.asNonEmptyString(data?.image_summary),
+      nutrition,
+    };
   }
 
   private async recognizeFoodImageMenusWithGemini(
@@ -8195,11 +8379,13 @@ ${JSON.stringify({
       text_feedback: '사용자 텍스트 기반 메뉴 피드백',
       menu_board_recommendation: '메뉴판 사진 기반 메뉴 추천',
       food_image_feedback: '음식 사진 기반 메뉴 피드백',
+      nutrition_label_feedback: '영양성분표 사진 기반 피드백',
     };
 
     const isImageSource =
       params.source === 'menu_board_recommendation' ||
-      params.source === 'food_image_feedback';
+      params.source === 'food_image_feedback' ||
+      params.source === 'nutrition_label_feedback';
     const rankedMenuPayload = params.rankedMenus?.map(
       ({ menu, score }, index) => ({
         rank: index + 1,
@@ -8517,10 +8703,12 @@ ${JSON.stringify(menusPayload)}
       text_feedback: '사용자 텍스트 기반 메뉴 피드백',
       menu_board_recommendation: '메뉴판 사진 기반 메뉴 추천',
       food_image_feedback: '음식 사진 기반 메뉴 피드백',
+      nutrition_label_feedback: '영양성분표 사진 기반 피드백',
     };
     const isImageSource =
       params.source === 'menu_board_recommendation' ||
-      params.source === 'food_image_feedback';
+      params.source === 'food_image_feedback' ||
+      params.source === 'nutrition_label_feedback';
     const promptPayloadReplacer = (key: string, value: unknown) =>
       isImageSource && key === 'brand' ? undefined : value;
     const menusPayload = params.rankedMenus.map(({ menu, score }, index) => ({
@@ -9026,7 +9214,7 @@ ${JSON.stringify(candidates)}
   private async uploadChatImage(
     user: UserEntity,
     file: Express.Multer.File,
-    imageType: 'menu-board' | 'food-image-feedback',
+    imageType: 'menu-board' | 'food-image-feedback' | 'nutrition-label-feedback',
   ): Promise<string> {
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomString = Math.random().toString(36).substring(2, 12);
@@ -9048,7 +9236,7 @@ ${JSON.stringify(candidates)}
   private async uploadFailedChatImageIfPossible(
     user: UserEntity,
     file: Express.Multer.File,
-    imageType: 'food-image-feedback',
+    imageType: 'food-image-feedback' | 'nutrition-label-feedback',
     error: unknown,
   ): Promise<void> {
     try {
@@ -9075,7 +9263,7 @@ ${JSON.stringify(candidates)}
   private async uploadFailedChatImage(
     user: UserEntity,
     file: Express.Multer.File,
-    imageType: 'food-image-feedback',
+    imageType: 'food-image-feedback' | 'nutrition-label-feedback',
   ): Promise<string> {
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomString = Math.random().toString(36).substring(2, 12);
@@ -9172,6 +9360,107 @@ ${JSON.stringify(candidates)}
 
   private isValidGenericMenuCandidateName(name: string): boolean {
     return name.trim().length > 0;
+  }
+
+  private normalizeNutritionLabelRecognition(
+    value: any,
+  ): NutritionLabelRecognitionValue {
+    const weightRaw = value?.weight;
+    const unit = this.asNutritionUnit(value?.unit, weightRaw);
+
+    return {
+      unit,
+      weight: this.asRequiredNutritionNumber(weightRaw, 'weight'),
+      calories: this.asRequiredNutritionNumber(value?.calories, 'calories'),
+      carbs: roundNullableToOneDecimal(this.asNullableNumber(value?.carbs)),
+      sugars: roundNullableToOneDecimal(this.asNullableNumber(value?.sugars)),
+      sugar_alchol: roundNullableToOneDecimal(
+        this.asNullableNumber(value?.sugar_alchol),
+      ),
+      dietary_fiber: roundNullableToOneDecimal(
+        this.asNullableNumber(value?.dietary_fiber),
+      ),
+      protein: roundNullableToOneDecimal(this.asNullableNumber(value?.protein)),
+      fat: roundNullableToOneDecimal(this.asNullableNumber(value?.fat)),
+      sat_fat: roundNullableToOneDecimal(this.asNullableNumber(value?.sat_fat)),
+      trans_fat: roundNullableToOneDecimal(
+        this.asNullableNumber(value?.trans_fat),
+      ),
+      un_sat_fat: roundNullableToOneDecimal(
+        this.asNullableNumber(value?.un_sat_fat),
+      ),
+      sodium: roundNullableToOneDecimal(this.asNullableNumber(value?.sodium)),
+      caffeine: roundNullableToOneDecimal(
+        this.asNullableNumber(value?.caffeine),
+      ),
+      potassium: roundNullableToOneDecimal(
+        this.asNullableNumber(value?.potassium),
+      ),
+      cholesterol: roundNullableToOneDecimal(
+        this.asNullableNumber(value?.cholesterol),
+      ),
+      alcohol: roundNullableToOneDecimal(this.asNullableNumber(value?.alcohol)),
+    };
+  }
+
+  private asNutritionUnit(value: unknown, ...hints: unknown[]): number {
+    if (value === 0 || value === '0') {
+      return 0;
+    }
+
+    if (value === 1 || value === '1') {
+      return 1;
+    }
+
+    const texts = [value, ...hints]
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.toLowerCase());
+
+    if (texts.some((text) => text.includes('ml'))) {
+      return 1;
+    }
+
+    if (texts.some((text) => /\bg\b/.test(text) || text.includes('그램'))) {
+      return 0;
+    }
+
+    throw new ServiceUnavailableException(
+      'Nutrition label recognition returned invalid unit',
+    );
+  }
+
+  private asRequiredNutritionNumber(value: unknown, fieldName: string): number {
+    const parsed = this.asNullableNumber(value);
+
+    if (parsed === null) {
+      throw new ServiceUnavailableException(
+        `Nutrition label recognition returned invalid ${fieldName}`,
+      );
+    }
+
+    return roundToOneDecimal(parsed);
+  }
+
+  private buildNutritionLabelFallbackIntro(
+    nutrition: NutritionLabelRecognitionValue,
+  ): string {
+    const protein = nutrition.protein ?? 0;
+    const sodium = nutrition.sodium ?? 0;
+    const fat = nutrition.fat ?? 0;
+
+    if (protein >= 15 && sodium >= 600) {
+      return '단백질은 챙기기 좋지만 나트륨 부담은 있는 편이야. 다른 끼니는 조금 담백하게 맞춰봐.';
+    }
+
+    if (fat >= 15) {
+      return '지방이 높은 편이라 양 조절이 중요해. 든든하게 먹되 다른 메뉴는 가볍게 붙이는 게 좋아.';
+    }
+
+    if (protein >= 10) {
+      return '단백질을 챙기기 괜찮은 구성이야. 오늘 실제 식사 흐름에 맞춰 부담 없는 양으로 먹어.';
+    }
+
+    return '영양성분표 기준으로 보면 양 조절만 잘하면 무난하게 먹을 수 있어. 부족한 단백질은 다른 음식으로 보완해.';
   }
 
   private asNullableNumber(value: unknown): number | null {

@@ -36,6 +36,7 @@ import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-resp
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
 import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
+import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-nutrition-label-feedback-response-dto';
 import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
 import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
 
@@ -443,6 +444,88 @@ export class ChatController {
       return await this.chatService.feedbackFromFoodImage(user, file);
     } catch (error) {
       this.logChatApiError('POST /chat/food-image-feedback', user, error, {
+        fileSize: file?.size ?? null,
+        mimeType: file?.mimetype ?? null,
+      });
+      throw error;
+    }
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '영양성분표 사진 기반 피드백',
+    description:
+      '영양성분표 사진에서 영양성분 값을 인식한 뒤 현재 유저 목표와 식사기록 기준으로 피드백을 반환',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '영양성분표 사진 기반 피드백 성공',
+    message: 'Nutrition label feedback generated successfully',
+    model: ChatNutritionLabelFeedbackResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nimage 파일 누락 또는 잘못된 형식',
+    message: 'image file is required',
+    error: 'BadRequestException',
+    examples: {
+      imageRequired: {
+        summary: 'image 파일 누락',
+        value: {
+          message: 'image file is required',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+      invalidImageType: {
+        summary: 'image 파일 형식 오류',
+        value: {
+          message: 'image file must be an image',
+          statusCode: 400,
+          error: 'BadRequestException',
+        },
+      },
+    },
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패 또는 응답 파싱 실패',
+    message: 'Gemini recommendation pipeline is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '영양성분표 이미지 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        image: {
+          type: 'string',
+          format: 'binary',
+          description: '영양성분표 사진 파일',
+        },
+      },
+      required: ['image'],
+    },
+  })
+  @ResponseMsg('Nutrition label feedback generated successfully')
+  @UseGuards(AuthGuard())
+  @UseInterceptors(FileInterceptor('image'))
+  @Post('/nutrition-label-feedback')
+  async feedbackFromNutritionLabel(
+    @GetUser() user: UserEntity,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<ChatNutritionLabelFeedbackResponseDto> {
+    try {
+      return await this.chatService.feedbackFromNutritionLabel(user, file);
+    } catch (error) {
+      this.logChatApiError('POST /chat/nutrition-label-feedback', user, error, {
         fileSize: file?.size ?? null,
         mimeType: file?.mimetype ?? null,
       });
