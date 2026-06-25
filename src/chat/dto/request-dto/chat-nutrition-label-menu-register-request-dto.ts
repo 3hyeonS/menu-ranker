@@ -15,11 +15,13 @@ export class ChatNutritionLabelMenuRegisterRequestDto {
   @ApiProperty({
     type: String,
     description: '사용자가 입력한 브랜드명',
+    required: false,
+    nullable: true,
     example: '하림',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  brand: string;
+  brand: string = null;
 
   @ApiProperty({
     type: Number,

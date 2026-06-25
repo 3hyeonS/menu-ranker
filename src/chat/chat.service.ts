@@ -307,6 +307,7 @@ type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
 
 type GenericMenuCandidate = {
   name: string;
+  originalName: string | null;
   brand: string | null;
   category: string | null;
 };
@@ -910,14 +911,6 @@ export class ChatService {
         chatContext,
       );
       timing.mark('nutrition_label_recognition_completed');
-      const registeredMenu =
-        await this.registerRecognizedNutritionLabelMenuIfPossible(
-          user,
-          recognition.menuCandidate,
-          recognition.nutrition,
-          timing,
-        );
-
       const response = new ChatNutritionLabelFeedbackResponseDto();
       response.chat_category = 'feedback';
       response.intro_message =
@@ -927,7 +920,6 @@ export class ChatService {
       response.recognized_nutrition = new NutritionLabelRecognitionResponseDto(
         recognition.nutrition,
       );
-      response.menu_id = registeredMenu?.id ?? null;
       response.image_url = await this.uploadChatImage(
         user,
         file,
@@ -943,9 +935,7 @@ export class ChatService {
         }),
       );
       timing.mark('history_saved');
-      timing.end({
-        menuId: response.menu_id,
-      });
+      timing.end();
 
       return response;
     } catch (error) {
@@ -968,10 +958,6 @@ export class ChatService {
 
     if (!name) {
       throw new BadRequestException('name must not be empty');
-    }
-
-    if (!brand) {
-      throw new BadRequestException('brand must not be empty');
     }
 
     const menu = await this.createNutritionLabelPersonalMenu(user, name, brand, {
@@ -997,42 +983,10 @@ export class ChatService {
     return new MenuIdResponseDto(menu);
   }
 
-  private async registerRecognizedNutritionLabelMenuIfPossible(
-    user: UserEntity,
-    candidate: GenericMenuCandidate | null,
-    nutrition: NutritionLabelRecognitionValue,
-    timing?: ChatTimingLogger,
-  ): Promise<MenuEntity | null> {
-    const name = this.asNonEmptyString(candidate?.name);
-    const brand = this.asNonEmptyString(candidate?.brand);
-
-    if (!name || !brand) {
-      timing?.mark('nutrition_label_menu_registration_skipped', {
-        reason: !name ? 'missing_name' : 'missing_brand',
-      });
-      return null;
-    }
-
-    const menu = await this.createNutritionLabelPersonalMenu(
-      user,
-      name,
-      brand,
-      nutrition,
-    );
-
-    timing?.mark('nutrition_label_menu_registered', {
-      menuId: menu.id,
-      menuName: menu.name,
-      menuBrand: menu.brand,
-    });
-
-    return menu;
-  }
-
   private async createNutritionLabelPersonalMenu(
     user: UserEntity,
     name: string,
-    brand: string,
+    brand: string | null,
     nutrition: NutritionLabelRecognitionValue,
   ): Promise<MenuEntity> {
     const menu = this.menuRepository.create({
@@ -1359,6 +1313,7 @@ export class ChatService {
     if (feedbackCandidates.length === 0) {
       feedbackCandidates = classification.menu_names.map((menuName) => ({
         name: menuName,
+        originalName: null,
         brand: null,
         category: null,
       }));
@@ -2239,7 +2194,6 @@ export class ChatService {
   ): Promise<{
     introMessage: string | null;
     imageSummary: string | null;
-    menuCandidate: GenericMenuCandidate | null;
     nutrition: NutritionLabelRecognitionValue;
   }> {
     const prompt = `
@@ -2259,10 +2213,7 @@ export class ChatService {
 - intro_message에는 영양성분표에서 읽은 정확한 숫자를 길게 나열하지 마
 - 숫자 설명이 필요하면 recognized_nutrition에만 담고, intro_message는 "단백질은 괜찮은 편", "나트륨 부담이 있는 편"처럼 정성적으로 말해
 - image_summary는 이후 대화에서 원본 사진 없이도 맥락을 이해할 수 있게 1~2문장으로 요약해
-- 사진에서 제품명/음식명과 브랜드명이 모두 명확히 보이면 menu_candidate에 개인 메뉴 등록용 정보를 담아
-- menu_candidate.name은 브랜드명이나 용량/맛/프로모션 문구를 제외하고 음식/제품을 찾기 좋은 이름으로 정제해
-- menu_candidate.brand에는 사진에서 읽은 브랜드명을 담아
-- 제품명/음식명 또는 브랜드명 중 하나라도 판단하기 어려우면 menu_candidate는 null로 반환해
+- 제품명/음식명과 브랜드명은 자동 등록에 사용하지 않으니 반환하지 마
 - 영양성분표에 없는 값은 null로 반환해
 - unit은 g 기준이면 0, ml 기준이면 1로 반환해
 - weight와 calories는 반드시 숫자로 반환해. 1회 제공량 또는 표기 기준량을 우선 사용해
@@ -2271,11 +2222,6 @@ export class ChatService {
 {
   "intro_message": "단백질은 챙기기 좋지만 나트륨과 지방 부담은 있는 편이야. 오늘 실제 식사 흐름에 맞춰 양을 조절해서 먹어.",
   "image_summary": "영양성분표에는 1회 제공량, 열량, 탄수화물, 단백질, 지방, 나트륨 정보가 표시되어 있어.",
-  "menu_candidate": {
-    "name": "닭가슴살 소시지",
-    "brand": "하림",
-    "category": "가공식품"
-  },
   "nutrition": {
     "unit": 0,
     "weight": 100,
@@ -2312,7 +2258,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
     return {
       introMessage: this.asNonEmptyString(data?.intro_message),
       imageSummary: this.asNonEmptyString(data?.image_summary),
-      menuCandidate: this.normalizeGenericMenuCandidate(data?.menu_candidate),
       nutrition,
     };
   }
@@ -4230,7 +4175,7 @@ ${JSON.stringify(
 - menu_candidates의 brand는 DB 매칭용이므로 사용자 입력이나 intro_message 맥락에서 명확할 때만 넣어도 돼
 - 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
 - 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
-- 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
+- 음식점/업종 표현은 menu_candidates의 food_name에 넣지 마. 후보 food_name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
 - 단, 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유는 판단에 적극 반영해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
@@ -4240,11 +4185,15 @@ ${JSON.stringify(
 - menu_candidates는 intro_message 안에 실제로 등장한 특정 메뉴/음식/브랜드/카테고리만 추출해
 - intro_message에 메뉴가 명확히 등장하지 않으면 menu_candidates는 빈 배열로 둬
 - intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
-- 각 후보는 name, brand, category만 작성해
-- name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- 각 후보는 food_name, original_name, brand, category만 작성해
+- original_name은 사용자 입력이나 intro_message에 등장한 원래 표현을 그대로 적어. 원래 표현이 food_name과 같으면 null로 둬
+- food_name은 DB 검색에 유리한 대표 메뉴명/제품명으로 정제해서 작성해
+- 브랜드명과 제품명이 섞인 가공식품/단백질 음료/프로틴 제품은 사용자가 말한 표현을 그대로 두지 말고, 아는 범위에서 실제 제품명에 가까운 이름으로 정제해
+- 예: "더단백 민트초코"처럼 말하면 food_name은 "더단백드링크초코" 또는 "더단백 민트초코 단백질음료"처럼 제품 검색에 유리하게 쓰고, original_name은 "더단백 민트초코"로 둬
+- 예: "프로틴 음료", "단백질 쉐이크"처럼 말하면 category는 "단백질 음료" 또는 "음료류"로 둬
 - 단, intro_message에 음식점/업종 표현이 등장했다면 menu_candidates에는 그 업종의 대표 메뉴명을 넣어
 - 밥, 공기밥, 쌀밥, 빵, 면, 국, 찌개, 과일, 간식처럼 흔한 기본 음식도 사용자가 먹어도 되는지 묻거나 intro_message에서 식사 판단 대상으로 언급했다면 반드시 후보에 포함해
-- "밥 반공기", "밥 한 공기", "공기밥 조금"처럼 수량/양 표현이 붙으면 name은 대표 음식명으로 정제해서 "밥" 또는 "공기밥"처럼 작성해
+- "밥 반공기", "밥 한 공기", "공기밥 조금"처럼 수량/양 표현이 붙으면 food_name은 대표 음식명으로 정제해서 "밥" 또는 "공기밥"처럼 작성해
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
@@ -4275,7 +4224,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
   "intro_message": "string",
   "menu_candidates": [
     {
-      "name": "치킨",
+      "food_name": "치킨",
+      "original_name": null,
       "brand": null,
       "category": "치킨"
     }
@@ -4330,7 +4280,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - menu_candidates의 brand는 DB 매칭용이므로 사용자 입력이나 intro_message 맥락에서 명확할 때만 넣어도 돼
 - 사용자가 "중국집", "분식집", "샤브샤브집"처럼 음식점/업종을 선택지로 말하면, intro_message에서는 업종명만 답하지 말고 실제로 먹을 수 있는 대표 메뉴명으로 바꿔 말해
 - 예: "중국집"은 후보명으로 쓰지 말고 상황에 맞게 "짜장면", "짬뽕", "볶음밥" 같은 실제 메뉴로 바꿔
-- 음식점/업종 표현은 menu_candidates의 name에 넣지 마. 후보 name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
+- 음식점/업종 표현은 menu_candidates의 food_name에 넣지 마. 후보 food_name은 사용자가 실제로 기록할 수 있는 음식/메뉴명이어야 해
 - 단, 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유는 판단에 적극 반영해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
@@ -4340,11 +4290,15 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - menu_candidates는 intro_message 안에 실제로 등장한 특정 메뉴/음식/브랜드/카테고리만 추출해
 - intro_message에 메뉴가 명확히 등장하지 않으면 menu_candidates는 빈 배열로 둬
 - intro_message에서 직접 말하지 않은 메뉴를 menu_candidates에 새로 만들지 마
-- 각 후보는 name, brand, category만 작성해
-- name은 intro_message에 등장한 표현을 최대한 그대로 사용해
+- 각 후보는 food_name, original_name, brand, category만 작성해
+- original_name은 사용자 입력이나 intro_message에 등장한 원래 표현을 그대로 적어. 원래 표현이 food_name과 같으면 null로 둬
+- food_name은 DB 검색에 유리한 대표 메뉴명/제품명으로 정제해서 작성해
+- 브랜드명과 제품명이 섞인 가공식품/단백질 음료/프로틴 제품은 사용자가 말한 표현을 그대로 두지 말고, 아는 범위에서 실제 제품명에 가까운 이름으로 정제해
+- 예: "더단백 민트초코"처럼 말하면 food_name은 "더단백드링크초코" 또는 "더단백 민트초코 단백질음료"처럼 제품 검색에 유리하게 쓰고, original_name은 "더단백 민트초코"로 둬
+- 예: "프로틴 음료", "단백질 쉐이크"처럼 말하면 category는 "단백질 음료" 또는 "음료류"로 둬
 - 단, intro_message에 음식점/업종 표현이 등장했다면 menu_candidates에는 그 업종의 대표 메뉴명을 넣어
 - 밥, 공기밥, 쌀밥, 빵, 면, 국, 찌개, 과일, 간식처럼 흔한 기본 음식도 사용자가 먹어도 되는지 묻거나 intro_message에서 식사 판단 대상으로 언급했다면 반드시 후보에 포함해
-- "밥 반공기", "밥 한 공기", "공기밥 조금"처럼 수량/양 표현이 붙으면 name은 대표 음식명으로 정제해서 "밥"처럼 작성해
+- "밥 반공기", "밥 한 공기", "공기밥 조금"처럼 수량/양 표현이 붙으면 food_name은 대표 음식명으로 정제해서 "밥"처럼 작성해
 - brand는 intro_message 또는 사용자 입력에서 명확할 때만 넣어. 불명확하면 null
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
@@ -4374,7 +4328,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
   "intro_message": "string",
   "menu_candidates": [
     {
-      "name": "싸이버거",
+      "food_name": "싸이버거",
+      "original_name": null,
       "brand": "맘스터치",
       "category": "버거"
     }
@@ -4602,8 +4557,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           const menuIds = vectorResults.map((result) => result.menuId);
           const vectorMenus = await this.getMenusByIds(userId, menuIds);
 
-          return this.findMostSimilarMenuAboveThreshold(
-            candidate.name,
+          return this.findMostSimilarGenericCandidateMenuAboveThreshold(
+            candidate,
             vectorMenus,
             25,
           );
@@ -4749,7 +4704,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
       return genericCandidates
         .map((candidate) => {
-          const menu = this.findMostSimilarMenu(candidate.name, candidateMenus);
+          const menu = this.findMostSimilarGenericCandidateMenu(
+            candidate,
+            candidateMenus,
+          );
 
           return menu
             ? {
@@ -4851,8 +4809,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           const menuIds = vectorResults.map((result) => result.menuId);
           const vectorMenus = await this.getMenusByIds(userId, menuIds);
 
-          return this.findMostSimilarMenuAboveThreshold(
-            candidate.name,
+          return this.findMostSimilarGenericCandidateMenuAboveThreshold(
+            candidate,
             vectorMenus,
             25,
           );
@@ -5033,18 +4991,27 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           supportedCandidateBrandKeys,
         )
       : null;
-    const exactCandidateNames = this.getExactGenericCandidateMenuNames(
-      candidateName,
+    const searchNames = this.getGenericCandidateSearchNames(candidate);
+    const exactCandidateNames = searchNames.flatMap((searchName) =>
+      this.getExactGenericCandidateMenuNames(searchName),
     );
-    const normalizedExactFallbackMenu =
-      await this.findGenericCandidateMenuByNormalizedExactName(
-        userId,
-        candidateName,
-        intent,
-        candidate,
-        supportedCandidateBrandKeys,
-        options,
-      );
+    let normalizedExactFallbackMenu: MenuEntity | null = null;
+
+    for (const searchName of searchNames) {
+      normalizedExactFallbackMenu =
+        await this.findGenericCandidateMenuByNormalizedExactName(
+          userId,
+          searchName,
+          intent,
+          candidate,
+          supportedCandidateBrandKeys,
+          options,
+        );
+
+      if (normalizedExactFallbackMenu) {
+        break;
+      }
+    }
 
     if (normalizedExactFallbackMenu) {
       return normalizedExactFallbackMenu;
@@ -5070,9 +5037,21 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       }
 
       if (matchMode === 'contains') {
-        builder.andWhere('menu.name LIKE :candidateName', {
-          candidateName: `%${candidateName}%`,
-        });
+        builder.andWhere(
+          new Brackets((qb) => {
+            searchNames.forEach((searchName, index) => {
+              const parameterName = `candidateName${index}`;
+              const condition = `menu.name LIKE :${parameterName}`;
+
+              if (index === 0) {
+                qb.where(condition, { [parameterName]: `%${searchName}%` });
+                return;
+              }
+
+              qb.orWhere(condition, { [parameterName]: `%${searchName}%` });
+            });
+          }),
+        );
       }
 
       if (
@@ -5152,6 +5131,18 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       candidateName,
       candidates,
       20,
+    );
+  }
+
+  private getGenericCandidateSearchNames(
+    candidate: GenericMenuCandidate,
+  ): string[] {
+    return Array.from(
+      new Set(
+        [candidate.name, candidate.originalName]
+          .map((value) => this.asNonEmptyString(value))
+          .filter((value): value is string => !!value),
+      ),
     );
   }
 
@@ -5353,7 +5344,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     const matchedMenus = genericCandidates
       .map((candidate) =>
-        this.findMostSimilarMenu(candidate.name, candidateMenus),
+        this.findMostSimilarGenericCandidateMenu(candidate, candidateMenus),
       )
       .filter((menu): menu is MenuEntity => !!menu);
 
@@ -5363,12 +5354,36 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     );
   }
 
+  private findMostSimilarGenericCandidateMenu(
+    candidate: GenericMenuCandidate,
+    menus: MenuEntity[],
+  ): MenuEntity | null {
+    return this.getGenericCandidateSearchNames(candidate)
+      .map((searchName) => this.findMostSimilarMenu(searchName, menus))
+      .find((menu): menu is MenuEntity => !!menu) ?? null;
+  }
+
+  private findMostSimilarGenericCandidateMenuAboveThreshold(
+    candidate: GenericMenuCandidate,
+    menus: MenuEntity[],
+    threshold: number,
+  ): MenuEntity | null {
+    return this.getGenericCandidateSearchNames(candidate)
+      .map((searchName) =>
+        this.findMostSimilarMenuAboveThreshold(searchName, menus, threshold),
+      )
+      .find((menu): menu is MenuEntity => !!menu) ?? null;
+  }
+
   private buildSingleGenericCandidateVectorQuery(
     candidate: GenericMenuCandidate,
     intent: ParsedChatIntent,
   ): string {
     return [
       `추천 후보 음식명: ${candidate.name}`,
+      candidate.originalName
+        ? `사용자 원문 후보명: ${candidate.originalName}`
+        : null,
       candidate.brand ? `후보 브랜드/매장: ${candidate.brand}` : null,
       candidate.category ? `후보 카테고리: ${candidate.category}` : null,
       '이 후보와 같은 음식명/대표 음식만 DB에서 찾는다.',
@@ -9232,12 +9247,21 @@ ${JSON.stringify(candidates)}
     }
 
     const source = candidate as {
+      food_name?: unknown;
       name?: unknown;
+      original_name?: unknown;
+      originalName?: unknown;
       brand?: unknown;
       category?: unknown;
     };
-    const rawName = this.asNonEmptyString(source.name);
+    const rawName =
+      this.asNonEmptyString(source.food_name) ??
+      this.asNonEmptyString(source.name);
     const name = this.normalizeGenericMenuCandidateName(rawName);
+    const rawOriginalName =
+      this.asNonEmptyString(source.original_name) ??
+      this.asNonEmptyString(source.originalName);
+    const originalName = this.normalizeGenericMenuCandidateName(rawOriginalName);
 
     if (!name || !this.isValidGenericMenuCandidateName(name)) {
       return null;
@@ -9245,6 +9269,10 @@ ${JSON.stringify(candidates)}
 
     return {
       name,
+      originalName:
+        originalName && originalName !== name && this.isValidGenericMenuCandidateName(originalName)
+          ? originalName
+          : null,
       brand: this.asNonEmptyString(source.brand),
       category: this.asNonEmptyString(source.category),
     };

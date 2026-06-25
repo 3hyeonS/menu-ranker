@@ -539,7 +539,7 @@ export class ChatController {
   @ApiOperation({
     summary: '영양성분표 인식값 기반 개인 메뉴 등록',
     description:
-      '영양성분표 사진에서 메뉴명/브랜드를 자동 인식하지 못한 경우, 사용자가 입력한 메뉴명과 브랜드명 및 인식된 영양성분값으로 개인 메뉴를 등록',
+      '사용자가 입력한 메뉴명, 선택 입력한 브랜드명, 인식된 영양성분값으로 개인 메뉴를 등록',
   })
   @GenericApiResponse({
     status: 201,
@@ -549,7 +549,7 @@ export class ChatController {
   })
   @ErrorApiResponse({
     status: 400,
-    description: 'Bad Request  \n메뉴명/브랜드명 누락 또는 영양성분 필드 오류',
+    description: 'Bad Request  \n메뉴명 누락 또는 영양성분 필드 오류',
     message: 'name must not be empty',
     error: 'BadRequestException',
   })
