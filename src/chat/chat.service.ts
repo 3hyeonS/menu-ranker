@@ -987,41 +987,83 @@ export class ChatService {
     });
 
     const response = new ChatNutritionLabelMenuRegisterResponseDto(menu);
+    await this.attachNutritionLabelRegisteredMenuToHistory(user, menu);
+
+    return response;
+  }
+
+  private async attachNutritionLabelRegisteredMenuToHistory(
+    user: UserEntity,
+    menu: MenuEntity,
+  ): Promise<void> {
+    const registeredMenuPayload = {
+      menu_id: menu.id,
+      menu_name: menu.name,
+      brand: menu.brand ?? null,
+      registered_nutrition: new NutritionLabelRecognitionResponseDto({
+        unit: menu.unit,
+        weight: menu.weight,
+        calories: menu.calories,
+        carbs: menu.carbs,
+        sugars: menu.sugars,
+        sugar_alchol: menu.sugar_alchol,
+        dietary_fiber: menu.dietary_fiber,
+        protein: menu.protein,
+        fat: menu.fat,
+        sat_fat: menu.sat_fat,
+        trans_fat: menu.trans_fat,
+        un_sat_fat: menu.un_sat_fat,
+        sodium: menu.sodium,
+        caffeine: menu.caffeine,
+        potassium: menu.potassium,
+        cholesterol: menu.cholesterol,
+        alcohol: menu.alcohol,
+      }),
+    };
+    const recentHistories = await this.chatHistoryRepository.find({
+      where: { user: { id: user.id } },
+      order: {
+        createdAt: 'DESC',
+        id: 'DESC',
+      },
+      take: 20,
+    });
+    const nutritionLabelHistory = recentHistories.find((history) =>
+      this.isNutritionLabelFeedbackHistory(history),
+    );
+
+    if (nutritionLabelHistory) {
+      nutritionLabelHistory.response_payload = {
+        ...nutritionLabelHistory.response_payload,
+        registered_menu: registeredMenuPayload,
+      };
+      await this.chatHistoryRepository.save(nutritionLabelHistory);
+      return;
+    }
 
     await this.chatHistoryRepository.save(
       this.chatHistoryRepository.create({
-        input_text: `영양성분표 인식값 기반 개인 메뉴 등록: ${name}`,
+        input_text: `영양성분표 인식값 기반 개인 메뉴 등록: ${menu.name}`,
         response_payload: {
           chat_category: 'feedback',
           action: 'nutrition_label_menu_registered',
-          menu_id: menu.id,
-          menu_name: menu.name,
-          brand: menu.brand ?? null,
-          recognized_nutrition: new NutritionLabelRecognitionResponseDto({
-            unit: menu.unit,
-            weight: menu.weight,
-            calories: menu.calories,
-            carbs: menu.carbs,
-            sugars: menu.sugars,
-            sugar_alchol: menu.sugar_alchol,
-            dietary_fiber: menu.dietary_fiber,
-            protein: menu.protein,
-            fat: menu.fat,
-            sat_fat: menu.sat_fat,
-            trans_fat: menu.trans_fat,
-            un_sat_fat: menu.un_sat_fat,
-            sodium: menu.sodium,
-            caffeine: menu.caffeine,
-            potassium: menu.potassium,
-            cholesterol: menu.cholesterol,
-            alcohol: menu.alcohol,
-          }),
+          registered_menu: registeredMenuPayload,
         },
         user,
       }),
     );
+  }
 
-    return response;
+  private isNutritionLabelFeedbackHistory(
+    history: ChatHistoryEntity,
+  ): boolean {
+    const payload = history.response_payload;
+
+    return (
+      payload?.chat_category === 'feedback' &&
+      payload?.recognized_nutrition !== undefined &&
+      !payload?.registered_menu
+    );
   }
 
   private async createNutritionLabelPersonalMenu(
