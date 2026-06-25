@@ -38,9 +38,9 @@ import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
 import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
 import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-nutrition-label-feedback-response-dto';
+import { ChatNutritionLabelMenuRegisterResponseDto } from './dto/response-dto/chat-nutrition-label-menu-register-response-dto';
 import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
 import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
-import { MenuIdResponseDto } from '../home/dto/response-dto/menu-id-response-dto';
 
 @ApiTags('채팅')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -545,7 +545,7 @@ export class ChatController {
     status: 201,
     description: '영양성분표 기반 개인 메뉴 등록 성공',
     message: 'Nutrition label menu registered successfully',
-    model: MenuIdResponseDto,
+    model: ChatNutritionLabelMenuRegisterResponseDto,
   })
   @ErrorApiResponse({
     status: 400,
@@ -565,7 +565,7 @@ export class ChatController {
   async registerNutritionLabelMenu(
     @GetUser() user: UserEntity,
     @Body() dto: ChatNutritionLabelMenuRegisterRequestDto,
-  ): Promise<MenuIdResponseDto> {
+  ): Promise<ChatNutritionLabelMenuRegisterResponseDto> {
     try {
       return await this.chatService.registerNutritionLabelMenu(user, dto);
     } catch (error) {

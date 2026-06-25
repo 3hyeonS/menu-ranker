@@ -33,13 +33,13 @@ import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-me
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
 import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
 import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-nutrition-label-feedback-response-dto';
+import { ChatNutritionLabelMenuRegisterResponseDto } from './dto/response-dto/chat-nutrition-label-menu-register-response-dto';
 import { ChatFoodImageRecognizedMenuResponseDto } from './dto/response-dto/chat-food-image-recognized-menu-response-dto';
 import { ChatFoodImagePositionResponseDto } from './dto/response-dto/chat-food-image-position-response-dto';
 import { NutritionLabelRecognitionResponseDto } from '../home/dto/response-dto/nutrition-label-recognition-response-dto';
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
 import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
-import { MenuIdResponseDto } from '../home/dto/response-dto/menu-id-response-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
 import { stripPublicMenuSourcePrefix } from '../utils/menu-name.util';
 
@@ -243,6 +243,12 @@ type ScoreBreakdown = {
   sugarScore: number;
   intentScore: number;
   localReason: string;
+};
+
+type GeminiFeedbackScoreResult = {
+  score: number;
+  isAppropriate: boolean;
+  menuScores: Map<number, { score: number; isAppropriate: boolean }>;
 };
 
 type RankedMenu = {
@@ -952,7 +958,7 @@ export class ChatService {
   async registerNutritionLabelMenu(
     user: UserEntity,
     dto: ChatNutritionLabelMenuRegisterRequestDto,
-  ): Promise<MenuIdResponseDto> {
+  ): Promise<ChatNutritionLabelMenuRegisterResponseDto> {
     const name = this.asNonEmptyString(dto.name);
     const brand = this.asNonEmptyString(dto.brand);
 
@@ -980,7 +986,42 @@ export class ChatService {
       alcohol: dto.alcohol,
     });
 
-    return new MenuIdResponseDto(menu);
+    const response = new ChatNutritionLabelMenuRegisterResponseDto(menu);
+
+    await this.chatHistoryRepository.save(
+      this.chatHistoryRepository.create({
+        input_text: `영양성분표 인식값 기반 개인 메뉴 등록: ${name}`,
+        response_payload: {
+          chat_category: 'feedback',
+          action: 'nutrition_label_menu_registered',
+          menu_id: menu.id,
+          menu_name: menu.name,
+          brand: menu.brand ?? null,
+          recognized_nutrition: new NutritionLabelRecognitionResponseDto({
+            unit: menu.unit,
+            weight: menu.weight,
+            calories: menu.calories,
+            carbs: menu.carbs,
+            sugars: menu.sugars,
+            sugar_alchol: menu.sugar_alchol,
+            dietary_fiber: menu.dietary_fiber,
+            protein: menu.protein,
+            fat: menu.fat,
+            sat_fat: menu.sat_fat,
+            trans_fat: menu.trans_fat,
+            un_sat_fat: menu.un_sat_fat,
+            sodium: menu.sodium,
+            caffeine: menu.caffeine,
+            potassium: menu.potassium,
+            cholesterol: menu.cholesterol,
+            alcohol: menu.alcohol,
+          }),
+        },
+        user,
+      }),
+    );
+
+    return response;
   }
 
   private async createNutritionLabelPersonalMenu(
@@ -1449,10 +1490,61 @@ export class ChatService {
       return feedback;
     };
 
+    const applyGeminiFeedbackScore = (
+      feedback: ChatFeedbackResponseDto,
+      geminiScore: GeminiFeedbackScoreResult,
+    ) => {
+      feedback.score = roundToOneDecimal(geminiScore.score);
+      feedback.is_appropriate = geminiScore.isAppropriate;
+      feedback.menus = feedback.menus.map((menu) => {
+        const menuScore = geminiScore.menuScores.get(menu.menu_id);
+        const score = menuScore?.score ?? geminiScore.score;
+
+        return {
+          ...menu,
+          score: roundToOneDecimal(score),
+          is_appropriate:
+            menuScore?.isAppropriate ?? geminiScore.isAppropriate,
+        };
+      });
+    };
+
     let validatedMatchedMenus = matchedMenus;
     let feedback = buildFeedbackPayload(validatedMatchedMenus);
+    const combinationNutrition = this.sumFeedbackNutrition(
+      validatedMatchedMenus.map(({ menu }) => menu),
+    );
+
+    try {
+      const geminiScore = await this.generateFeedbackScoreWithGemini({
+        input,
+        userInfo,
+        dailyNutrition,
+        basis: rankingBasis,
+        matchedMenus: validatedMatchedMenus,
+        combinationNutrition,
+      });
+
+      if (geminiScore) {
+        applyGeminiFeedbackScore(feedback, geminiScore);
+        timing?.mark('feedback_gemini_score_completed', {
+          matchedMenuCount: validatedMatchedMenus.length,
+          score: feedback.score,
+        });
+      } else {
+        timing?.mark('feedback_gemini_score_unavailable', {
+          matchedMenuCount: validatedMatchedMenus.length,
+        });
+      }
+    } catch (error) {
+      this.logGeminiError('feedback-score', error);
+      timing?.mark('feedback_gemini_score_failed', {
+        matchedMenuCount: validatedMatchedMenus.length,
+      });
+    }
     timing?.mark('feedback_score_completed', {
       matchedMenuCount: validatedMatchedMenus.length,
+      scoreSource: 'gemini_with_internal_fallback',
     });
 
     const response = new ChatRecommendResponseDto();
@@ -8611,6 +8703,160 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
     } catch {
       return params.fallback;
     }
+  }
+
+  private async generateFeedbackScoreWithGemini(params: {
+    input: string;
+    userInfo: UserInfoEntity;
+    dailyNutrition: DailyNutrition;
+    basis: ReturnType<ChatService['buildRecommendationBasis']>;
+    matchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>;
+    combinationNutrition: FeedbackNutrition;
+  }): Promise<GeminiFeedbackScoreResult | null> {
+    const menusPayload = params.matchedMenus.map(
+      ({ inputMenuName, menu }, index) => ({
+        order: index + 1,
+        input_menu_name: inputMenuName,
+        menu_id: menu.id,
+        menu_name: menu.name,
+        display_menu_name: stripPublicMenuSourcePrefix(menu.name),
+        brand: menu.brand ?? null,
+        category: menu.category ?? null,
+        unit: menu.unit,
+        weight: roundNullableToOneDecimal(menu.weight) ?? 0,
+        unit_quantity: menu.unit_quantity,
+        calories: roundNullableToOneDecimal(menu.calories) ?? 0,
+        carbs: roundToOneDecimal(this.getEffectiveCarbs(menu)),
+        protein: roundNullableToOneDecimal(menu.protein) ?? 0,
+        fat: roundToOneDecimal(this.getEffectiveFat(menu)),
+        sugars: roundNullableToOneDecimal(menu.sugars) ?? 0,
+        sodium: roundNullableToOneDecimal(menu.sodium) ?? 0,
+        caffeine: roundNullableToOneDecimal(menu.caffeine) ?? 0,
+      }),
+    );
+    const prompt = `
+피드백 응답에 사용할 적합도 점수를 한국어가 아닌 JSON object로만 산출해줘.
+반드시 JSON만 반환하고 코드펜스는 쓰지 마.
+
+점수 산출 규칙:
+- score는 0~100 사이 숫자야.
+- is_appropriate는 사용자의 목표와 오늘 실제 식사 기록 기준으로 먹어도 무난한지 여부야.
+- 사용자의 목표, 오늘 섭취량, 남은 탄수화물/단백질/지방 여유, 메뉴의 칼로리와 영양 구성을 함께 고려해.
+- 단일 메뉴가 아니라 여러 메뉴가 들어오면 전체 조합의 score를 먼저 판단해.
+- menus 배열에는 입력으로 받은 모든 menu_id를 빠짐없이 넣고, 각 메뉴별 score와 is_appropriate를 따로 판단해.
+- 점수가 높을수록 현재 사용자에게 적합한 선택이야.
+- 80~100: 매우 적합, 65~79: 무난함, 45~64: 조절 필요, 0~44: 부담 큼.
+- 점수 산출용 내부 정보이므로 사용자에게 보여줄 문장은 만들지 마.
+
+사용자 입력:
+${params.input}
+
+사용자 정보:
+${JSON.stringify({
+  goal: this.goalToLabel(params.userInfo.goal),
+  weight: roundNullableToOneDecimal(params.userInfo.weight),
+  target_weight: roundNullableToOneDecimal(params.userInfo.target_weight),
+  target_calories: params.userInfo.target_calories,
+  target_ratio: this.normalizeTargetRatio(params.userInfo.target_ratio),
+})}
+
+오늘 실제 섭취량:
+${JSON.stringify({
+  calories: roundToOneDecimal(params.dailyNutrition.calories),
+  carbs: roundToOneDecimal(params.dailyNutrition.carbs),
+  protein: roundToOneDecimal(params.dailyNutrition.protein),
+  fat: roundToOneDecimal(params.dailyNutrition.fat),
+})}
+
+오늘 남은 섭취 여유:
+${JSON.stringify({
+  calories: roundToOneDecimal(params.basis.remainingCalories),
+  carbs: roundToOneDecimal(params.basis.remainingMacros.carbs),
+  protein: roundToOneDecimal(params.basis.remainingMacros.protein),
+  fat: roundToOneDecimal(params.basis.remainingMacros.fat),
+})}
+
+피드백 대상 메뉴:
+${JSON.stringify(menusPayload)}
+
+대상 메뉴 전체 합산 영양:
+${JSON.stringify({
+  calories: roundToOneDecimal(params.combinationNutrition.calories),
+  carbs: roundToOneDecimal(params.combinationNutrition.carbs),
+  protein: roundToOneDecimal(params.combinationNutrition.protein),
+  fat: roundToOneDecimal(params.combinationNutrition.fat),
+  sugars: roundToOneDecimal(params.combinationNutrition.sugars),
+  sodium: roundToOneDecimal(params.combinationNutrition.sodium),
+  caffeine: roundToOneDecimal(params.combinationNutrition.caffeine),
+  weight: roundToOneDecimal(params.combinationNutrition.weight),
+})}
+
+반환 shape:
+{
+  "score": 72.5,
+  "is_appropriate": true,
+  "menus": [
+    {
+      "menu_id": 123,
+      "score": 72.5,
+      "is_appropriate": true
+    }
+  ]
+}
+`.trim();
+
+    const data = await this.callGeminiJson(prompt, {
+      context: 'feedback-score',
+      systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
+    });
+    const overallScore = this.normalizeGeminiFeedbackScore(data?.score);
+
+    if (overallScore === null) {
+      return null;
+    }
+
+    const overallIsAppropriate =
+      typeof data?.is_appropriate === 'boolean'
+        ? data.is_appropriate
+        : overallScore >= 65;
+    const menuScores = new Map<
+      number,
+      { score: number; isAppropriate: boolean }
+    >();
+    const menus = Array.isArray(data?.menus) ? data.menus : [];
+
+    for (const item of menus) {
+      const menuId = this.asNullableNumber(item?.menu_id);
+      const score = this.normalizeGeminiFeedbackScore(item?.score);
+
+      if (menuId === null || score === null) {
+        continue;
+      }
+
+      menuScores.set(menuId, {
+        score,
+        isAppropriate:
+          typeof item?.is_appropriate === 'boolean'
+            ? item.is_appropriate
+            : score >= 65,
+      });
+    }
+
+    return {
+      score: overallScore,
+      isAppropriate: overallIsAppropriate,
+      menuScores,
+    };
+  }
+
+  private normalizeGeminiFeedbackScore(value: unknown): number | null {
+    const score = this.asNullableNumber(value);
+
+    if (score === null) {
+      return null;
+    }
+
+    return roundToOneDecimal(Math.max(0, Math.min(100, score)));
   }
 
   private async generateRecommendationPresentationWithGemini(params: {
