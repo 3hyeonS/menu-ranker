@@ -52,7 +52,11 @@ import { NutritionLabelRecognition } from './types/nutrition-label-recognition.t
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
-import { stripPublicMenuSourcePrefix } from '../utils/menu-name.util';
+import {
+  canonicalizeMenuSearchName,
+  normalizeMenuSearchName,
+  stripPublicMenuSourcePrefix,
+} from '../utils/menu-name.util';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -311,11 +315,27 @@ export class HomeService {
     return this.normalizeSearchText(value).replace(/\s+/g, '');
   }
 
+  private applyMenuSearchFields<T extends { name: string }>(
+    menu: T,
+  ): T & { search_name: string; canonical_name: string } {
+    return {
+      ...menu,
+      search_name: normalizeMenuSearchName(menu.name),
+      canonical_name: canonicalizeMenuSearchName(menu.name),
+    };
+  }
+
   private calculateSearchSimilarity(keyword: string, menu: MenuEntity): number {
     const input = this.normalizeSearchText(keyword);
     const compactInput = this.normalizeCompactSearchText(keyword);
+    const searchInput = normalizeMenuSearchName(keyword);
+    const canonicalInput = canonicalizeMenuSearchName(keyword);
     const menuName = this.normalizeSearchText(menu.name);
     const compactMenuName = this.normalizeCompactSearchText(menu.name);
+    const menuSearchName =
+      menu.search_name ?? normalizeMenuSearchName(menu.name);
+    const menuCanonicalName =
+      menu.canonical_name ?? canonicalizeMenuSearchName(menu.name);
     const brand = this.normalizeSearchText(menu.brand ?? '');
     const category = this.normalizeSearchText(menu.category ?? '');
     const searchable = [menuName, brand, category].filter(Boolean).join(' ');
@@ -328,14 +348,22 @@ export class HomeService {
 
     if (menuName === input || compactMenuName === compactInput) {
       score = 100;
+    } else if (menuSearchName === searchInput) {
+      score = 99;
+    } else if (menuCanonicalName === canonicalInput) {
+      score = 98;
     } else if (
       menuName.startsWith(input) ||
-      compactMenuName.startsWith(compactInput)
+      compactMenuName.startsWith(compactInput) ||
+      menuSearchName.startsWith(searchInput) ||
+      menuCanonicalName.startsWith(canonicalInput)
     ) {
       score = 94;
     } else if (
       menuName.includes(input) ||
-      compactMenuName.includes(compactInput)
+      compactMenuName.includes(compactInput) ||
+      menuSearchName.includes(searchInput) ||
+      menuCanonicalName.includes(canonicalInput)
     ) {
       score = 86;
     } else if (brand === input) {
@@ -479,7 +507,9 @@ export class HomeService {
   }
 
   private normalizeMenuDisplayDedupeKey(menuName: string): string {
-    return this.normalizeCompactSearchText(stripPublicMenuSourcePrefix(menuName));
+    return this.normalizeCompactSearchText(
+      stripPublicMenuSourcePrefix(menuName),
+    );
   }
 
   private hasPublicMenuSourcePrefix(menuName: string): boolean {
@@ -805,7 +835,11 @@ export class HomeService {
       return new SearchResponseDto(false, [], null);
     }
 
+    const searchName = normalizeMenuSearchName(keyword);
+    const canonicalName = canonicalizeMenuSearchName(keyword);
     const keywordPattern = `%${keyword}%`;
+    const searchNamePattern = `%${searchName}%`;
+    const canonicalNamePattern = `%${canonicalName}%`;
     const keywordTokens = this.toSearchTokens(keyword);
     const exactNameCandidates = [
       keyword,
@@ -840,6 +874,18 @@ export class HomeService {
             }).orWhere('menu.brand = :brandKeyword', {
               brandKeyword: keyword,
             });
+
+            if (searchName) {
+              qb.orWhere('menu.search_name LIKE :searchNamePattern', {
+                searchNamePattern,
+              });
+            }
+
+            if (canonicalName) {
+              qb.orWhere('menu.canonical_name LIKE :canonicalNamePattern', {
+                canonicalNamePattern,
+              });
+            }
 
             if (keywordTokens.length > 1) {
               qb.orWhere(
@@ -891,6 +937,16 @@ export class HomeService {
                 qb.where('menu.name IN (:...exactNameCandidates)', {
                   exactNameCandidates,
                 });
+                if (searchName) {
+                  qb.orWhere('menu.search_name = :searchName', {
+                    searchName,
+                  });
+                }
+                if (canonicalName) {
+                  qb.orWhere('menu.canonical_name = :canonicalName', {
+                    canonicalName,
+                  });
+                }
 
                 exactParentheticalPatterns.forEach((pattern, index) => {
                   qb.orWhere(`menu.name LIKE :exactParenthetical${index}`, {
@@ -928,9 +984,23 @@ export class HomeService {
     ).sort((left, right) => {
       const leftExact = this.isExactDisplayNameMatch(left, keyword) ? 0 : 1;
       const rightExact = this.isExactDisplayNameMatch(right, keyword) ? 0 : 1;
+      const leftCanonicalExact =
+        (left.canonical_name ?? canonicalizeMenuSearchName(left.name)) ===
+        canonicalName
+          ? 0
+          : 1;
+      const rightCanonicalExact =
+        (right.canonical_name ?? canonicalizeMenuSearchName(right.name)) ===
+        canonicalName
+          ? 0
+          : 1;
 
       if (leftExact !== rightExact) {
         return leftExact - rightExact;
+      }
+
+      if (leftCanonicalExact !== rightCanonicalExact) {
+        return leftCanonicalExact - rightCanonicalExact;
       }
 
       return 0;
@@ -1194,11 +1264,7 @@ failure_reason enum:
     );
     const isFailed = data?.recognition_status === 'failed';
 
-    if (
-      isFailed &&
-      failureReason &&
-      failureReason !== 'NO_MATCHING_MENU'
-    ) {
+    if (isFailed && failureReason && failureReason !== 'NO_MATCHING_MENU') {
       throw new BadRequestException(
         FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES[failureReason],
       );
@@ -1206,9 +1272,7 @@ failure_reason enum:
 
     const foodNames = Array.isArray(data?.food_names) ? data.food_names : [];
     const normalizedFoodNames = foodNames
-      .map((foodName) =>
-        typeof foodName === 'string' ? foodName.trim() : '',
-      )
+      .map((foodName) => (typeof foodName === 'string' ? foodName.trim() : ''))
       .filter((foodName) => foodName.length >= 2);
 
     const visualDescription =
@@ -1293,9 +1357,12 @@ failure_reason enum:
         vectorResults.map((result) => result.menuId),
       );
     } catch (error) {
-      console.warn('[HOME] vector food image search failed, fallback to mysql', {
-        message: error instanceof Error ? error.message : String(error),
-      });
+      console.warn(
+        '[HOME] vector food image search failed, fallback to mysql',
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
 
       return [];
     }
@@ -1829,7 +1896,9 @@ failure_reason enum:
     registerMenuRequestDto: RegisterMenuRequestDto,
   ): Promise<MenuIdResponseDto> {
     const menu = this.menuRepository.create({
-      ...this.normalizeMenuFloatValues(registerMenuRequestDto),
+      ...this.applyMenuSearchFields(
+        this.normalizeMenuFloatValues(registerMenuRequestDto),
+      ),
       data_source: 1,
       is_deleted: 0,
       category: null,
@@ -1887,7 +1956,9 @@ failure_reason enum:
     }
 
     Object.assign(menu, {
-      ...this.normalizeMenuFloatValues(modifyMenuRequestDto),
+      ...this.applyMenuSearchFields(
+        this.normalizeMenuFloatValues(modifyMenuRequestDto),
+      ),
       data_source: 1,
       category: null,
       unit_quantity: '인분',
@@ -2068,36 +2139,38 @@ failure_reason enum:
     const calories = this.asNullableNumber(valueByField.calories) ?? 0;
 
     return this.menuRepository.create({
-      ...this.normalizeMenuFloatValues({
-        name,
-        brand: this.asNullableString(valueByField.brand),
-        category: this.asNullableString(valueByField.category),
-        unit: this.asCsvUnit(
-          valueByField.unit,
-          valueByField.unit_quantity,
-          valueByField.weight,
-        ),
-        weight,
-        unit_quantity: this.asCsvUnitQuantity(
-          valueByField.unit_quantity,
-          valueByField.unit,
-        ),
-        calories,
-        carbs: this.asNullableNumber(valueByField.carbs),
-        sugars: this.asNullableNumber(valueByField.sugars),
-        sugar_alchol: this.asNullableNumber(valueByField.sugar_alchol),
-        dietary_fiber: this.asNullableNumber(valueByField.dietary_fiber),
-        protein: this.asNullableNumber(valueByField.protein),
-        fat: this.asNullableNumber(valueByField.fat),
-        sat_fat: this.asNullableNumber(valueByField.sat_fat),
-        trans_fat: this.asNullableNumber(valueByField.trans_fat),
-        un_sat_fat: this.asNullableNumber(valueByField.un_sat_fat),
-        sodium: this.asNullableNumber(valueByField.sodium),
-        caffeine: this.asNullableNumber(valueByField.caffeine),
-        potassium: this.asNullableNumber(valueByField.potassium),
-        cholesterol: this.asNullableNumber(valueByField.cholesterol),
-        alcohol: this.asNullableNumber(valueByField.alcohol),
-      }),
+      ...this.applyMenuSearchFields(
+        this.normalizeMenuFloatValues({
+          name,
+          brand: this.asNullableString(valueByField.brand),
+          category: this.asNullableString(valueByField.category),
+          unit: this.asCsvUnit(
+            valueByField.unit,
+            valueByField.unit_quantity,
+            valueByField.weight,
+          ),
+          weight,
+          unit_quantity: this.asCsvUnitQuantity(
+            valueByField.unit_quantity,
+            valueByField.unit,
+          ),
+          calories,
+          carbs: this.asNullableNumber(valueByField.carbs),
+          sugars: this.asNullableNumber(valueByField.sugars),
+          sugar_alchol: this.asNullableNumber(valueByField.sugar_alchol),
+          dietary_fiber: this.asNullableNumber(valueByField.dietary_fiber),
+          protein: this.asNullableNumber(valueByField.protein),
+          fat: this.asNullableNumber(valueByField.fat),
+          sat_fat: this.asNullableNumber(valueByField.sat_fat),
+          trans_fat: this.asNullableNumber(valueByField.trans_fat),
+          un_sat_fat: this.asNullableNumber(valueByField.un_sat_fat),
+          sodium: this.asNullableNumber(valueByField.sodium),
+          caffeine: this.asNullableNumber(valueByField.caffeine),
+          potassium: this.asNullableNumber(valueByField.potassium),
+          cholesterol: this.asNullableNumber(valueByField.cholesterol),
+          alcohol: this.asNullableNumber(valueByField.alcohol),
+        }),
+      ),
       data_source: 0,
       is_deleted: 0,
       user: null,
@@ -2373,9 +2446,9 @@ failure_reason enum:
       process.env.GEMINI_MODEL ??
       DEFAULT_GEMINI_MODEL;
     const configuredFallbackModels = [
-      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS
-        ?.split(',')
-        .map((model) => model.trim()) ?? []),
+      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS?.split(',').map((model) =>
+        model.trim(),
+      ) ?? []),
       process.env.GEMINI_IMAGE_FALLBACK_MODEL,
     ];
     const hasConfiguredFallbackModels =

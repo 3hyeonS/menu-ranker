@@ -41,7 +41,11 @@ import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-req
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
 import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
-import { stripPublicMenuSourcePrefix } from '../utils/menu-name.util';
+import {
+  canonicalizeMenuSearchName,
+  normalizeMenuSearchName,
+  stripPublicMenuSourcePrefix,
+} from '../utils/menu-name.util';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -541,7 +545,12 @@ export class ChatService {
     }
 
     if (classification.chat_category === 'general') {
-      return await this.answerGeneralQuestion(user, userInfo, input, chatContext);
+      return await this.answerGeneralQuestion(
+        user,
+        userInfo,
+        input,
+        chatContext,
+      );
     }
 
     const parsedIntent = analysis.intent;
@@ -966,25 +975,30 @@ export class ChatService {
       throw new BadRequestException('name must not be empty');
     }
 
-    const menu = await this.createNutritionLabelPersonalMenu(user, name, brand, {
-      unit: dto.unit,
-      weight: dto.weight,
-      calories: dto.calories,
-      carbs: dto.carbs,
-      sugars: dto.sugars,
-      sugar_alchol: dto.sugar_alchol,
-      dietary_fiber: dto.dietary_fiber,
-      protein: dto.protein,
-      fat: dto.fat,
-      sat_fat: dto.sat_fat,
-      trans_fat: dto.trans_fat,
-      un_sat_fat: dto.un_sat_fat,
-      sodium: dto.sodium,
-      caffeine: dto.caffeine,
-      potassium: dto.potassium,
-      cholesterol: dto.cholesterol,
-      alcohol: dto.alcohol,
-    });
+    const menu = await this.createNutritionLabelPersonalMenu(
+      user,
+      name,
+      brand,
+      {
+        unit: dto.unit,
+        weight: dto.weight,
+        calories: dto.calories,
+        carbs: dto.carbs,
+        sugars: dto.sugars,
+        sugar_alchol: dto.sugar_alchol,
+        dietary_fiber: dto.dietary_fiber,
+        protein: dto.protein,
+        fat: dto.fat,
+        sat_fat: dto.sat_fat,
+        trans_fat: dto.trans_fat,
+        un_sat_fat: dto.un_sat_fat,
+        sodium: dto.sodium,
+        caffeine: dto.caffeine,
+        potassium: dto.potassium,
+        cholesterol: dto.cholesterol,
+        alcohol: dto.alcohol,
+      },
+    );
 
     const response = new ChatNutritionLabelMenuRegisterResponseDto(menu);
     await this.attachNutritionLabelRegisteredMenuToHistory(user, menu);
@@ -1054,9 +1068,7 @@ export class ChatService {
     );
   }
 
-  private isNutritionLabelFeedbackHistory(
-    history: ChatHistoryEntity,
-  ): boolean {
+  private isNutritionLabelFeedbackHistory(history: ChatHistoryEntity): boolean {
     const payload = history.response_payload;
 
     return (
@@ -1076,6 +1088,8 @@ export class ChatService {
       data_source: 1,
       is_deleted: 0,
       name,
+      search_name: normalizeMenuSearchName(name),
+      canonical_name: canonicalizeMenuSearchName(name),
       brand,
       category: null,
       unit: nutrition.unit,
@@ -1440,7 +1454,7 @@ export class ChatService {
       matchedMenus,
       introMessage:
         feedbackIntroMessage ??
-          `${this.goalToLabel(userInfo.goal)} 목표와 식사 기록 기준으로 봤어.`,
+        `${this.goalToLabel(userInfo.goal)} 목표와 식사 기록 기준으로 봤어.`,
       preparedIntroMessage: feedbackIntroMessage,
       introSource: 'text_feedback',
       timing,
@@ -1525,7 +1539,9 @@ export class ChatService {
           this.scoreMenu(menu, feedbackIntent, userInfo, rankingBasis),
         ),
       );
-      feedback.total_calories = roundToOneDecimal(combinationNutrition.calories);
+      feedback.total_calories = roundToOneDecimal(
+        combinationNutrition.calories,
+      );
       feedback.score = roundToOneDecimal(combinationScore.finalScore);
       feedback.is_appropriate = combinationScore.finalScore >= 65;
 
@@ -1545,8 +1561,7 @@ export class ChatService {
         return {
           ...menu,
           score: roundToOneDecimal(score),
-          is_appropriate:
-            menuScore?.isAppropriate ?? geminiScore.isAppropriate,
+          is_appropriate: menuScore?.isAppropriate ?? geminiScore.isAppropriate,
         };
       });
     };
@@ -1724,7 +1739,10 @@ export class ChatService {
     const actionTargetPattern =
       /(먹었|먹은|식사|메뉴|음식|운동|칼로리|단백질|탄수|지방|몸무게|체중|물|수분)/;
 
-    return actionPattern.test(normalizedInput) && actionTargetPattern.test(normalizedInput);
+    return (
+      actionPattern.test(normalizedInput) &&
+      actionTargetPattern.test(normalizedInput)
+    );
   }
 
   private isAppSupportQuestion(normalizedInput: string): boolean {
@@ -1733,7 +1751,10 @@ export class ChatService {
     const foodConversationPattern =
       /(먹어도돼|뭐먹|추천|피드백|칼로리|단백질|탄수|지방|영양|식단)/;
 
-    return appPattern.test(normalizedInput) && !foodConversationPattern.test(normalizedInput);
+    return (
+      appPattern.test(normalizedInput) &&
+      !foodConversationPattern.test(normalizedInput)
+    );
   }
 
   private async getRequiredUserInfo(userId: number): Promise<UserInfoEntity> {
@@ -1843,10 +1864,8 @@ export class ChatService {
       user_input: chatHistory.input_text,
       chat_category: chatCategory,
       intro_message: payload.intro_message ?? null,
-      image_summary: this.asNonEmptyString(payload.image_summary)?.slice(
-        0,
-        500,
-      ) ?? null,
+      image_summary:
+        this.asNonEmptyString(payload.image_summary)?.slice(0, 500) ?? null,
       recommended_menu_names: recommendedMenus,
       feedback_menu_names: feedbackMenus,
       desired_brand: this.inferDominantValue([
@@ -4379,7 +4398,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
-    const introMessage = this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
     console.log('[CHAT] Gemini recommendation plan', {
       introMessage,
       candidates: normalizedCandidates,
@@ -4483,7 +4503,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
 
-    const introMessage = this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
     console.log('[CHAT] Gemini feedback plan', {
       introMessage,
       candidates: normalizedCandidates,
@@ -4575,7 +4596,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       .map((candidate) => this.normalizeGenericMenuCandidate(candidate))
       .filter((candidate): candidate is GenericMenuCandidate => !!candidate)
       .slice(0, this.getGeminiGenericMenuCandidateLimit());
-    const introMessage = this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message)?.slice(0, 300) ?? null;
     const imageSummary =
       this.asNonEmptyString(data?.image_summary)?.slice(0, 500) ?? null;
 
@@ -5328,9 +5350,12 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           }),
         )
         .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-        .andWhere(`${normalizedMenuNameExpression} = :normalizedCandidateName`, {
-          normalizedCandidateName,
-        });
+        .andWhere(
+          `${normalizedMenuNameExpression} = :normalizedCandidateName`,
+          {
+            normalizedCandidateName,
+          },
+        );
 
       if (useDefaultPrefix) {
         builder.andWhere('menu.name LIKE :defaultMenuNamePrefix', {
@@ -5492,9 +5517,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     candidate: GenericMenuCandidate,
     menus: MenuEntity[],
   ): MenuEntity | null {
-    return this.getGenericCandidateSearchNames(candidate)
-      .map((searchName) => this.findMostSimilarMenu(searchName, menus))
-      .find((menu): menu is MenuEntity => !!menu) ?? null;
+    return (
+      this.getGenericCandidateSearchNames(candidate)
+        .map((searchName) => this.findMostSimilarMenu(searchName, menus))
+        .find((menu): menu is MenuEntity => !!menu) ?? null
+    );
   }
 
   private findMostSimilarGenericCandidateMenuAboveThreshold(
@@ -5502,11 +5529,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     menus: MenuEntity[],
     threshold: number,
   ): MenuEntity | null {
-    return this.getGenericCandidateSearchNames(candidate)
-      .map((searchName) =>
-        this.findMostSimilarMenuAboveThreshold(searchName, menus, threshold),
-      )
-      .find((menu): menu is MenuEntity => !!menu) ?? null;
+    return (
+      this.getGenericCandidateSearchNames(candidate)
+        .map((searchName) =>
+          this.findMostSimilarMenuAboveThreshold(searchName, menus, threshold),
+        )
+        .find((menu): menu is MenuEntity => !!menu) ?? null
+    );
   }
 
   private buildSingleGenericCandidateVectorQuery(
@@ -7723,11 +7752,15 @@ ${input}
     return this.mergeTextValues(
       chatContext.previous_feedback_menu_names,
       chatContext.previous_recommended_menu_names,
-      this.extractMenuNamesFromPreviousUserInput(chatContext.previous_user_input),
+      this.extractMenuNamesFromPreviousUserInput(
+        chatContext.previous_user_input,
+      ),
     ).slice(0, 5);
   }
 
-  private extractMenuNamesFromPreviousUserInput(input: string | null): string[] {
+  private extractMenuNamesFromPreviousUserInput(
+    input: string | null,
+  ): string[] {
     if (!input) {
       return [];
     }
@@ -7848,7 +7881,9 @@ ${input}
     const contextMenuNames = this.mergeTextValues(
       chatContext.previous_feedback_menu_names,
       chatContext.previous_recommended_menu_names,
-      this.extractMenuNamesFromPreviousUserInput(chatContext.previous_user_input),
+      this.extractMenuNamesFromPreviousUserInput(
+        chatContext.previous_user_input,
+      ),
     ).slice(0, 5);
 
     if (contextMenuNames.length === 0) {
@@ -8577,8 +8612,11 @@ ${JSON.stringify({
       context: 'general-answer',
       systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
     });
-    const introMessage = this.asNonEmptyString(data?.intro_message) ?? '핵심부터 정리할게.';
-    const generalAnswer = this.asNonEmptyString(data?.general_answer) ?? '질문은 일반 질문으로 분류됐어.\n\n원하는 범위를 조금만 더 구체적으로 말해줘.\n그 기준에 맞춰 바로 정리해줄게.';
+    const introMessage =
+      this.asNonEmptyString(data?.intro_message) ?? '핵심부터 정리할게.';
+    const generalAnswer =
+      this.asNonEmptyString(data?.general_answer) ??
+      '질문은 일반 질문으로 분류됐어.\n\n원하는 범위를 조금만 더 구체적으로 말해줘.\n그 기준에 맞춰 바로 정리해줄게.';
 
     return {
       intro_message: introMessage.slice(0, 300),
@@ -9027,7 +9065,8 @@ ${JSON.stringify(menusPayload, promptPayloadReplacer)}
         context: 'recommendation-presentation',
         systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
       });
-      const introMessage = this.asNonEmptyString(data?.intro_message) ?? params.fallbackIntro;
+      const introMessage =
+        this.asNonEmptyString(data?.intro_message) ?? params.fallbackIntro;
 
       return {
         intro_message: introMessage.slice(0, 300),
@@ -9429,7 +9468,10 @@ ${JSON.stringify(candidates)}
   private async uploadChatImage(
     user: UserEntity,
     file: Express.Multer.File,
-    imageType: 'menu-board' | 'food-image-feedback' | 'nutrition-label-feedback',
+    imageType:
+      | 'menu-board'
+      | 'food-image-feedback'
+      | 'nutrition-label-feedback',
   ): Promise<string> {
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomString = Math.random().toString(36).substring(2, 12);
@@ -9470,7 +9512,9 @@ ${JSON.stringify(candidates)}
         originalErrorMessage:
           error instanceof Error ? error.message : String(error),
         uploadErrorMessage:
-          uploadError instanceof Error ? uploadError.message : String(uploadError),
+          uploadError instanceof Error
+            ? uploadError.message
+            : String(uploadError),
       });
     }
   }
@@ -9549,7 +9593,8 @@ ${JSON.stringify(candidates)}
     const rawOriginalName =
       this.asNonEmptyString(source.original_name) ??
       this.asNonEmptyString(source.originalName);
-    const originalName = this.normalizeGenericMenuCandidateName(rawOriginalName);
+    const originalName =
+      this.normalizeGenericMenuCandidateName(rawOriginalName);
 
     if (!name || !this.isValidGenericMenuCandidateName(name)) {
       return null;
@@ -9558,7 +9603,9 @@ ${JSON.stringify(candidates)}
     return {
       name,
       originalName:
-        originalName && originalName !== name && this.isValidGenericMenuCandidateName(originalName)
+        originalName &&
+        originalName !== name &&
+        this.isValidGenericMenuCandidateName(originalName)
           ? originalName
           : null,
       brand: this.asNonEmptyString(source.brand),
@@ -9566,7 +9613,9 @@ ${JSON.stringify(candidates)}
     };
   }
 
-  private normalizeGenericMenuCandidateName(name: string | null): string | null {
+  private normalizeGenericMenuCandidateName(
+    name: string | null,
+  ): string | null {
     if (!name) {
       return null;
     }

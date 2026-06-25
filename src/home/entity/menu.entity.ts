@@ -28,6 +28,12 @@ export class MenuEntity {
   @Column({ type: 'varchar', name: 'name', nullable: false })
   name: string;
 
+  @Column({ type: 'varchar', name: 'search_name', nullable: true })
+  search_name: string | null;
+
+  @Column({ type: 'varchar', name: 'canonical_name', nullable: true })
+  canonical_name: string | null;
+
   @Column({ type: 'varchar', name: 'brand', nullable: true })
   brand: string;
 
