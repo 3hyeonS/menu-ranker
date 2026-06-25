@@ -2348,6 +2348,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
+- image_summary에 음식명으로 언급한 항목은 가능한 한 detected_foods에도 포함해
+- 식판, 도시락, 한상차림처럼 여러 음식이 함께 있으면 밥, 국/찌개, 고기/생선/계란 반찬, 채소 반찬, 김치/절임류, 소스처럼 보이는 작은 반찬도 가능한 한 개별 음식으로 분리해서 detected_foods에 넣어
+- 음식명이 완전히 확정되지 않더라도 사진에서 음식 종류가 충분히 보이면 가장 가까운 일반 음식명으로 반환해
 - 사진 속에서 같은 메뉴로 보이는 음식이 여러 개 있어도 detected_foods에는 1개만 반환해
 - 같은 메뉴가 여러 개 보이면 가장 선명하거나 대표적인 1개의 위치만 반환해
 - food_name에는 사진 속 음식의 가장 구체적인 이름을 넣어
@@ -2356,7 +2359,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 - position.y는 음식 중심의 세로 좌표야. 위쪽 끝이 0, 아래쪽 끝이 1이야
 - position은 순위나 줄 번호가 아니라 실제 음식 중심 좌표야
 - 음식 중심이 이미지 아래쪽 끝에 붙어있지 않다면 position.y에 1을 쓰지 마
-- 확실하지 않은 음식은 제외해
 - 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
 - 사진 문제로 실패한 경우 recognition_status는 "failed", detected_foods는 빈 배열로 반환해
 - 음식은 보이지만 이름을 특정하기 어렵다면 failure_reason은 "NO_MATCHING_MENU"로 반환해
