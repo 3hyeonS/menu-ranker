@@ -38,6 +38,8 @@ import { ChatFoodImagePositionResponseDto } from './dto/response-dto/chat-food-i
 import { NutritionLabelRecognitionResponseDto } from '../home/dto/response-dto/nutrition-label-recognition-response-dto';
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
+import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
+import { MenuIdResponseDto } from '../home/dto/response-dto/menu-id-response-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
 import { stripPublicMenuSourcePrefix } from '../utils/menu-name.util';
 
@@ -908,6 +910,13 @@ export class ChatService {
         chatContext,
       );
       timing.mark('nutrition_label_recognition_completed');
+      const registeredMenu =
+        await this.registerRecognizedNutritionLabelMenuIfPossible(
+          user,
+          recognition.menuCandidate,
+          recognition.nutrition,
+          timing,
+        );
 
       const response = new ChatNutritionLabelFeedbackResponseDto();
       response.chat_category = 'feedback';
@@ -918,6 +927,7 @@ export class ChatService {
       response.recognized_nutrition = new NutritionLabelRecognitionResponseDto(
         recognition.nutrition,
       );
+      response.menu_id = registeredMenu?.id ?? null;
       response.image_url = await this.uploadChatImage(
         user,
         file,
@@ -933,7 +943,9 @@ export class ChatService {
         }),
       );
       timing.mark('history_saved');
-      timing.end();
+      timing.end({
+        menuId: response.menu_id,
+      });
 
       return response;
     } catch (error) {
@@ -945,6 +957,112 @@ export class ChatService {
       );
       throw error;
     }
+  }
+
+  async registerNutritionLabelMenu(
+    user: UserEntity,
+    dto: ChatNutritionLabelMenuRegisterRequestDto,
+  ): Promise<MenuIdResponseDto> {
+    const name = this.asNonEmptyString(dto.name);
+    const brand = this.asNonEmptyString(dto.brand);
+
+    if (!name) {
+      throw new BadRequestException('name must not be empty');
+    }
+
+    if (!brand) {
+      throw new BadRequestException('brand must not be empty');
+    }
+
+    const menu = await this.createNutritionLabelPersonalMenu(user, name, brand, {
+      unit: dto.unit,
+      weight: dto.weight,
+      calories: dto.calories,
+      carbs: dto.carbs,
+      sugars: dto.sugars,
+      sugar_alchol: dto.sugar_alchol,
+      dietary_fiber: dto.dietary_fiber,
+      protein: dto.protein,
+      fat: dto.fat,
+      sat_fat: dto.sat_fat,
+      trans_fat: dto.trans_fat,
+      un_sat_fat: dto.un_sat_fat,
+      sodium: dto.sodium,
+      caffeine: dto.caffeine,
+      potassium: dto.potassium,
+      cholesterol: dto.cholesterol,
+      alcohol: dto.alcohol,
+    });
+
+    return new MenuIdResponseDto(menu);
+  }
+
+  private async registerRecognizedNutritionLabelMenuIfPossible(
+    user: UserEntity,
+    candidate: GenericMenuCandidate | null,
+    nutrition: NutritionLabelRecognitionValue,
+    timing?: ChatTimingLogger,
+  ): Promise<MenuEntity | null> {
+    const name = this.asNonEmptyString(candidate?.name);
+    const brand = this.asNonEmptyString(candidate?.brand);
+
+    if (!name || !brand) {
+      timing?.mark('nutrition_label_menu_registration_skipped', {
+        reason: !name ? 'missing_name' : 'missing_brand',
+      });
+      return null;
+    }
+
+    const menu = await this.createNutritionLabelPersonalMenu(
+      user,
+      name,
+      brand,
+      nutrition,
+    );
+
+    timing?.mark('nutrition_label_menu_registered', {
+      menuId: menu.id,
+      menuName: menu.name,
+      menuBrand: menu.brand,
+    });
+
+    return menu;
+  }
+
+  private async createNutritionLabelPersonalMenu(
+    user: UserEntity,
+    name: string,
+    brand: string,
+    nutrition: NutritionLabelRecognitionValue,
+  ): Promise<MenuEntity> {
+    const menu = this.menuRepository.create({
+      data_source: 1,
+      is_deleted: 0,
+      name,
+      brand,
+      category: null,
+      unit: nutrition.unit,
+      weight: roundToOneDecimal(nutrition.weight),
+      unit_quantity: '인분',
+      calories: roundToOneDecimal(nutrition.calories),
+      carbs: roundNullableToOneDecimal(nutrition.carbs),
+      sugars: roundNullableToOneDecimal(nutrition.sugars),
+      sugar_alchol: roundNullableToOneDecimal(nutrition.sugar_alchol),
+      dietary_fiber: roundNullableToOneDecimal(nutrition.dietary_fiber),
+      protein: roundNullableToOneDecimal(nutrition.protein),
+      fat: roundNullableToOneDecimal(nutrition.fat),
+      sat_fat: roundNullableToOneDecimal(nutrition.sat_fat),
+      trans_fat: roundNullableToOneDecimal(nutrition.trans_fat),
+      un_sat_fat: roundNullableToOneDecimal(nutrition.un_sat_fat),
+      sodium: roundNullableToOneDecimal(nutrition.sodium),
+      caffeine: roundNullableToOneDecimal(nutrition.caffeine),
+      potassium: roundNullableToOneDecimal(nutrition.potassium),
+      cholesterol: roundNullableToOneDecimal(nutrition.cholesterol),
+      alcohol: roundNullableToOneDecimal(nutrition.alcohol),
+      user,
+    });
+
+    return await this.menuRepository.save(menu);
   }
 
   private async recommendWithPreparedContext(params: {
@@ -2121,6 +2239,7 @@ export class ChatService {
   ): Promise<{
     introMessage: string | null;
     imageSummary: string | null;
+    menuCandidate: GenericMenuCandidate | null;
     nutrition: NutritionLabelRecognitionValue;
   }> {
     const prompt = `
@@ -2140,6 +2259,10 @@ export class ChatService {
 - intro_message에는 영양성분표에서 읽은 정확한 숫자를 길게 나열하지 마
 - 숫자 설명이 필요하면 recognized_nutrition에만 담고, intro_message는 "단백질은 괜찮은 편", "나트륨 부담이 있는 편"처럼 정성적으로 말해
 - image_summary는 이후 대화에서 원본 사진 없이도 맥락을 이해할 수 있게 1~2문장으로 요약해
+- 사진에서 제품명/음식명과 브랜드명이 모두 명확히 보이면 menu_candidate에 개인 메뉴 등록용 정보를 담아
+- menu_candidate.name은 브랜드명이나 용량/맛/프로모션 문구를 제외하고 음식/제품을 찾기 좋은 이름으로 정제해
+- menu_candidate.brand에는 사진에서 읽은 브랜드명을 담아
+- 제품명/음식명 또는 브랜드명 중 하나라도 판단하기 어려우면 menu_candidate는 null로 반환해
 - 영양성분표에 없는 값은 null로 반환해
 - unit은 g 기준이면 0, ml 기준이면 1로 반환해
 - weight와 calories는 반드시 숫자로 반환해. 1회 제공량 또는 표기 기준량을 우선 사용해
@@ -2148,6 +2271,11 @@ export class ChatService {
 {
   "intro_message": "단백질은 챙기기 좋지만 나트륨과 지방 부담은 있는 편이야. 오늘 실제 식사 흐름에 맞춰 양을 조절해서 먹어.",
   "image_summary": "영양성분표에는 1회 제공량, 열량, 탄수화물, 단백질, 지방, 나트륨 정보가 표시되어 있어.",
+  "menu_candidate": {
+    "name": "닭가슴살 소시지",
+    "brand": "하림",
+    "category": "가공식품"
+  },
   "nutrition": {
     "unit": 0,
     "weight": 100,
@@ -2184,6 +2312,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
     return {
       introMessage: this.asNonEmptyString(data?.intro_message),
       imageSummary: this.asNonEmptyString(data?.image_summary),
+      menuCandidate: this.normalizeGenericMenuCandidate(data?.menu_candidate),
       nutrition,
     };
   }

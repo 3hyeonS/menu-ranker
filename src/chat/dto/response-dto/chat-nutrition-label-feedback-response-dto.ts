@@ -35,6 +35,15 @@ export class ChatNutritionLabelFeedbackResponseDto {
   image_url: string;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      '영양성분표에서 메뉴명과 브랜드가 모두 인식되어 개인 메뉴로 등록된 경우 해당 메뉴 id. 메뉴명 또는 브랜드 인식 실패 시 null',
+    example: 1234,
+  })
+  menu_id: number | null;
+
+  @ApiProperty({
     type: NutritionLabelRecognitionResponseDto,
     description: '영양성분표에서 인식한 영양성분 값',
   })

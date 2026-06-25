@@ -32,6 +32,7 @@ import { ChatService } from './chat.service';
 import { ChatRecommendRequestDto } from './dto/request-dto/chat-recommend-request-dto';
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
+import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
 import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-response-dto';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
 import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-board-recommend-response-dto';
@@ -39,6 +40,7 @@ import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-i
 import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-nutrition-label-feedback-response-dto';
 import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
 import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
+import { MenuIdResponseDto } from '../home/dto/response-dto/menu-id-response-dto';
 
 @ApiTags('채팅')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -529,6 +531,53 @@ export class ChatController {
         fileSize: file?.size ?? null,
         mimeType: file?.mimetype ?? null,
       });
+      throw error;
+    }
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '영양성분표 인식값 기반 개인 메뉴 등록',
+    description:
+      '영양성분표 사진에서 메뉴명/브랜드를 자동 인식하지 못한 경우, 사용자가 입력한 메뉴명과 브랜드명 및 인식된 영양성분값으로 개인 메뉴를 등록',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '영양성분표 기반 개인 메뉴 등록 성공',
+    message: 'Nutrition label menu registered successfully',
+    model: MenuIdResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \n메뉴명/브랜드명 누락 또는 영양성분 필드 오류',
+    message: 'name must not be empty',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Nutrition label menu registered successfully')
+  @UseGuards(AuthGuard())
+  @Post('/nutrition-label-feedback/register-menu')
+  async registerNutritionLabelMenu(
+    @GetUser() user: UserEntity,
+    @Body() dto: ChatNutritionLabelMenuRegisterRequestDto,
+  ): Promise<MenuIdResponseDto> {
+    try {
+      return await this.chatService.registerNutritionLabelMenu(user, dto);
+    } catch (error) {
+      this.logChatApiError(
+        'POST /chat/nutrition-label-feedback/register-menu',
+        user,
+        error,
+        {
+          name: dto?.name ?? null,
+          brand: dto?.brand ?? null,
+        },
+      );
       throw error;
     }
   }
