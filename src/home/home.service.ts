@@ -74,6 +74,20 @@ const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
 
+type HomeFoodImageRecognitionCandidate = {
+  id: number;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  weight: number | null;
+};
+
+type HomeFoodImageCandidateGroup = {
+  foodIndex: number;
+  foodName: string;
+  candidates: HomeFoodImageRecognitionCandidate[];
+};
+
 type AlternativeNutritionGoal =
   | 'lowCalorie'
   | 'highProtein'
@@ -1158,6 +1172,21 @@ export class HomeService {
 
     try {
       const foodImageDescription = await this.describeFoodImage(file);
+      const perFoodRecognized = await this.recognizeFoodImageByPerFoodRematch(
+        user.id,
+        file,
+        foodImageDescription,
+      );
+
+      if (perFoodRecognized.menu_ids.length > 0) {
+        const imageUrl = await this.uploadRecognizedFoodImage(user, file);
+
+        return new FoodImageRecognitionResponseDto({
+          ...perFoodRecognized,
+          image_url: imageUrl,
+        });
+      }
+
       const menus = await this.getFoodImageRecognitionCandidateMenus(
         user.id,
         foodImageDescription,
@@ -1389,6 +1418,291 @@ failure_reason enum:
       .join('\n');
   }
 
+  private async recognizeFoodImageByPerFoodRematch(
+    userId: number,
+    file: Express.Multer.File,
+    description: {
+      foodNames: string[];
+      visualDescription: string | null;
+    },
+  ): Promise<{
+    menu_ids: number[];
+    menu_quantities: number[];
+  }> {
+    const foodNames = description.foodNames.slice(0, 10);
+
+    if (foodNames.length === 0) {
+      return { menu_ids: [], menu_quantities: [] };
+    }
+
+    const candidateGroups = await Promise.all(
+      foodNames.map(async (foodName, index) => {
+        const candidates = await this.getFoodImageCandidatesForSingleFood(
+          userId,
+          foodName,
+          description.visualDescription,
+        );
+
+        return {
+          foodIndex: index,
+          foodName,
+          candidates,
+        };
+      }),
+    );
+    const groupsWithCandidates = candidateGroups.filter(
+      (group) => group.candidates.length > 0,
+    );
+
+    if (groupsWithCandidates.length === 0) {
+      return { menu_ids: [], menu_quantities: [] };
+    }
+
+    return await this.rematchHomeFoodImageMenusWithGemini(
+      file,
+      groupsWithCandidates,
+    );
+  }
+
+  private async getFoodImageCandidatesForSingleFood(
+    userId: number,
+    foodName: string,
+    visualDescription: string | null,
+  ): Promise<HomeFoodImageRecognitionCandidate[]> {
+    const limit = this.getFoodImagePerFoodVectorCandidateLimit();
+
+    if (this.isVectorSearchEnabled() && this.menuVectorService) {
+      try {
+        const vectorResults = await this.menuVectorService.searchMenusByText(
+          [
+            `음식명: ${foodName}`,
+            visualDescription ? `사진 전체 특징: ${visualDescription}` : null,
+          ]
+            .filter((value): value is string => !!value)
+            .join('\n'),
+          {
+            userId,
+            limit,
+          },
+        );
+
+        const vectorMenus = await this.getFoodImageRecognitionMenusByIds(
+          userId,
+          vectorResults.map((result) => result.menuId),
+        );
+
+        if (vectorMenus.length > 0) {
+          return vectorMenus;
+        }
+      } catch (error) {
+        console.warn('[HOME] per-food vector image search failed', {
+          foodName,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return await this.searchFoodImageCandidateMenusByKeyword(
+      userId,
+      foodName,
+      limit,
+    );
+  }
+
+  private async searchFoodImageCandidateMenusByKeyword(
+    userId: number,
+    foodName: string,
+    limit: number,
+  ): Promise<HomeFoodImageRecognitionCandidate[]> {
+    const normalizedFoodName = stripPublicMenuSourcePrefix(foodName).trim();
+
+    if (normalizedFoodName.length === 0) {
+      return [];
+    }
+
+    const rows = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select([
+        'menu.id AS id',
+        'menu.name AS name',
+        'menu.brand AS brand',
+        'menu.category AS category',
+        'menu.weight AS weight',
+      ])
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where(
+            "REPLACE(REPLACE(menu.name, '(식약처_음식) ', ''), '(식약처_가공) ', '') = :exactName",
+            { exactName: normalizedFoodName },
+          ).orWhere('menu.name LIKE :likeName', {
+            likeName: `%${normalizedFoodName}%`,
+          });
+        }),
+      )
+      .orderBy(
+        "CASE WHEN REPLACE(REPLACE(menu.name, '(식약처_음식) ', ''), '(식약처_가공) ', '') = :exactName THEN 0 ELSE 1 END",
+        'ASC',
+      )
+      .addOrderBy('menu.id', 'ASC')
+      .setParameter('exactName', normalizedFoodName)
+      .limit(limit)
+      .getRawMany<{
+        id: number;
+        name: string;
+        brand: string | null;
+        category: string | null;
+        weight: number | null;
+      }>();
+
+    return rows.map((row) => ({
+      id: Number(row.id),
+      name: row.name,
+      brand: row.brand ?? null,
+      category: row.category ?? null,
+      weight: this.asNullableNumber(row.weight),
+    }));
+  }
+
+  private async rematchHomeFoodImageMenusWithGemini(
+    file: Express.Multer.File,
+    candidateGroups: HomeFoodImageCandidateGroup[],
+  ): Promise<{
+    menu_ids: number[];
+    menu_quantities: number[];
+  }> {
+    const candidateMap = new Map<number, HomeFoodImageRecognitionCandidate>();
+    const candidateIdsByFoodIndex = new Map<number, Set<number>>();
+
+    candidateGroups.forEach((group) => {
+      const ids = new Set<number>();
+
+      group.candidates.forEach((candidate) => {
+        candidateMap.set(candidate.id, candidate);
+        ids.add(candidate.id);
+      });
+      candidateIdsByFoodIndex.set(group.foodIndex, ids);
+    });
+
+    const prompt = `
+음식 사진, 1차 인식 음식명, 서버가 음식별로 추린 후보 메뉴를 함께 보고 각 음식에 가장 잘 맞는 menu_id를 골라 JSON object만 반환해.
+
+규칙:
+- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+- food_index는 입력 food_groups의 food_index 값을 그대로 사용해
+- 각 food_index는 자기 candidate_menus 안에 있는 menu_id 중에서만 골라
+- 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
+- 후보 목록에 없는 menu_id는 절대 반환하지 마
+- 사진의 시각 정보, food_name, 후보 메뉴명/브랜드/카테고리를 함께 비교해
+- 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
+- 같은 메뉴가 여러 위치에 보여도 같은 menu_id는 한 번만 반환해
+- quantity는 사진 속 해당 음식의 대략적인 인분/개수야. 모르겠으면 1로 반환해
+
+food_groups:
+${JSON.stringify(
+  candidateGroups.map((group) => ({
+    food_index: group.foodIndex,
+    food_name: group.foodName,
+    candidate_menus: group.candidates.map((candidate) => ({
+      menu_id: candidate.id,
+      name: candidate.name,
+      brand: candidate.brand,
+      category: candidate.category,
+    })),
+  })),
+)}
+
+반환 shape:
+{
+  "detected_foods": [
+    {
+      "food_index": 0,
+      "menu_id": 1,
+      "quantity": 1
+    }
+  ]
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJsonWithImage(
+        prompt,
+        file,
+        'Food image recognition is unavailable',
+      );
+      const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
+        ? data.detected_foods
+        : [];
+
+      return this.normalizeHomeFoodImageRematchResult(
+        detectedFoods,
+        candidateMap,
+        candidateIdsByFoodIndex,
+      );
+    } catch (error) {
+      console.warn('[HOME] food image Gemini rematch failed', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      return { menu_ids: [], menu_quantities: [] };
+    }
+  }
+
+  private normalizeHomeFoodImageRematchResult(
+    values: unknown[],
+    candidateMap: Map<number, HomeFoodImageRecognitionCandidate>,
+    candidateIdsByFoodIndex: Map<number, Set<number>>,
+  ): {
+    menu_ids: number[];
+    menu_quantities: number[];
+  } {
+    const merged = new Map<number, number>();
+
+    values.forEach((value) => {
+      if (!value || typeof value !== 'object') {
+        return;
+      }
+
+      const item = value as Record<string, unknown>;
+      const foodIndex = this.asNullableNumber(item.food_index);
+      const menuId = this.asNullableNumber(item.menu_id);
+      const quantity = this.asNullableNumber(item.quantity) ?? 1;
+
+      if (
+        foodIndex === null ||
+        menuId === null ||
+        !Number.isInteger(foodIndex) ||
+        !Number.isInteger(menuId) ||
+        quantity <= 0 ||
+        !candidateIdsByFoodIndex.get(foodIndex)?.has(menuId)
+      ) {
+        return;
+      }
+
+      const candidate = candidateMap.get(menuId);
+
+      if (!candidate) {
+        return;
+      }
+
+      const weight = this.asNullableNumber(candidate.weight) ?? 0;
+      const weightQuantity = weight > 0 ? weight * quantity : quantity;
+      const previousQuantity = merged.get(menuId) ?? 0;
+      merged.set(menuId, roundToOneDecimal(previousQuantity + weightQuantity));
+    });
+
+    return {
+      menu_ids: Array.from(merged.keys()),
+      menu_quantities: Array.from(merged.values()),
+    };
+  }
+
   private async getFoodImageRecognitionMenusByIds(
     userId: number,
     menuIds: number[],
@@ -1494,6 +1808,18 @@ failure_reason enum:
     }
 
     return Math.max(10, Math.min(Math.floor(parsed), 500));
+  }
+
+  private getFoodImagePerFoodVectorCandidateLimit(): number {
+    const parsed = Number(
+      process.env.FOOD_IMAGE_PER_FOOD_VECTOR_CANDIDATE_LIMIT ?? 10,
+    );
+
+    if (!Number.isFinite(parsed)) {
+      return 10;
+    }
+
+    return Math.max(3, Math.min(Math.floor(parsed), 30));
   }
 
   // 영양성분표 사진 인식
