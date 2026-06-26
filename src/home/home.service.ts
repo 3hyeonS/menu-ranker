@@ -1470,6 +1470,12 @@ failure_reason enum:
     visualDescription: string | null,
   ): Promise<HomeFoodImageRecognitionCandidate[]> {
     const limit = this.getFoodImagePerFoodVectorCandidateLimit();
+    const keywordMenus = await this.searchFoodImageCandidateMenusByKeyword(
+      userId,
+      foodName,
+      limit,
+      visualDescription,
+    );
 
     if (this.isVectorSearchEnabled() && this.menuVectorService) {
       try {
@@ -1491,9 +1497,10 @@ failure_reason enum:
           vectorResults.map((result) => result.menuId),
         );
 
-        if (vectorMenus.length > 0) {
-          return vectorMenus;
-        }
+        return this.mergeFoodImageRecognitionCandidates([
+          ...keywordMenus,
+          ...vectorMenus,
+        ]).slice(0, limit);
       } catch (error) {
         console.warn('[HOME] per-food vector image search failed', {
           foodName,
@@ -1502,23 +1509,43 @@ failure_reason enum:
       }
     }
 
-    return await this.searchFoodImageCandidateMenusByKeyword(
-      userId,
-      foodName,
-      limit,
-    );
+    return keywordMenus;
+  }
+
+  private mergeFoodImageRecognitionCandidates(
+    candidates: HomeFoodImageRecognitionCandidate[],
+  ): HomeFoodImageRecognitionCandidate[] {
+    const candidateMap = new Map<number, HomeFoodImageRecognitionCandidate>();
+
+    candidates.forEach((candidate) => {
+      if (!candidateMap.has(candidate.id)) {
+        candidateMap.set(candidate.id, candidate);
+      }
+    });
+
+    return Array.from(candidateMap.values());
   }
 
   private async searchFoodImageCandidateMenusByKeyword(
     userId: number,
     foodName: string,
     limit: number,
+    contextText: string | null = null,
   ): Promise<HomeFoodImageRecognitionCandidate[]> {
     const normalizedFoodName = stripPublicMenuSourcePrefix(foodName).trim();
+    const compactFoodName =
+      this.normalizeCompactSearchText(normalizedFoodName);
+    const compactContext = this.normalizeCompactSearchText(
+      `${foodName} ${contextText ?? ''}`,
+    );
 
     if (normalizedFoodName.length === 0) {
       return [];
     }
+
+    const displayNameExpression =
+      "REPLACE(REPLACE(menu.name, '(식약처_음식) ', ''), '(식약처_가공) ', '')";
+    const compactNameExpression = `REPLACE(${displayNameExpression}, ' ', '')`;
 
     const rows = await this.menuRepository
       .createQueryBuilder('menu')
@@ -1539,19 +1566,31 @@ failure_reason enum:
       .andWhere(
         new Brackets((qb) => {
           qb.where(
-            "REPLACE(REPLACE(menu.name, '(식약처_음식) ', ''), '(식약처_가공) ', '') = :exactName",
+            `${displayNameExpression} = :exactName`,
             { exactName: normalizedFoodName },
-          ).orWhere('menu.name LIKE :likeName', {
-            likeName: `%${normalizedFoodName}%`,
-          });
+          )
+            .orWhere(`${compactNameExpression} = :compactName`, {
+              compactName: compactFoodName,
+            })
+            .orWhere('menu.name LIKE :likeName', {
+              likeName: `%${normalizedFoodName}%`,
+            });
         }),
       )
       .orderBy(
-        "CASE WHEN REPLACE(REPLACE(menu.name, '(식약처_음식) ', ''), '(식약처_가공) ', '') = :exactName THEN 0 ELSE 1 END",
+        `CASE
+          WHEN ${displayNameExpression} = :exactName THEN 0
+          WHEN ${compactNameExpression} = :compactName THEN 1
+          WHEN CHAR_LENGTH(${compactNameExpression}) >= 3
+            AND INSTR(:compactContext, ${compactNameExpression}) > 0 THEN 2
+          ELSE 3
+        END`,
         'ASC',
       )
       .addOrderBy('menu.id', 'ASC')
       .setParameter('exactName', normalizedFoodName)
+      .setParameter('compactName', compactFoodName)
+      .setParameter('compactContext', compactContext)
       .limit(limit)
       .getRawMany<{
         id: number;
