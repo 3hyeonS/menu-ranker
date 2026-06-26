@@ -1156,17 +1156,18 @@ export class HomeService {
       throw new BadRequestException('image file must be an image');
     }
 
-    const foodImageDescription = await this.describeFoodImage(file);
-    const menus = await this.getFoodImageRecognitionCandidateMenus(
-      user.id,
-      foodImageDescription,
-    );
+    try {
+      const foodImageDescription = await this.describeFoodImage(file);
+      const menus = await this.getFoodImageRecognitionCandidateMenus(
+        user.id,
+        foodImageDescription,
+      );
 
-    if (menus.length === 0) {
-      throw new NotFoundException('No menus available for recognition');
-    }
+      if (menus.length === 0) {
+        throw new NotFoundException('No menus available for recognition');
+      }
 
-    const prompt = `
+      const prompt = `
 음식 사진을 보고, 아래 후보 메뉴 중 사진에 실제로 포함된 음식만 골라서 JSON object만 반환해.
 
 규칙:
@@ -1205,18 +1206,22 @@ failure_reason enum:
 - NO_MATCHING_MENU: 음식은 보이지만 후보 메뉴와 매칭할 수 없음
 `.trim();
 
-    const data = await this.callGeminiJsonWithImage(
-      prompt,
-      file,
-      'Food image recognition is unavailable',
-    );
-    const recognized = this.normalizeFoodImageRecognition(data, menus);
-    const imageUrl = await this.uploadRecognizedFoodImage(user, file);
+      const data = await this.callGeminiJsonWithImage(
+        prompt,
+        file,
+        'Food image recognition is unavailable',
+      );
+      const recognized = this.normalizeFoodImageRecognition(data, menus);
+      const imageUrl = await this.uploadRecognizedFoodImage(user, file);
 
-    return new FoodImageRecognitionResponseDto({
-      ...recognized,
-      image_url: imageUrl,
-    });
+      return new FoodImageRecognitionResponseDto({
+        ...recognized,
+        image_url: imageUrl,
+      });
+    } catch (error) {
+      await this.uploadFailedFoodImageRecognitionIfPossible(user, file, error);
+      throw error;
+    }
   }
 
   private async describeFoodImage(file: Express.Multer.File): Promise<{
@@ -2588,6 +2593,53 @@ failure_reason enum:
     const randomString = Math.random().toString(36).substring(2, 12);
     const fileExtension = this.getImageExtension(file.mimetype);
     const fileKey = `meal-recognition/${user.id}/${date}/${randomString}.${fileExtension}`;
+
+    await this.s3.send(
+      new PutObjectCommand({
+        Bucket: this.bucketName,
+        Key: fileKey,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
+
+    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+  }
+
+  private async uploadFailedFoodImageRecognitionIfPossible(
+    user: UserEntity,
+    file: Express.Multer.File,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      const imageUrl = await this.uploadFailedFoodImageRecognition(user, file);
+
+      console.warn('[HOME] failed food image recognition uploaded', {
+        userId: user.id,
+        imageUrl,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    } catch (uploadError) {
+      console.warn('[HOME] failed food image recognition upload failed', {
+        userId: user.id,
+        originalErrorMessage:
+          error instanceof Error ? error.message : String(error),
+        uploadErrorMessage:
+          uploadError instanceof Error
+            ? uploadError.message
+            : String(uploadError),
+      });
+    }
+  }
+
+  private async uploadFailedFoodImageRecognition(
+    user: UserEntity,
+    file: Express.Multer.File,
+  ): Promise<string> {
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const randomString = Math.random().toString(36).substring(2, 12);
+    const fileExtension = this.getImageExtension(file.mimetype);
+    const fileKey = `meal-recognition/failed/${user.id}/${date}/${randomString}.${fileExtension}`;
 
     await this.s3.send(
       new PutObjectCommand({
