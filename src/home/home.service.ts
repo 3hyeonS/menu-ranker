@@ -18,6 +18,7 @@ import { MenuEntity } from './entity/menu.entity';
 import { SearchMenuRequestDto } from './dto/request-dto/search-menu-request-dto';
 import { SearchResponseDto } from './dto/response-dto/search-response-dto';
 import { MenuSimpleResponseDto } from './dto/response-dto/menu-simple-response-dto';
+import { MenuListResponseDto } from './dto/response-dto/menu-list-response-dto';
 import { MenuResponseDto } from './dto/response-dto/menu-response-dto';
 import { RegisterMealRequestDto } from './dto/request-dto/register-meal-request-dto';
 import { MealEntity } from './entity/meal.entity';
@@ -1112,6 +1113,72 @@ export class HomeService {
       .getMany();
 
     return menuList.map((menu) => new MenuSimpleResponseDto(menu));
+  }
+
+  async getFrequentlyRecordedMenus(
+    user: UserEntity,
+  ): Promise<MenuListResponseDto> {
+    const rawRows: Array<{
+      menu_id: number;
+      record_count: string;
+      last_recorded_at: Date;
+    }> = await this.mealMenuRepository
+      .createQueryBuilder('mealMenu')
+      .innerJoin('mealMenu.meal', 'meal')
+      .innerJoin('mealMenu.menu', 'menu')
+      .where('meal.userId = :userId', { userId: user.id })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .groupBy('menu.id')
+      .select('menu.id', 'menu_id')
+      .addSelect('COUNT(mealMenu.id)', 'record_count')
+      .addSelect('MAX(meal.updatedAt)', 'last_recorded_at')
+      .orderBy('record_count', 'DESC')
+      .addOrderBy('last_recorded_at', 'DESC')
+      .addOrderBy('menu.id', 'ASC')
+      .limit(20)
+      .getRawMany();
+    const menuIds = rawRows
+      .map((row) => Number(row.menu_id))
+      .filter((menuId) => Number.isInteger(menuId));
+
+    if (menuIds.length === 0) {
+      return new MenuListResponseDto([]);
+    }
+
+    const menus = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where('menu.id IN (:...menuIds)', { menuIds })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+            userId: user.id,
+          });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .getMany();
+    const menuMap = new Map(menus.map((menu) => [menu.id, menu]));
+    const menuList = menuIds
+      .map((menuId) => menuMap.get(menuId))
+      .filter((menu): menu is MenuEntity => !!menu)
+      .map((menu) => new MenuSimpleResponseDto(menu));
+
+    return new MenuListResponseDto(menuList);
+  }
+
+  async getRegisteredMenus(user: UserEntity): Promise<MenuListResponseDto> {
+    const menuList = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where('user.id = :userId', { userId: user.id })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .orderBy('menu.id', 'DESC')
+      .getMany();
+
+    return new MenuListResponseDto(
+      menuList.map((menu) => new MenuSimpleResponseDto(menu)),
+    );
   }
 
   // 식사 사진 S3 업로드

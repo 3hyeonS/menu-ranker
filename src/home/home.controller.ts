@@ -32,6 +32,7 @@ import { HomeService } from './home.service';
 import { MenuResponseDto } from './dto/response-dto/menu-response-dto';
 import { MenuIdRequestDto } from './dto/request-dto/menu-id-request-dto';
 import { MenuSimpleResponseDto } from './dto/response-dto/menu-simple-response-dto';
+import { MenuListResponseDto } from './dto/response-dto/menu-list-response-dto';
 import { SearchInBrandRequestDto } from './dto/request-dto/search-in brand-request-dto';
 import { RegisterMealRequestDto } from './dto/request-dto/register-meal-request-dto';
 import { DeleteMealRequestDto } from './dto/request-dto/delete-meal-request-dto';
@@ -241,6 +242,59 @@ export class HomeController {
       searchInBrandRequestDto.input,
       user,
     );
+  }
+
+  // 자주 먹은 메뉴 조회
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '자주 먹은 메뉴 조회',
+    description: '사용자가 자주 기록한 메뉴를 최대 20개 반환',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '자주 먹은 메뉴 조회 성공',
+    message: 'Frequently recorded menus returned successfully',
+    model: MenuListResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Frequently recorded menus returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/frequentlyRecordedMenus')
+  async frequentlyRecordedMenus(
+    @GetUser() user: UserEntity,
+  ): Promise<MenuListResponseDto> {
+    return await this.homeService.getFrequentlyRecordedMenus(user);
+  }
+
+  // 직접 등록한 메뉴 조회
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '직접 등록한 메뉴 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '직접 등록한 메뉴 조회 성공',
+    message: 'Registered menus returned successfully',
+    model: MenuListResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Registered menus returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/registeredMenus')
+  async registeredMenus(
+    @GetUser() user: UserEntity,
+  ): Promise<MenuListResponseDto> {
+    return await this.homeService.getRegisteredMenus(user);
   }
 
   @ApiBearerAuth('accessToken')
