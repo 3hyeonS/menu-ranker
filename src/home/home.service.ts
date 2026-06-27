@@ -361,12 +361,14 @@ export class HomeService {
 
     let score = 0;
 
-    if (menuName === input || compactMenuName === compactInput) {
-      score = 100;
+    if (this.isExactDisplayNameMatch(menu, keyword)) {
+      score = 130;
+    } else if (menuName === input || compactMenuName === compactInput) {
+      score = 125;
     } else if (menuSearchName === searchInput) {
-      score = 99;
+      score = 120;
     } else if (menuCanonicalName === canonicalInput) {
-      score = 98;
+      score = 110;
     } else if (
       menuName.startsWith(input) ||
       compactMenuName.startsWith(compactInput) ||
@@ -388,7 +390,10 @@ export class HomeService {
     }
 
     if (score > 0) {
-      const lengthGap = Math.abs(compactMenuName.length - compactInput.length);
+      const exactComparableName = this.normalizeCompactSearchText(
+        this.normalizeMenuNameForExactSearch(menu.name),
+      );
+      const lengthGap = Math.abs(exactComparableName.length - compactInput.length);
       score -= Math.min(lengthGap, 20) * 0.8;
     }
 
