@@ -322,6 +322,11 @@ type GenericMenuCandidate = {
   category: string | null;
 };
 
+type GenericMenuCandidateRematchResult = {
+  completed: boolean;
+  menu: MenuEntity | null;
+};
+
 type GenericMenuCandidateMatchOptions = {
   disableDefaultNamePrefix?: boolean;
   useIntentCategoryFilters?: boolean;
@@ -4692,13 +4697,16 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           return exactFallbackMenu;
         }
 
-        const matchByVector = async (useDefaultPrefix: boolean) => {
+        const matchByVector = async (
+          useDefaultPrefix: boolean,
+          vectorBrandFilters: string[] | null = brandFilters,
+        ) => {
           const vectorResults = await menuVectorService.searchMenusByText(
             this.buildSingleGenericCandidateVectorQuery(candidate, intent),
             {
               userId,
               limit: this.getGeminiGenericMenuPerCandidateLimit(),
-              brands: brandFilters,
+              brands: vectorBrandFilters,
               category: null,
               namePrefix:
                 useDefaultPrefix &&
@@ -4712,6 +4720,17 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           );
           const menuIds = vectorResults.map((result) => result.menuId);
           const vectorMenus = await this.getMenusByIds(userId, menuIds);
+          const rematchResult =
+            await this.rematchGenericCandidateMenuWithGemini(
+              candidate,
+              vectorMenus,
+              timing,
+              'recommendation',
+            );
+
+          if (rematchResult.completed) {
+            return rematchResult.menu;
+          }
 
           return this.findMostSimilarGenericCandidateMenuAboveThreshold(
             candidate,
@@ -4720,7 +4739,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           );
         };
 
-        const matchedMenu = await matchByVector(true);
+        const matchedMenu =
+          (await matchByVector(true)) ??
+          (brandFilters && brandFilters.length > 0
+            ? await matchByVector(true, null)
+            : null);
 
         if (matchedMenu) {
           matchLogs.push({
@@ -4764,7 +4787,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         }
 
         if (shouldUseDefaultScope && !options.disableDefaultNamePrefix) {
-          const broadVectorMatchedMenu = await matchByVector(false);
+          const broadVectorMatchedMenu =
+            (await matchByVector(false)) ??
+            (brandFilters && brandFilters.length > 0
+              ? await matchByVector(false, null)
+              : null);
 
           if (broadVectorMatchedMenu) {
             matchLogs.push({
@@ -4946,13 +4973,16 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           };
         }
 
-        const matchByVector = async (useDefaultPrefix: boolean) => {
+        const matchByVector = async (
+          useDefaultPrefix: boolean,
+          vectorBrandFilters: string[] | null = brandFilters,
+        ) => {
           const vectorResults = await menuVectorService.searchMenusByText(
             this.buildSingleGenericCandidateVectorQuery(candidate, intent),
             {
               userId,
               limit: this.getGeminiGenericMenuPerCandidateLimit(),
-              brands: brandFilters,
+              brands: vectorBrandFilters,
               category: null,
               namePrefix:
                 useDefaultPrefix && shouldUseDefaultScope
@@ -4964,6 +4994,17 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           );
           const menuIds = vectorResults.map((result) => result.menuId);
           const vectorMenus = await this.getMenusByIds(userId, menuIds);
+          const rematchResult =
+            await this.rematchGenericCandidateMenuWithGemini(
+              candidate,
+              vectorMenus,
+              timing,
+              'feedback',
+            );
+
+          if (rematchResult.completed) {
+            return rematchResult.menu;
+          }
 
           return this.findMostSimilarGenericCandidateMenuAboveThreshold(
             candidate,
@@ -4972,7 +5013,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           );
         };
 
-        const matchedMenu = await matchByVector(true);
+        const matchedMenu =
+          (await matchByVector(true)) ??
+          (brandFilters && brandFilters.length > 0
+            ? await matchByVector(true, null)
+            : null);
 
         if (matchedMenu) {
           matchLogs.push({
@@ -5023,7 +5068,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         }
 
         if (shouldUseDefaultScope) {
-          const broadVectorMatchedMenu = await matchByVector(false);
+          const broadVectorMatchedMenu =
+            (await matchByVector(false)) ??
+            (brandFilters && brandFilters.length > 0
+              ? await matchByVector(false, null)
+              : null);
 
           if (broadVectorMatchedMenu) {
             matchLogs.push({
@@ -5126,6 +5175,132 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         return true;
       })
       .slice(0, this.getGeminiGenericMenuMatchedMenuLimit());
+  }
+
+  private async rematchGenericCandidateMenuWithGemini(
+    candidate: GenericMenuCandidate,
+    menus: MenuEntity[],
+    timing?: ChatTimingLogger,
+    context: 'recommendation' | 'feedback' = 'recommendation',
+  ): Promise<GenericMenuCandidateRematchResult> {
+    const candidateMenus = this.mergeMenusById(menus).slice(
+      0,
+      this.getGeminiGenericMenuRematchCandidateLimit(),
+    );
+
+    if (candidateMenus.length === 0) {
+      return { completed: false, menu: null };
+    }
+
+    const candidateMenuMap = new Map(
+      candidateMenus.map((menu) => [menu.id, menu]),
+    );
+    const prompt = `
+Gemini가 만든 음식 후보와 서버가 찾은 DB 후보 메뉴를 비교해 가장 같은 메뉴 하나를 골라줘.
+반드시 JSON object만 반환하고 코드펜스는 쓰지 마.
+
+판단 규칙:
+- 반환 가능한 menu_id는 DB 후보 목록 안에 있는 값만 가능해
+- 같은 음식/제품이라고 보기 어려우면 menu_id는 null로 반환해
+- 원본 후보의 음식명, 제품명, 맛, 조리 방식, 형태를 가장 우선 비교해
+- 브랜드는 보조 정보야. 후보 브랜드가 추정값일 수 있으니, 메뉴명/제품명/맛이 더 정확히 일치하면 브랜드가 달라도 선택할 수 있어
+- 단, 후보 브랜드와 DB 브랜드가 모두 명확하고 메뉴명도 비슷한 후보가 여러 개면 같은 브랜드를 우선해
+- 원본 후보가 소스, 음료, 단일 재료, 과일, 밥처럼 단순 음식이면 그 재료/음식을 포함한 별도 요리는 불일치로 봐
+- 예: 케첩 -> 소시지 케첩볶음은 불일치
+- 예: 귤 -> 귤차는 불일치
+- 예: 밥 -> 국밥은 불일치
+- 예: 더단백 민트초코 -> 더단백드링크민트초코는 일치에 가깝고, 더단백 밸런스 로우슈거는 불일치에 가까워
+- 예: 부채살 스테이크 -> 부채살스테이크(샐러드), 부채살스테이크(포케)는 샐러드/포케 맥락이 없으면 불일치에 가까워
+
+Gemini 후보:
+${JSON.stringify({
+  name: candidate.name,
+  original_name: candidate.originalName,
+  brand: candidate.brand,
+  category: candidate.category,
+})}
+
+DB 후보 목록:
+${JSON.stringify(
+  candidateMenus.map((menu) => ({
+    menu_id: menu.id,
+    menu_name: stripPublicMenuSourcePrefix(menu.name),
+    raw_menu_name: menu.name,
+    brand: menu.brand ?? null,
+    category: menu.category ?? null,
+    weight: menu.weight ?? null,
+    calories: menu.calories ?? null,
+  })),
+)}
+
+반환 shape:
+{
+  "menu_id": 123 또는 null
+}
+`.trim();
+
+    try {
+      const data = await this.callGeminiJson(prompt, {
+        context: `generic-menu-rematch:${context}`,
+        timeoutMs: this.getGeminiGenericMenuRematchTimeoutMs(),
+      });
+      const selectedMenuId =
+        data?.menu_id === null || data?.menu_id === undefined
+          ? null
+          : Number(data.menu_id);
+      const selectedMenu =
+        Number.isInteger(selectedMenuId) && selectedMenuId !== null
+          ? (candidateMenuMap.get(selectedMenuId) ?? null)
+          : null;
+
+      console.log('[CHAT] Gemini generic candidate rematch', {
+        context,
+        candidate: {
+          name: candidate.name,
+          originalName: candidate.originalName,
+          brand: candidate.brand,
+          category: candidate.category,
+        },
+        dbCandidates: candidateMenus.map((menu) => ({
+          menuId: menu.id,
+          menuName: stripPublicMenuSourcePrefix(menu.name),
+          menuBrand: menu.brand ?? null,
+        })),
+        selectedMenuId: selectedMenu?.id ?? null,
+      });
+      timing?.mark('gemini_generic_candidate_rematch_completed', {
+        context,
+        candidateName: candidate.name,
+        candidateCount: candidateMenus.length,
+        selectedMenuId: selectedMenu?.id ?? null,
+      });
+
+      return {
+        completed: true,
+        menu: selectedMenu,
+      };
+    } catch (error) {
+      console.log('[CHAT] Gemini generic candidate rematch skipped', {
+        context,
+        candidate: {
+          name: candidate.name,
+          originalName: candidate.originalName,
+          brand: candidate.brand,
+          category: candidate.category,
+        },
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Unknown Gemini rematch error',
+      });
+      timing?.mark('gemini_generic_candidate_rematch_failed', {
+        context,
+        candidateName: candidate.name,
+        candidateCount: candidateMenus.length,
+      });
+
+      return { completed: false, menu: null };
+    }
   }
 
   private async findGenericCandidateMenuByKeywordFallback(
@@ -6265,6 +6440,30 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     }
 
     return Math.max(3, Math.min(Math.floor(parsed), 20));
+  }
+
+  private getGeminiGenericMenuRematchCandidateLimit(): number {
+    const parsed = Number(
+      process.env.GEMINI_GENERIC_MENU_REMATCH_CANDIDATE_LIMIT ?? 8,
+    );
+
+    if (!Number.isFinite(parsed)) {
+      return 8;
+    }
+
+    return Math.max(3, Math.min(Math.floor(parsed), 20));
+  }
+
+  private getGeminiGenericMenuRematchTimeoutMs(): number {
+    const parsed = Number(
+      process.env.GEMINI_GENERIC_MENU_REMATCH_TIMEOUT_MS ?? 12000,
+    );
+
+    if (!Number.isFinite(parsed)) {
+      return 12000;
+    }
+
+    return Math.max(3000, Math.min(Math.floor(parsed), 45000));
   }
 
   private getGeminiGenericMenuVectorConcurrency(): number {
