@@ -422,6 +422,14 @@ export class HomeService {
           return b.score - a.score;
         }
 
+        const sourcePriorityDiff =
+          this.getMenuSearchSourcePriority(a.menu, keyword) -
+          this.getMenuSearchSourcePriority(b.menu, keyword);
+
+        if (sourcePriorityDiff !== 0) {
+          return sourcePriorityDiff;
+        }
+
         const aNameLength = this.normalizeCompactSearchText(a.menu.name).length;
         const bNameLength = this.normalizeCompactSearchText(b.menu.name).length;
 
@@ -432,6 +440,32 @@ export class HomeService {
         return a.menu.name.localeCompare(b.menu.name, 'ko');
       })
       .map(({ menu }) => menu);
+  }
+
+  private getMenuSearchSourcePriority(
+    menu: MenuEntity,
+    keyword: string,
+  ): number {
+    if (
+      this.hasFoodPublicMenuSourcePrefix(menu.name) &&
+      this.isExactDisplayNameMatch(menu, keyword)
+    ) {
+      return 0;
+    }
+
+    if (this.isExactDisplayNameMatch(menu, keyword)) {
+      return 1;
+    }
+
+    if (this.hasFoodPublicMenuSourcePrefix(menu.name)) {
+      return 2;
+    }
+
+    if (!this.hasPublicMenuSourcePrefix(menu.name)) {
+      return 3;
+    }
+
+    return 4;
   }
 
   private async getMealRecordCountsByMenuId(
@@ -534,6 +568,10 @@ export class HomeService {
 
   private hasPublicMenuSourcePrefix(menuName: string): boolean {
     return /^\((?:식약처_음식|식약처_가공)\)\s*/.test(menuName.trim());
+  }
+
+  private hasFoodPublicMenuSourcePrefix(menuName: string): boolean {
+    return /^\(식약처_음식\)\s*/.test(menuName.trim());
   }
 
   private dedupeMenusById(menus: MenuEntity[]): MenuEntity[] {
@@ -1004,6 +1042,9 @@ export class HomeService {
     ).sort((left, right) => {
       const leftExact = this.isExactDisplayNameMatch(left, keyword) ? 0 : 1;
       const rightExact = this.isExactDisplayNameMatch(right, keyword) ? 0 : 1;
+      const sourcePriorityDiff =
+        this.getMenuSearchSourcePriority(left, keyword) -
+        this.getMenuSearchSourcePriority(right, keyword);
       const leftCanonicalExact =
         (left.canonical_name ?? canonicalizeMenuSearchName(left.name)) ===
         canonicalName
@@ -1017,6 +1058,10 @@ export class HomeService {
 
       if (leftExact !== rightExact) {
         return leftExact - rightExact;
+      }
+
+      if (sourcePriorityDiff !== 0) {
+        return sourcePriorityDiff;
       }
 
       if (leftCanonicalExact !== rightCanonicalExact) {
