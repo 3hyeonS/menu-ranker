@@ -21,6 +21,9 @@ export class MealEntity {
   @Column({ type: 'tinyint', name: 'time', nullable: false })
   time: number;
 
+  @Column({ type: 'varchar', length: 5, name: 'mealTime', nullable: true })
+  mealTime: string;
+
   @Column({ type: 'varchar', name: 'image', nullable: true })
   image: string;
 

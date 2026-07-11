@@ -2040,8 +2040,15 @@ ${JSON.stringify(
     user: UserEntity,
     registerMealRequestDto: RegisterMealRequestDto,
   ): Promise<void> {
-    const { date, time, image, menu_ids, menu_quantities, menu_input_modes } =
-      registerMealRequestDto;
+    const {
+      date,
+      time,
+      meal_time,
+      image,
+      menu_ids,
+      menu_quantities,
+      menu_input_modes,
+    } = registerMealRequestDto;
 
     const hasAnyMenuField =
       menu_ids !== undefined ||
@@ -2074,6 +2081,9 @@ ${JSON.stringify(
         await this.mealMenuRepository.remove(existingMeal.mealMenus);
 
         existingMeal.image = null;
+        if (meal_time !== undefined) {
+          existingMeal.mealTime = meal_time;
+        }
         existingMeal.mealMenus = [];
         existingMeal.updatedAt = new Date();
 
@@ -2084,6 +2094,7 @@ ${JSON.stringify(
       const meal = this.mealRepository.create({
         date,
         time,
+        mealTime: meal_time ?? null,
         image: null,
         mealMenus: [],
         user,
@@ -2127,6 +2138,9 @@ ${JSON.stringify(
       await this.mealMenuRepository.remove(existingMeal.mealMenus);
 
       existingMeal.image = image ?? null;
+      if (meal_time !== undefined) {
+        existingMeal.mealTime = meal_time;
+      }
       existingMeal.mealMenus = mealMenus;
       existingMeal.updatedAt = new Date();
 
@@ -2137,6 +2151,7 @@ ${JSON.stringify(
     const meal = this.mealRepository.create({
       date,
       time,
+      mealTime: meal_time ?? null,
       image,
       mealMenus,
       user,
@@ -2236,6 +2251,7 @@ ${JSON.stringify(
         (meal) =>
           new MealResponseDto(
             meal.time,
+            meal.mealTime,
             meal.image,
             meal.createdAt,
             meal.updatedAt,

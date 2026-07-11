@@ -8,6 +8,7 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  Matches,
   IsString,
   ValidateIf,
 } from 'class-validator';
@@ -33,6 +34,18 @@ export class RegisterMealRequestDto {
   @IsNumber()
   @IsIn([0, 1, 2, 3, 4], { message: 'current must be 0, 1, 2, 3 or 4' })
   time: number;
+
+  @ApiPropertyOptional({
+    type: String,
+    description: '실제 식사 시각. HH:mm 형식. 미입력 시 기존 값 유지 또는 null',
+    example: '12:30',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
+    message: 'meal_time must be in HH:mm format',
+  })
+  meal_time?: string;
 
   @ApiProperty({
     type: String,

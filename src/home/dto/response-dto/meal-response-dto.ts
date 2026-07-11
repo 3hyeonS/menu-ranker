@@ -13,6 +13,14 @@ export class MealResponseDto {
 
   @ApiProperty({
     type: String,
+    description: '실제 식사 시각',
+    example: '12:30',
+    nullable: true,
+  })
+  meal_time: string | null;
+
+  @ApiProperty({
+    type: String,
     description: '이미지 파일 url',
     example: 'imageUrl',
   })
@@ -56,6 +64,7 @@ export class MealResponseDto {
 
   constructor(
     time: number,
+    mealTime: string | null,
     image: string,
     createdAt: Date,
     updatedAt: Date,
@@ -64,6 +73,7 @@ export class MealResponseDto {
     menuInputModes: number[],
   ) {
     this.time = time;
+    this.meal_time = mealTime;
     this.image = image;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
