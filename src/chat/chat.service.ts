@@ -38,8 +38,12 @@ import { ChatFoodImageRecognizedMenuResponseDto } from './dto/response-dto/chat-
 import { ChatFoodImagePositionResponseDto } from './dto/response-dto/chat-food-image-position-response-dto';
 import { NutritionLabelRecognitionResponseDto } from '../home/dto/response-dto/nutrition-label-recognition-response-dto';
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
+import { ChatMealRecordParseRequestDto } from './dto/request-dto/chat-meal-record-parse-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
+import { ChatUserMenuSearchRequestDto } from './dto/request-dto/chat-user-menu-search-request-dto';
 import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
+import { ChatMealRecordParseResponseDto } from './dto/response-dto/chat-meal-record-parse-response-dto';
+import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu-search-response-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
@@ -160,6 +164,15 @@ type ChatContextSummary = {
   previous_brand: string | null;
   previous_category_name: string | null;
   previous_meal_time: number | null;
+};
+
+type ChatUserMenuSearchRawRow = {
+  menu_id: number | string;
+  menu_name: string;
+  menu_search_name: string | null;
+  menu_canonical_name: string | null;
+  record_count: number | string;
+  source_priority: number | string;
 };
 
 type LightweightChatContext = {
@@ -337,6 +350,19 @@ type GenericMenuCandidatePlan = {
   introMessage: string | null;
   imageSummary?: string | null;
   candidates: GenericMenuCandidate[];
+};
+
+type ChatMealRecordParsedItem = {
+  name: string;
+  brand: string | null;
+  category: string | null;
+  quantityG: number;
+};
+
+type ChatMealRecordParsedPlan = {
+  items: ChatMealRecordParsedItem[];
+  time: number | null;
+  date: string | null;
 };
 
 type FoodImageMenuRecognitionResult = {
@@ -1955,6 +1981,328 @@ export class ChatService {
     };
 
     await this.chatHistoryRepository.save(chatHistory);
+  }
+
+  async parseMealRecordFromChatText(
+    user: UserEntity,
+    dto: ChatMealRecordParseRequestDto,
+  ): Promise<ChatMealRecordParseResponseDto> {
+    const text = dto.text.trim();
+    const timing = this.createChatTimingLogger('chat_meal_record_parse', {
+      userId: user.id,
+      inputLength: text.length,
+    });
+
+    const parsedPlan = await this.generateMealRecordParsePlanWithGemini(text);
+    timing.mark('gemini_meal_record_parse_completed', {
+      parsedCount: parsedPlan.items.length,
+      hasTime: parsedPlan.time !== null,
+      hasDate: parsedPlan.date !== null,
+    });
+
+    const candidates = parsedPlan.items.map((item) => ({
+      name: item.name,
+      originalName: null,
+      brand: item.brand,
+      category: item.category,
+    }));
+    const intent: ParsedChatIntent = {
+      normalized_request: text,
+      meal_time: parsedPlan.time,
+      desired_brand: this.inferDominantValue(
+        candidates.map((candidate) => candidate.brand),
+      ),
+      desired_category: this.inferDominantValue(
+        candidates.map((candidate) => candidate.category),
+      ),
+      nutrition_focus: [],
+      amount_preference: null,
+      keywords: candidates.map((candidate) => candidate.name),
+      include: this.emptyIntentConditionGroup(),
+      exclude: this.emptyIntentConditionGroup(),
+      nutrition_constraints: this.emptyNutritionConstraints(),
+    };
+
+    const matchedPairs = await this.matchGenericMenuCandidatesToFeedbackMenus(
+      user.id,
+      candidates,
+      intent,
+      timing,
+    );
+    const quantitiesByName = new Map<string, number[]>();
+
+    parsedPlan.items.forEach((item) => {
+      const key = this.normalizeMenuMatchText(item.name);
+      const quantities = quantitiesByName.get(key) ?? [];
+      quantities.push(item.quantityG);
+      quantitiesByName.set(key, quantities);
+    });
+
+    const menuIds: number[] = [];
+    const menuQuantities: number[] = [];
+    const matchedMenus: Array<{
+      input_menu_name: string;
+      menu_id: number;
+      menu_name: string;
+      quantity_g: number;
+    }> = [];
+
+    matchedPairs.forEach((match) => {
+      const key = this.normalizeMenuMatchText(match.inputMenuName);
+      const quantities = quantitiesByName.get(key) ?? [];
+      const quantity = quantities.shift();
+
+      if (!quantity) {
+        return;
+      }
+
+      menuIds.push(match.menu.id);
+      menuQuantities.push(quantity);
+      matchedMenus.push({
+        input_menu_name: match.inputMenuName,
+        menu_id: match.menu.id,
+        menu_name: stripPublicMenuSourcePrefix(match.menu.name),
+        quantity_g: quantity,
+      });
+    });
+
+    timing.mark('meal_record_candidates_matched', {
+      matchedCount: menuIds.length,
+    });
+
+    const response = new ChatMealRecordParseResponseDto();
+    response.menu_ids = menuIds;
+    response.menu_quantities = menuQuantities;
+
+    if (parsedPlan.time !== null) {
+      response.time = parsedPlan.time;
+    }
+
+    if (parsedPlan.date !== null) {
+      response.date = parsedPlan.date;
+    }
+
+    const chatHistory = await this.chatHistoryRepository.save(
+      this.chatHistoryRepository.create({
+        user,
+        input_text: text,
+        response_payload: {
+          chat_category: 'meal_record_parse',
+          intro_message: '식사 기록 후보를 정리했어.',
+          meal_record_parse: {
+            parsed_items: parsedPlan.items,
+            matched_menus: matchedMenus,
+            menu_ids: menuIds,
+            menu_quantities: menuQuantities,
+            ...(parsedPlan.time !== null ? { time: parsedPlan.time } : {}),
+            ...(parsedPlan.date !== null ? { date: parsedPlan.date } : {}),
+          },
+        },
+        meal_record: null,
+      }),
+    );
+
+    response.chat_id = chatHistory.id;
+
+    timing.end({ matchedCount: menuIds.length });
+    return response;
+  }
+
+  async searchUserMenusForChat(
+    user: UserEntity,
+    dto: ChatUserMenuSearchRequestDto,
+  ): Promise<ChatUserMenuSearchResponseDto> {
+    const keyword = dto.text.trim();
+    const response = new ChatUserMenuSearchResponseDto();
+    response.name = [];
+
+    if (!keyword) {
+      return response;
+    }
+
+    const searchName = normalizeMenuSearchName(keyword);
+    const canonicalName = canonicalizeMenuSearchName(keyword);
+    const keywordPattern = `%${keyword}%`;
+    const searchNamePattern = `%${searchName}%`;
+    const canonicalNamePattern = `%${canonicalName}%`;
+
+    const personalRows = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'menuUser')
+      .select('menu.id', 'menu_id')
+      .addSelect('menu.name', 'menu_name')
+      .addSelect('menu.search_name', 'menu_search_name')
+      .addSelect('menu.canonical_name', 'menu_canonical_name')
+      .addSelect('0', 'record_count')
+      .addSelect('0', 'source_priority')
+      .where('menuUser.id = :userId', { userId: user.id })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('menu.name LIKE :keywordPattern', {
+            keywordPattern,
+          });
+
+          if (searchName) {
+            qb.orWhere('menu.search_name LIKE :searchNamePattern', {
+              searchNamePattern,
+            });
+          }
+
+          if (canonicalName) {
+            qb.orWhere('menu.canonical_name LIKE :canonicalNamePattern', {
+              canonicalNamePattern,
+            });
+          }
+        }),
+      )
+      .take(30)
+      .getRawMany<ChatUserMenuSearchRawRow>();
+
+    const frequentRows = await this.mealMenuRepository
+      .createQueryBuilder('mealMenu')
+      .innerJoin('mealMenu.meal', 'meal')
+      .innerJoin('meal.user', 'mealUser')
+      .innerJoin('mealMenu.menu', 'menu')
+      .select('menu.id', 'menu_id')
+      .addSelect('menu.name', 'menu_name')
+      .addSelect('menu.search_name', 'menu_search_name')
+      .addSelect('menu.canonical_name', 'menu_canonical_name')
+      .addSelect('COUNT(mealMenu.id)', 'record_count')
+      .addSelect('1', 'source_priority')
+      .where('mealUser.id = :userId', { userId: user.id })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('menu.name LIKE :keywordPattern', {
+            keywordPattern,
+          });
+
+          if (searchName) {
+            qb.orWhere('menu.search_name LIKE :searchNamePattern', {
+              searchNamePattern,
+            });
+          }
+
+          if (canonicalName) {
+            qb.orWhere('menu.canonical_name LIKE :canonicalNamePattern', {
+              canonicalNamePattern,
+            });
+          }
+        }),
+      )
+      .groupBy('menu.id')
+      .addGroupBy('menu.name')
+      .addGroupBy('menu.search_name')
+      .addGroupBy('menu.canonical_name')
+      .take(50)
+      .getRawMany<ChatUserMenuSearchRawRow>();
+
+    const rows = [...personalRows, ...frequentRows].sort((left, right) => {
+      const leftScore = this.getChatUserMenuSearchMatchScore(
+        left,
+        keyword,
+        searchName,
+        canonicalName,
+      );
+      const rightScore = this.getChatUserMenuSearchMatchScore(
+        right,
+        keyword,
+        searchName,
+        canonicalName,
+      );
+      const leftRecordCount = Number(left.record_count) || 0;
+      const rightRecordCount = Number(right.record_count) || 0;
+      const leftSourcePriority = Number(left.source_priority) || 0;
+      const rightSourcePriority = Number(right.source_priority) || 0;
+      const leftNameLength = stripPublicMenuSourcePrefix(left.menu_name).length;
+      const rightNameLength = stripPublicMenuSourcePrefix(
+        right.menu_name,
+      ).length;
+
+      if (leftScore !== rightScore) {
+        return leftScore - rightScore;
+      }
+
+      if (leftRecordCount !== rightRecordCount) {
+        return rightRecordCount - leftRecordCount;
+      }
+
+      if (leftSourcePriority !== rightSourcePriority) {
+        return leftSourcePriority - rightSourcePriority;
+      }
+
+      return leftNameLength - rightNameLength;
+    });
+
+    const names: string[] = [];
+    const seenNames = new Set<string>();
+
+    rows.forEach((row) => {
+      if (names.length >= 3) {
+        return;
+      }
+
+      const displayName = stripPublicMenuSourcePrefix(row.menu_name);
+      const dedupeKey = normalizeMenuSearchName(displayName);
+
+      if (!displayName || seenNames.has(dedupeKey)) {
+        return;
+      }
+
+      names.push(displayName);
+      seenNames.add(dedupeKey);
+    });
+
+    response.name = names;
+    return response;
+  }
+
+  private getChatUserMenuSearchMatchScore(
+    row: ChatUserMenuSearchRawRow,
+    keyword: string,
+    searchName: string,
+    canonicalName: string,
+  ): number {
+    const displayName = stripPublicMenuSourcePrefix(row.menu_name);
+    const rowSearchName =
+      row.menu_search_name ?? normalizeMenuSearchName(row.menu_name);
+    const rowCanonicalName =
+      row.menu_canonical_name ?? canonicalizeMenuSearchName(row.menu_name);
+    const displaySearchName = normalizeMenuSearchName(displayName);
+    const displayCanonicalName = canonicalizeMenuSearchName(displayName);
+
+    if (
+      displayName === keyword ||
+      rowSearchName === searchName ||
+      rowCanonicalName === canonicalName ||
+      displaySearchName === searchName ||
+      displayCanonicalName === canonicalName
+    ) {
+      return 0;
+    }
+
+    if (
+      displayName.startsWith(keyword) ||
+      rowSearchName.startsWith(searchName) ||
+      rowCanonicalName.startsWith(canonicalName) ||
+      displaySearchName.startsWith(searchName) ||
+      displayCanonicalName.startsWith(canonicalName)
+    ) {
+      return 1;
+    }
+
+    if (
+      displayName.includes(keyword) ||
+      rowSearchName.includes(searchName) ||
+      rowCanonicalName.includes(canonicalName) ||
+      displaySearchName.includes(searchName) ||
+      displayCanonicalName.includes(canonicalName)
+    ) {
+      return 2;
+    }
+
+    return 3;
   }
 
   async deleteMealRecordFromChat(
@@ -4522,6 +4870,90 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       introMessage,
       candidates: normalizedCandidates,
     };
+  }
+
+  private async generateMealRecordParsePlanWithGemini(
+    input: string,
+  ): Promise<ChatMealRecordParsedPlan> {
+    const currentDate = this.getKoreanDateString();
+    const prompt = `
+사용자 입력을 식사 기록용 JSON으로 정제해줘.
+반드시 JSON object만 반환하고 코드펜스는 쓰지 마.
+
+목표:
+- 사용자가 실제로 먹었다고 말한 음식만 items에 넣어
+- 각 음식은 우리 DB에서 찾기 쉬운 대표 음식명으로 정제해
+- 수량은 가능한 한 g 단위 중량으로 추정해 quantity_g에 넣어
+- 입력에 끼니나 날짜가 명시된 경우에만 time/date를 채워
+
+정제 규칙:
+- "참외 1조각"처럼 조각/개/한입/조금 등으로 말하면 일반적인 섭취량을 g으로 합리적으로 추정해
+- "밥 반공기"는 name을 "밥"으로, quantity_g는 약 105로 정제해
+- "방울토마토 5개"처럼 개수만 있으면 일반적인 1개 중량을 반영해 g으로 변환해
+- 브랜드/제품명이 명확하면 brand에 넣고, 아니면 null로 둬
+- category는 명확할 때만 짧게 넣고, 애매하면 null로 둬
+- 사용자가 먹은 것이 아니라 추천/질문/예시로 언급한 음식은 제외해
+- 메뉴명에는 중량, 개수, "반공기", "1조각" 같은 수량 표현을 넣지 마
+
+끼니 time 매핑:
+- 0: 아침
+- 1: 점심
+- 2: 저녁
+- 3: 간식
+- 4: 야식
+- 입력에 끼니 표현이 없으면 null
+
+날짜:
+- 오늘 기준 날짜는 ${currentDate}
+- "오늘", "어제", "내일", "6월 20일"처럼 날짜 표현이 입력에 있을 때만 YYYY-MM-DD로 반환
+- 날짜 표현이 없으면 null
+
+반환 shape:
+{
+  "items": [
+    {
+      "name": "참외",
+      "brand": null,
+      "category": "과일",
+      "quantity_g": 30
+    }
+  ],
+  "time": 0 또는 1 또는 2 또는 3 또는 4 또는 null,
+  "date": "YYYY-MM-DD" 또는 null
+}
+
+사용자 입력:
+${input}
+`.trim();
+
+    const data = await this.callGeminiJson(prompt, {
+      context: 'chat-meal-record-parse',
+      timeoutMs: this.getGeminiTextTimeoutMs(),
+      systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
+    });
+    const rawItems = Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.foods)
+        ? data.foods
+        : [];
+    const items = rawItems
+      .map((item) => this.normalizeMealRecordParsedItem(item))
+      .filter((item): item is ChatMealRecordParsedItem => item !== null)
+      .slice(0, 20);
+    const parsedTime =
+      data?.time === null || data?.time === undefined ? NaN : Number(data.time);
+    const time = [0, 1, 2, 3, 4].includes(parsedTime) ? parsedTime : null;
+    const rawDate = this.asNonEmptyString(data?.date);
+    const date =
+      rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null;
+
+    console.log('[CHAT] Gemini meal record parse plan', {
+      items,
+      time,
+      date,
+    });
+
+    return { items, time, date };
   }
 
   private async generateMenuBoardCandidatePlanWithGemini(
@@ -9835,8 +10267,67 @@ ${JSON.stringify(candidates)}
     return normalized;
   }
 
+  private normalizeMealRecordParsedItem(
+    item: unknown,
+  ): ChatMealRecordParsedItem | null {
+    if (!item || typeof item !== 'object') {
+      return null;
+    }
+
+    const source = item as {
+      name?: unknown;
+      food_name?: unknown;
+      brand?: unknown;
+      category?: unknown;
+      quantity_g?: unknown;
+      quantityG?: unknown;
+      weight?: unknown;
+      grams?: unknown;
+    };
+    const rawName =
+      this.asNonEmptyString(source.name) ??
+      this.asNonEmptyString(source.food_name);
+    const name = this.normalizeGenericMenuCandidateName(rawName);
+    const quantity =
+      this.asNullableNumber(source.quantity_g) ??
+      this.asNullableNumber(source.quantityG) ??
+      this.asNullableNumber(source.weight) ??
+      this.asNullableNumber(source.grams);
+
+    if (!name || !this.isValidGenericMenuCandidateName(name)) {
+      return null;
+    }
+
+    if (quantity === null || quantity <= 0) {
+      return null;
+    }
+
+    return {
+      name,
+      brand: this.asNonEmptyString(source.brand),
+      category: this.asNonEmptyString(source.category),
+      quantityG: roundToOneDecimal(Math.min(quantity, 5000)),
+    };
+  }
+
   private isValidGenericMenuCandidateName(name: string): boolean {
     return name.trim().length > 0;
+  }
+
+  private getKoreanDateString(date = new Date()): string {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const values = Object.fromEntries(
+      parts
+        .filter((part) => part.type !== 'literal')
+        .map((part) => [part.type, part.value]),
+    );
+
+    return `${values.year}-${values.month}-${values.day}`;
   }
 
   private normalizeNutritionLabelRecognition(

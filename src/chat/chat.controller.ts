@@ -31,7 +31,9 @@ import { UserEntity } from '../auth/entity/user/user.entity';
 import { ChatService } from './chat.service';
 import { ChatRecommendRequestDto } from './dto/request-dto/chat-recommend-request-dto';
 import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-request-dto';
+import { ChatMealRecordParseRequestDto } from './dto/request-dto/chat-meal-record-parse-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
+import { ChatUserMenuSearchRequestDto } from './dto/request-dto/chat-user-menu-search-request-dto';
 import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
 import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-response-dto';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
@@ -41,6 +43,8 @@ import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-n
 import { ChatNutritionLabelMenuRegisterResponseDto } from './dto/response-dto/chat-nutrition-label-menu-register-response-dto';
 import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
 import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
+import { ChatMealRecordParseResponseDto } from './dto/response-dto/chat-meal-record-parse-response-dto';
+import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu-search-response-dto';
 
 @ApiTags('채팅')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -68,11 +72,11 @@ export class ChatController {
     const httpStatus =
       error instanceof HttpException
         ? error.getStatus()
-        : maybeError.response?.status ?? null;
+        : (maybeError.response?.status ?? null);
     const responseBody =
       error instanceof HttpException
         ? error.getResponse()
-        : maybeError.response?.data ?? null;
+        : (maybeError.response?.data ?? null);
 
     console.error('[CHAT_API_ERROR]', {
       context,
@@ -578,6 +582,94 @@ export class ChatController {
           brand: dto?.brand ?? null,
         },
       );
+      throw error;
+    }
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '채팅 텍스트 기반 식사 기록 후보 생성',
+    description:
+      '사용자 입력을 Gemini로 음식명과 중량(g)으로 정제한 뒤 DB 메뉴와 매칭하여 기록 후보를 반환합니다. 입력에 끼니/날짜 정보가 명시된 경우 time/date도 함께 반환합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '채팅 텍스트 기반 식사 기록 후보 생성 성공',
+    message: 'Chat meal record candidates parsed successfully',
+    model: ChatMealRecordParseResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 오류',
+    message: 'text should not be empty',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패 또는 응답 파싱 실패',
+    message: 'Gemini meal record parsing pipeline is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ResponseMsg('Chat meal record candidates parsed successfully')
+  @UseGuards(AuthGuard())
+  @Post('/meal-record/parse')
+  async parseMealRecordFromChatText(
+    @GetUser() user: UserEntity,
+    @Body() dto: ChatMealRecordParseRequestDto,
+  ): Promise<ChatMealRecordParseResponseDto> {
+    try {
+      return await this.chatService.parseMealRecordFromChatText(user, dto);
+    } catch (error) {
+      this.logChatApiError('POST /chat/meal-record/parse', user, error, {
+        inputLength: dto?.text?.length ?? null,
+      });
+      throw error;
+    }
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '채팅용 사용자 메뉴 검색',
+    description:
+      '채팅 탭에서 사용자가 자주 먹었던 메뉴 또는 직접 등록한 개인용 메뉴 중에서만 메뉴명을 검색합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '채팅용 사용자 메뉴 검색 성공',
+    message: 'Chat user menu search completed successfully',
+    model: ChatUserMenuSearchResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 오류',
+    message: 'text should not be empty',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Chat user menu search completed successfully')
+  @UseGuards(AuthGuard())
+  @Post('/menu/search')
+  async searchUserMenusForChat(
+    @GetUser() user: UserEntity,
+    @Body() dto: ChatUserMenuSearchRequestDto,
+  ): Promise<ChatUserMenuSearchResponseDto> {
+    try {
+      return await this.chatService.searchUserMenusForChat(user, dto);
+    } catch (error) {
+      this.logChatApiError('POST /chat/menu/search', user, error, {
+        inputLength: dto?.text?.length ?? null,
+      });
       throw error;
     }
   }
