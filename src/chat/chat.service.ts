@@ -2000,12 +2000,39 @@ export class ChatService {
       hasDate: parsedPlan.date !== null,
     });
 
-    const candidates = parsedPlan.items.map((item) => ({
-      name: item.name,
-      originalName: null,
-      brand: item.brand,
-      category: item.category,
-    }));
+    const exactTextMenus = await this.findMealRecordMenusMentionedExactlyInText(
+      user.id,
+      text,
+      parsedPlan.items.map((item) => item.name),
+    );
+    const usedExactTextMenuIds = new Set<number>();
+    const parsedItemsWithCandidates = parsedPlan.items.map((item) => {
+      const exactTextMenu = this.pickExactTextMenuForMealRecordItem(
+        item,
+        exactTextMenus,
+        usedExactTextMenuIds,
+      );
+      const exactTextMenuName = exactTextMenu
+        ? stripPublicMenuSourcePrefix(exactTextMenu.name)
+        : null;
+
+      return {
+        item,
+        candidateName: exactTextMenuName ?? item.name,
+        originalName:
+          exactTextMenuName && exactTextMenuName !== item.name
+            ? item.name
+            : null,
+      };
+    });
+    const candidates = parsedItemsWithCandidates.map(
+      ({ item, candidateName, originalName }) => ({
+        name: candidateName,
+        originalName,
+        brand: item.brand,
+        category: item.category,
+      }),
+    );
     const intent: ParsedChatIntent = {
       normalized_request: text,
       meal_time: parsedPlan.time,
@@ -2031,8 +2058,8 @@ export class ChatService {
     );
     const quantitiesByName = new Map<string, number[]>();
 
-    parsedPlan.items.forEach((item) => {
-      const key = this.normalizeMenuMatchText(item.name);
+    parsedItemsWithCandidates.forEach(({ item, candidateName }) => {
+      const key = this.normalizeMenuMatchText(candidateName);
       const quantities = quantitiesByName.get(key) ?? [];
       quantities.push(item.quantityG);
       quantitiesByName.set(key, quantities);
@@ -2108,6 +2135,122 @@ export class ChatService {
     return response;
   }
 
+  private async findMealRecordMenusMentionedExactlyInText(
+    userId: number,
+    input: string,
+    candidateNames: string[],
+  ): Promise<MenuEntity[]> {
+    const normalizedInput = this.normalizeMenuMatchText(input);
+    const normalizedCandidateNames = Array.from(
+      new Set(
+        candidateNames
+          .map((name) => this.normalizeMenuMatchText(name))
+          .filter((name) => name.length > 0),
+      ),
+    );
+
+    if (!normalizedInput || normalizedCandidateNames.length === 0) {
+      return [];
+    }
+
+    const normalizedMenuNameExpression =
+      this.buildNormalizedMenuNameSqlExpression('menu');
+    const builder = this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoinAndSelect('menu.user', 'user')
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+            userId,
+          });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          normalizedCandidateNames.forEach((candidateName, index) => {
+            const parameterName = `mealRecordCandidate${index}`;
+            const condition = `${normalizedMenuNameExpression} LIKE :${parameterName}`;
+
+            if (index === 0) {
+              qb.where(condition, {
+                [parameterName]: `%${candidateName}%`,
+              });
+              return;
+            }
+
+            qb.orWhere(condition, {
+              [parameterName]: `%${candidateName}%`,
+            });
+          });
+        }),
+      )
+      .take(2000);
+
+    const menus = await builder.getMany();
+
+    return menus
+      .filter((menu) => {
+        const normalizedMenuName = this.normalizeMenuMatchText(
+          stripPublicMenuSourcePrefix(menu.name),
+        );
+
+        return (
+          normalizedMenuName.length >= 2 &&
+          normalizedInput.includes(normalizedMenuName)
+        );
+      })
+      .sort((left, right) => {
+        const leftName = this.normalizeMenuMatchText(
+          stripPublicMenuSourcePrefix(left.name),
+        );
+        const rightName = this.normalizeMenuMatchText(
+          stripPublicMenuSourcePrefix(right.name),
+        );
+
+        if (leftName.length !== rightName.length) {
+          return rightName.length - leftName.length;
+        }
+
+        return left.id - right.id;
+      });
+  }
+
+  private pickExactTextMenuForMealRecordItem(
+    item: ChatMealRecordParsedItem,
+    exactTextMenus: MenuEntity[],
+    usedMenuIds: Set<number>,
+  ): MenuEntity | null {
+    const normalizedItemName = this.normalizeMenuMatchText(item.name);
+
+    if (!normalizedItemName) {
+      return null;
+    }
+
+    const matchedMenu = exactTextMenus.find((menu) => {
+      if (usedMenuIds.has(menu.id)) {
+        return false;
+      }
+
+      const normalizedMenuName = this.normalizeMenuMatchText(
+        stripPublicMenuSourcePrefix(menu.name),
+      );
+
+      return (
+        normalizedMenuName === normalizedItemName ||
+        normalizedMenuName.includes(normalizedItemName) ||
+        normalizedItemName.includes(normalizedMenuName)
+      );
+    });
+
+    if (!matchedMenu) {
+      return null;
+    }
+
+    usedMenuIds.add(matchedMenu.id);
+    return matchedMenu;
+  }
+
   async searchUserMenusForChat(
     user: UserEntity,
     dto: ChatUserMenuSearchRequestDto,
@@ -2159,81 +2302,109 @@ export class ChatService {
       .take(30)
       .getRawMany<ChatUserMenuSearchRawRow>();
 
-    const frequentRows = await this.mealMenuRepository
+    const frequentMenuIdRows = await this.mealMenuRepository
       .createQueryBuilder('mealMenu')
       .innerJoin('mealMenu.meal', 'meal')
       .innerJoin('meal.user', 'mealUser')
       .innerJoin('mealMenu.menu', 'menu')
       .select('menu.id', 'menu_id')
-      .addSelect('menu.name', 'menu_name')
-      .addSelect('menu.search_name', 'menu_search_name')
-      .addSelect('menu.canonical_name', 'menu_canonical_name')
       .addSelect('COUNT(mealMenu.id)', 'record_count')
-      .addSelect('1', 'source_priority')
       .where('mealUser.id = :userId', { userId: user.id })
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .andWhere(
-        new Brackets((qb) => {
-          qb.where('menu.name LIKE :keywordPattern', {
-            keywordPattern,
-          });
-
-          if (searchName) {
-            qb.orWhere('menu.search_name LIKE :searchNamePattern', {
-              searchNamePattern,
-            });
-          }
-
-          if (canonicalName) {
-            qb.orWhere('menu.canonical_name LIKE :canonicalNamePattern', {
-              canonicalNamePattern,
-            });
-          }
-        }),
-      )
       .groupBy('menu.id')
-      .addGroupBy('menu.name')
-      .addGroupBy('menu.search_name')
-      .addGroupBy('menu.canonical_name')
-      .take(50)
-      .getRawMany<ChatUserMenuSearchRawRow>();
+      .orderBy('record_count', 'DESC')
+      .addOrderBy('menu.id', 'ASC')
+      .take(20)
+      .getRawMany<{
+        menu_id: number | string;
+        record_count: number | string;
+      }>();
+    const frequentMenuCounts = new Map<number, number>(
+      frequentMenuIdRows.map((row) => [
+        Number(row.menu_id),
+        Number(row.record_count) || 0,
+      ]),
+    );
+    const frequentMenuIds = Array.from(frequentMenuCounts.keys());
+    const frequentRows =
+      frequentMenuIds.length > 0
+        ? await this.menuRepository
+            .createQueryBuilder('menu')
+            .select('menu.id', 'menu_id')
+            .addSelect('menu.name', 'menu_name')
+            .addSelect('menu.search_name', 'menu_search_name')
+            .addSelect('menu.canonical_name', 'menu_canonical_name')
+            .addSelect('1', 'source_priority')
+            .where('menu.id IN (:...frequentMenuIds)', { frequentMenuIds })
+            .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+            .andWhere(
+              new Brackets((qb) => {
+                qb.where('menu.name LIKE :keywordPattern', {
+                  keywordPattern,
+                });
 
-    const rows = [...personalRows, ...frequentRows].sort((left, right) => {
-      const leftScore = this.getChatUserMenuSearchMatchScore(
-        left,
-        keyword,
-        searchName,
-        canonicalName,
-      );
-      const rightScore = this.getChatUserMenuSearchMatchScore(
-        right,
-        keyword,
-        searchName,
-        canonicalName,
-      );
-      const leftRecordCount = Number(left.record_count) || 0;
-      const rightRecordCount = Number(right.record_count) || 0;
-      const leftSourcePriority = Number(left.source_priority) || 0;
-      const rightSourcePriority = Number(right.source_priority) || 0;
-      const leftNameLength = stripPublicMenuSourcePrefix(left.menu_name).length;
-      const rightNameLength = stripPublicMenuSourcePrefix(
-        right.menu_name,
-      ).length;
+                if (searchName) {
+                  qb.orWhere('menu.search_name LIKE :searchNamePattern', {
+                    searchNamePattern,
+                  });
+                }
 
-      if (leftScore !== rightScore) {
-        return leftScore - rightScore;
-      }
+                if (canonicalName) {
+                  qb.orWhere('menu.canonical_name LIKE :canonicalNamePattern', {
+                    canonicalNamePattern,
+                  });
+                }
+              }),
+            )
+            .getRawMany<Omit<ChatUserMenuSearchRawRow, 'record_count'>>()
+        : [];
+    const frequentRowsWithCounts: ChatUserMenuSearchRawRow[] = frequentRows.map(
+      (row) => ({
+        ...row,
+        record_count: frequentMenuCounts.get(Number(row.menu_id)) ?? 0,
+      }),
+    );
 
-      if (leftRecordCount !== rightRecordCount) {
-        return rightRecordCount - leftRecordCount;
-      }
+    const rows = [...personalRows, ...frequentRowsWithCounts].sort(
+      (left, right) => {
+        const leftScore = this.getChatUserMenuSearchMatchScore(
+          left,
+          keyword,
+          searchName,
+          canonicalName,
+        );
+        const rightScore = this.getChatUserMenuSearchMatchScore(
+          right,
+          keyword,
+          searchName,
+          canonicalName,
+        );
+        const leftRecordCount = Number(left.record_count) || 0;
+        const rightRecordCount = Number(right.record_count) || 0;
+        const leftSourcePriority = Number(left.source_priority) || 0;
+        const rightSourcePriority = Number(right.source_priority) || 0;
+        const leftNameLength = stripPublicMenuSourcePrefix(
+          left.menu_name,
+        ).length;
+        const rightNameLength = stripPublicMenuSourcePrefix(
+          right.menu_name,
+        ).length;
 
-      if (leftSourcePriority !== rightSourcePriority) {
-        return leftSourcePriority - rightSourcePriority;
-      }
+        if (leftScore !== rightScore) {
+          return leftScore - rightScore;
+        }
 
-      return leftNameLength - rightNameLength;
-    });
+        if (leftRecordCount !== rightRecordCount) {
+          return rightRecordCount - leftRecordCount;
+        }
+
+        if (leftSourcePriority !== rightSourcePriority) {
+          return leftSourcePriority - rightSourcePriority;
+        }
+
+        return leftNameLength - rightNameLength;
+      },
+    );
 
     const names: string[] = [];
     const seenNames = new Set<string>();
@@ -4882,7 +5053,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
 목표:
 - 사용자가 실제로 먹었다고 말한 음식만 items에 넣어
-- 각 음식은 우리 DB에서 찾기 쉬운 대표 음식명으로 정제해
+- 음식명은 우리 DB에서 찾기 쉬운 형태로 정제하되, 사용자가 구체적인 메뉴명/제품명을 말한 경우 최대한 원문 그대로 보존해
 - 수량은 가능한 한 g 단위 중량으로 추정해 quantity_g에 넣어
 - 입력에 끼니나 날짜가 명시된 경우에만 time/date를 채워
 
@@ -4890,10 +5061,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - "참외 1조각"처럼 조각/개/한입/조금 등으로 말하면 일반적인 섭취량을 g으로 합리적으로 추정해
 - "밥 반공기"는 name을 "밥"으로, quantity_g는 약 105로 정제해
 - "방울토마토 5개"처럼 개수만 있으면 일반적인 1개 중량을 반영해 g으로 변환해
+- "옥수수새우피자(L) 피자 반조각"처럼 구체 메뉴명과 수량이 함께 있으면 name은 "옥수수새우피자(L) 피자"처럼 메뉴명을 보존하고, "반조각"만 quantity_g로 분리해
+- "(L)", "(R)", "(P)", "대", "중", "소"처럼 크기 표기가 메뉴명 일부로 보이면 name에서 제거하지 마
+- "피자", "치킨", "버거"처럼 대표 음식명으로 축약하지 말고, 입력에 있는 구체 메뉴명/제품명/맛/조리명을 우선 유지해
 - 브랜드/제품명이 명확하면 brand에 넣고, 아니면 null로 둬
 - category는 명확할 때만 짧게 넣고, 애매하면 null로 둬
 - 사용자가 먹은 것이 아니라 추천/질문/예시로 언급한 음식은 제외해
-- 메뉴명에는 중량, 개수, "반공기", "1조각" 같은 수량 표현을 넣지 마
+- 메뉴명에는 중량, 개수, "반공기", "1조각", "반조각" 같은 수량 표현만 넣지 마
 
 끼니 time 매핑:
 - 0: 아침
@@ -8033,6 +8207,16 @@ ${JSON.stringify(
 
   private normalizeMenuMatchText(value: string): string {
     return this.normalizeComparableText(value).replace(/\s+/g, '');
+  }
+
+  private buildNormalizedMenuNameSqlExpression(alias: string): string {
+    return [
+      `REPLACE(LOWER(${alias}.name), '(식약처_음식)', '')`,
+      "REPLACE(%s, '(식약처_가공)', '')",
+      "REPLACE(%s, ' ', '')",
+      "REPLACE(%s, '\t', '')",
+      "REPLACE(%s, '\n', '')",
+    ].reduce((expression, template) => template.replace('%s', expression));
   }
 
   private stripMenuSourcePrefix(value: string): string {
