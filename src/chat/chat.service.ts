@@ -2324,7 +2324,7 @@ export class ChatService {
       .groupBy('menu.id')
       .orderBy('record_count', 'DESC')
       .addOrderBy('menu.id', 'ASC')
-      .take(20)
+      .limit(20)
       .getRawMany<{
         menu_id: number | string;
         record_count: number | string;
