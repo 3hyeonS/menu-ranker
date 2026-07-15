@@ -175,6 +175,16 @@ type ChatUserMenuSearchRawRow = {
   source_priority: number | string;
 };
 
+type ChatUserMenuSearchDebugRow = {
+  id: number;
+  name: string;
+  displayName: string;
+  searchName: string | null;
+  canonicalName: string | null;
+  recordCount: number;
+  sourcePriority?: number;
+};
+
 type LightweightChatContext = {
   recent_messages: Array<{
     user_input: string;
@@ -2365,6 +2375,39 @@ export class ChatService {
       }),
     );
 
+    const frequentTop20DebugRows =
+      frequentMenuIds.length > 0
+        ? await this.menuRepository
+            .createQueryBuilder('menu')
+            .select('menu.id', 'menu_id')
+            .addSelect('menu.name', 'menu_name')
+            .addSelect('menu.search_name', 'menu_search_name')
+            .addSelect('menu.canonical_name', 'menu_canonical_name')
+            .where('menu.id IN (:...frequentMenuIds)', { frequentMenuIds })
+            .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+            .getRawMany<Omit<ChatUserMenuSearchRawRow, 'record_count' | 'source_priority'>>()
+        : [];
+
+    console.log('[CHAT_MENU_SEARCH_DEBUG]', {
+      userId: user.id,
+      keyword,
+      normalizedKeyword: searchName,
+      canonicalKeyword: canonicalName,
+      personalMatches: personalRows.map((row) =>
+        this.toChatUserMenuSearchDebugRow(row),
+      ),
+      frequentTop20: frequentTop20DebugRows.map((row) =>
+        this.toChatUserMenuSearchDebugRow({
+          ...row,
+          record_count: frequentMenuCounts.get(Number(row.menu_id)) ?? 0,
+          source_priority: 1,
+        }),
+      ),
+      frequentMatches: frequentRowsWithCounts.map((row) =>
+        this.toChatUserMenuSearchDebugRow(row),
+      ),
+    });
+
     const rows = [...personalRows, ...frequentRowsWithCounts].sort(
       (left, right) => {
         const leftScore = this.getChatUserMenuSearchMatchScore(
@@ -2426,7 +2469,36 @@ export class ChatService {
     });
 
     response.name = names;
+    console.log('[CHAT_MENU_SEARCH_RESULT]', {
+      userId: user.id,
+      keyword,
+      returnedNames: names,
+      sortedCandidates: rows.slice(0, 10).map((row) => ({
+        ...this.toChatUserMenuSearchDebugRow(row),
+        matchScore: this.getChatUserMenuSearchMatchScore(
+          row,
+          keyword,
+          searchName,
+          canonicalName,
+        ),
+      })),
+    });
     return response;
+  }
+
+  private toChatUserMenuSearchDebugRow(
+    row: ChatUserMenuSearchRawRow,
+  ): ChatUserMenuSearchDebugRow {
+    return {
+      id: Number(row.menu_id),
+      name: row.menu_name,
+      displayName: stripPublicMenuSourcePrefix(row.menu_name),
+      searchName: row.menu_search_name,
+      canonicalName: row.menu_canonical_name,
+      recordCount: Number(row.record_count) || 0,
+      sourcePriority:
+        row.source_priority === undefined ? undefined : Number(row.source_priority),
+    };
   }
 
   private getChatUserMenuSearchMatchScore(
