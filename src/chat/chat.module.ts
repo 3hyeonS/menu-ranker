@@ -14,6 +14,7 @@ import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { ChatHistoryEntity } from './entity/chat-history.entity';
 import { VectorModule } from '../vector/vector.module';
+import { MenuSetEntity } from '../home/entity/menu-set.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -26,6 +27,7 @@ dotenv.config();
       MealEntity,
       MealMenuEntity,
       MenuEntity,
+      MenuSetEntity,
       ChatHistoryEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),

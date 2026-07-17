@@ -18,6 +18,11 @@ import { MealMenuEntity } from './entity/meal-menu.entity';
 import { WeightStepsEntity } from './entity/weight-steps.entity';
 import { BrandAddEntity } from './entity/brand-add.entity';
 import { VectorModule } from '../vector/vector.module';
+import { FolderEntity } from './entity/folder.entity';
+import { FolderMenuEntity } from './entity/folder-menu.entity';
+import { MenuSetEntity } from './entity/menu-set.entity';
+import { MenuSetMenuEntity } from './entity/menu-set-menu.entity';
+import { MealSetEntity } from './entity/meal-set.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -32,6 +37,11 @@ dotenv.config();
       MenuEntity,
       MealEntity,
       MealMenuEntity,
+      FolderEntity,
+      FolderMenuEntity,
+      MenuSetEntity,
+      MenuSetMenuEntity,
+      MealSetEntity,
       WeightStepsEntity,
       BrandAddEntity,
     ]),

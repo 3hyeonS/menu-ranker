@@ -26,7 +26,10 @@ import { MealMenuEntity } from './entity/meal-menu.entity';
 import { DeleteMealRequestDto } from './dto/request-dto/delete-meal-request-dto';
 import { DateRequestDto } from './dto/request-dto/date-request-dto';
 import { MealRecordResponseDto } from './dto/response-dto/meal-record-response-dto';
-import { MealResponseDto } from './dto/response-dto/meal-response-dto';
+import {
+  MealResponseDto,
+  MealSetResponseDto,
+} from './dto/response-dto/meal-response-dto';
 import { MealRecordedDatesRequestDto } from './dto/request-dto/meal-recorded-dates-request-dto';
 import { MealRecordedDatesResponseDto } from './dto/response-dto/meal-recorded-dates-response-dto';
 import { RegisterMenuRequestDto } from './dto/request-dto/register-menu-request-dto';
@@ -58,6 +61,29 @@ import {
   normalizeMenuSearchName,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
+import { FolderEntity } from './entity/folder.entity';
+import { FolderMenuEntity } from './entity/folder-menu.entity';
+import { UpsertFolderRequestDto } from './dto/request-dto/upsert-folder-request-dto';
+import { FolderIdResponseDto } from './dto/response-dto/folder-id-response-dto';
+import { FolderListRequestDto } from './dto/request-dto/folder-list-request-dto';
+import {
+  FolderListItemResponseDto,
+  FolderListResponseDto,
+} from './dto/response-dto/folder-list-response-dto';
+import { FolderDetailRequestDto } from './dto/request-dto/folder-detail-request-dto';
+import { FolderDetailResponseDto } from './dto/response-dto/folder-detail-response-dto';
+import { MenuSetEntity } from './entity/menu-set.entity';
+import { MenuSetMenuEntity } from './entity/menu-set-menu.entity';
+import { MealSetEntity } from './entity/meal-set.entity';
+import { UpsertMenuSetRequestDto } from './dto/request-dto/upsert-menu-set-request-dto';
+import { MenuSetIdResponseDto } from './dto/response-dto/menu-set-id-response-dto';
+import { MenuSetListRequestDto } from './dto/request-dto/menu-set-list-request-dto';
+import {
+  MenuSetListItemResponseDto,
+  MenuSetListResponseDto,
+} from './dto/response-dto/menu-set-list-response-dto';
+import { MenuSetDetailRequestDto } from './dto/request-dto/menu-set-detail-request-dto';
+import { MenuSetDetailResponseDto } from './dto/response-dto/menu-set-detail-response-dto';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -283,6 +309,16 @@ export class HomeService {
     private mealRepository: Repository<MealEntity>,
     @InjectRepository(MealMenuEntity)
     private mealMenuRepository: Repository<MealMenuEntity>,
+    @InjectRepository(FolderEntity)
+    private folderRepository: Repository<FolderEntity>,
+    @InjectRepository(FolderMenuEntity)
+    private folderMenuRepository: Repository<FolderMenuEntity>,
+    @InjectRepository(MenuSetEntity)
+    private menuSetRepository: Repository<MenuSetEntity>,
+    @InjectRepository(MenuSetMenuEntity)
+    private menuSetMenuRepository: Repository<MenuSetMenuEntity>,
+    @InjectRepository(MealSetEntity)
+    private mealSetRepository: Repository<MealSetEntity>,
     @InjectRepository(WeightStepsEntity)
     private weightStepsRepository: Repository<WeightStepsEntity>,
     @InjectRepository(BrandAddEntity)
@@ -2048,12 +2084,15 @@ ${JSON.stringify(
       menu_ids,
       menu_quantities,
       menu_input_modes,
+      menu_set_ids,
     } = registerMealRequestDto;
 
     const hasAnyMenuField =
       menu_ids !== undefined ||
       menu_quantities !== undefined ||
       menu_input_modes !== undefined;
+    const hasMenuSetField = menu_set_ids !== undefined && menu_set_ids !== null;
+    const hasAnyRecordField = hasAnyMenuField || hasMenuSetField;
     const hasAllMenuFields =
       menu_ids !== undefined &&
       menu_quantities !== undefined &&
@@ -2073,18 +2112,25 @@ ${JSON.stringify(
       },
       relations: {
         mealMenus: true,
+        mealSets: true,
       },
     });
 
-    if (!hasAnyMenuField) {
+    if (!hasAnyRecordField) {
       if (existingMeal) {
-        await this.mealMenuRepository.remove(existingMeal.mealMenus);
+        if (existingMeal.mealMenus?.length) {
+          await this.mealMenuRepository.remove(existingMeal.mealMenus);
+        }
+        if (existingMeal.mealSets?.length) {
+          await this.mealSetRepository.remove(existingMeal.mealSets);
+        }
 
         existingMeal.image = null;
         if (meal_time !== undefined) {
           existingMeal.mealTime = meal_time;
         }
         existingMeal.mealMenus = [];
+        existingMeal.mealSets = [];
         existingMeal.updatedAt = new Date();
 
         await this.mealRepository.save(existingMeal);
@@ -2097,6 +2143,7 @@ ${JSON.stringify(
         mealTime: meal_time ?? null,
         image: null,
         mealMenus: [],
+        mealSets: [],
         user,
       });
 
@@ -2104,44 +2151,102 @@ ${JSON.stringify(
       return;
     }
 
-    if (
-      menu_ids.length !== menu_quantities.length ||
-      menu_ids.length !== menu_input_modes.length
-    ) {
-      throw new BadRequestException(
-        'menu_ids, menu_quantities and menu_input_modes must have the same length',
+    let mealMenus: MealMenuEntity[] = [];
+
+    if (hasAnyMenuField) {
+      if (
+        menu_ids.length !== menu_quantities.length ||
+        menu_ids.length !== menu_input_modes.length
+      ) {
+        throw new BadRequestException(
+          'menu_ids, menu_quantities and menu_input_modes must have the same length',
+        );
+      }
+
+      const uniqueMenuIds = Array.from(new Set(menu_ids));
+      const menus = await this.menuRepository.find({
+        where: {
+          id: In(uniqueMenuIds),
+          is_deleted: 0,
+        },
+      });
+
+      if (menus.length !== uniqueMenuIds.length) {
+        throw new BadRequestException('Some menu_ids do not exist');
+      }
+
+      const menuMap = new Map(menus.map((menu) => [menu.id, menu]));
+
+      mealMenus = menu_ids.map((menuId, index) =>
+        this.mealMenuRepository.create({
+          menu: menuMap.get(menuId),
+          quantity: roundToOneDecimal(menu_quantities[index]),
+          menu_input_mode: menu_input_modes[index],
+        }),
       );
     }
 
-    const menus = await this.menuRepository.find({
-      where: {
-        id: In(menu_ids),
-        is_deleted: 0,
-      },
-    });
+    let mealSets: MealSetEntity[] = [];
 
-    if (menus.length !== menu_ids.length) {
-      throw new BadRequestException('Some menu_ids do not exist');
+    if (hasMenuSetField) {
+      const uniqueSetIds = Array.from(new Set(menu_set_ids));
+      const menuSets =
+        uniqueSetIds.length > 0
+          ? await this.menuSetRepository.find({
+              where: {
+                id: In(uniqueSetIds),
+                user: { id: user.id },
+              },
+              relations: {
+                setMenus: {
+                  menu: true,
+                },
+              },
+            })
+          : [];
+
+      if (menuSets.length !== uniqueSetIds.length) {
+        throw new BadRequestException('Some menu_set_ids do not exist');
+      }
+
+      const setMap = new Map(menuSets.map((menuSet) => [menuSet.id, menuSet]));
+
+      mealSets = menu_set_ids.map((setId, index) =>
+        this.mealSetRepository.create({
+          menuSet: setMap.get(setId),
+          sort_order: index,
+        }),
+      );
+
+      menu_set_ids.forEach((setId) => {
+        const menuSet = setMap.get(setId);
+        const setMenus = this.sortSetMenus(menuSet?.setMenus ?? []);
+        const expandedMealMenus = setMenus.map((setMenu) =>
+          this.mealMenuRepository.create({
+            menu: setMenu.menu,
+            quantity: setMenu.quantity,
+            menu_input_mode: setMenu.menu_input_mode,
+          }),
+        );
+
+        mealMenus.push(...expandedMealMenus);
+      });
     }
 
-    const menuMap = new Map(menus.map((menu) => [menu.id, menu]));
-
-    const mealMenus = menu_ids.map((menuId, index) =>
-      this.mealMenuRepository.create({
-        menu: menuMap.get(menuId),
-        quantity: roundToOneDecimal(menu_quantities[index]),
-        menu_input_mode: menu_input_modes[index],
-      }),
-    );
-
     if (existingMeal) {
-      await this.mealMenuRepository.remove(existingMeal.mealMenus);
+      if (existingMeal.mealMenus?.length) {
+        await this.mealMenuRepository.remove(existingMeal.mealMenus);
+      }
+      if (existingMeal.mealSets?.length) {
+        await this.mealSetRepository.remove(existingMeal.mealSets);
+      }
 
       existingMeal.image = image ?? null;
       if (meal_time !== undefined) {
         existingMeal.mealTime = meal_time;
       }
       existingMeal.mealMenus = mealMenus;
+      existingMeal.mealSets = mealSets;
       existingMeal.updatedAt = new Date();
 
       await this.mealRepository.save(existingMeal);
@@ -2154,6 +2259,7 @@ ${JSON.stringify(
       mealTime: meal_time ?? null,
       image,
       mealMenus,
+      mealSets,
       user,
     });
 
@@ -2237,10 +2343,21 @@ ${JSON.stringify(
         mealMenus: {
           menu: true,
         },
+        mealSets: {
+          menuSet: {
+            setMenus: {
+              menu: true,
+            },
+          },
+        },
       },
       order: {
         time: 'ASC',
         mealMenus: {
+          id: 'ASC',
+        },
+        mealSets: {
+          sort_order: 'ASC',
           id: 'ASC',
         },
       },
@@ -2260,6 +2377,7 @@ ${JSON.stringify(
             ),
             meal.mealMenus.map((mealMenu) => mealMenu.quantity),
             meal.mealMenus.map((mealMenu) => mealMenu.menu_input_mode),
+            this.buildMealSetResponseList(meal.mealSets),
           ),
       ),
     );
@@ -3280,6 +3398,454 @@ ${JSON.stringify(
         return 'heic';
       default:
         return 'bin';
+    }
+  }
+
+  private calculateMenuCaloriesForQuantity(
+    menu: MenuEntity,
+    quantity: number,
+    inputMode: number,
+  ): number {
+    const calories = Number(menu.calories ?? 0);
+
+    if (inputMode === 1) {
+      const weight = Number(menu.weight ?? 0);
+      return weight > 0 ? calories * (quantity / weight) : calories;
+    }
+
+    return calories * quantity;
+  }
+
+  private sortSetMenus(setMenus: MenuSetMenuEntity[]): MenuSetMenuEntity[] {
+    return [...(setMenus ?? [])].sort(
+      (a, b) => a.sort_order - b.sort_order || a.id - b.id,
+    );
+  }
+
+  private calculateSetTotalCalories(setMenus: MenuSetMenuEntity[]): number {
+    return roundToOneDecimal(
+      this.sortSetMenus(setMenus).reduce(
+        (sum, setMenu) =>
+          sum +
+          this.calculateMenuCaloriesForQuantity(
+            setMenu.menu,
+            Number(setMenu.quantity),
+            Number(setMenu.menu_input_mode),
+          ),
+        0,
+      ),
+    );
+  }
+
+  private buildMealSetResponseList(
+    mealSets?: MealSetEntity[],
+  ): MealSetResponseDto[] | null {
+    const sortedMealSets = [...(mealSets ?? [])].sort(
+      (a, b) => a.sort_order - b.sort_order || a.id - b.id,
+    );
+
+    if (sortedMealSets.length === 0) {
+      return null;
+    }
+
+    return sortedMealSets.map((mealSet) => {
+      const setMenus = this.sortSetMenus(mealSet.menuSet?.setMenus ?? []);
+
+      return new MealSetResponseDto(
+        mealSet.menuSet.id,
+        mealSet.menuSet.name,
+        setMenus.map((setMenu) => new MenuSimpleResponseDto(setMenu.menu)),
+        this.calculateSetTotalCalories(setMenus),
+      );
+    });
+  }
+
+  async upsertFolder(
+    user: UserEntity,
+    dto: UpsertFolderRequestDto,
+  ): Promise<FolderIdResponseDto> {
+    const folderName = dto.folder_name.trim();
+
+    if (!folderName) {
+      throw new BadRequestException('folder_name should not be empty');
+    }
+
+    this.validateFolderMenuArrays(dto);
+
+    const uniqueMenuIds = Array.from(new Set(dto.menu_ids));
+    const menuCount = await this.menuRepository.count({
+      where: {
+        id: In(uniqueMenuIds),
+        is_deleted: 0,
+      },
+    });
+
+    if (menuCount !== uniqueMenuIds.length) {
+      throw new NotFoundException('Menu not found');
+    }
+
+    const folderId = await this.folderRepository.manager.transaction(
+      async (manager) => {
+        const folderRepository = manager.getRepository(FolderEntity);
+        const folderMenuRepository = manager.getRepository(FolderMenuEntity);
+
+        let folder: FolderEntity;
+
+        if (dto.folder_id) {
+          folder = await folderRepository
+            .createQueryBuilder('folder')
+            .innerJoin('folder.user', 'user')
+            .where('folder.id = :folderId', { folderId: dto.folder_id })
+            .andWhere('user.id = :userId', { userId: user.id })
+            .getOne();
+
+          if (!folder) {
+            throw new NotFoundException('Folder not found');
+          }
+
+          folder.name = folderName;
+          folder = await folderRepository.save(folder);
+          await folderMenuRepository.delete({ folder: { id: folder.id } });
+        } else {
+          folder = folderRepository.create({
+            name: folderName,
+            user,
+          });
+          folder = await folderRepository.save(folder);
+        }
+
+        const folderMenus = dto.menu_ids.map((menuId, index) =>
+          folderMenuRepository.create({
+            folder,
+            menu: { id: menuId } as MenuEntity,
+            quantity: dto.menu_quantities[index],
+            menu_input_mode: dto.menu_input_modes[index],
+            sort_order: index,
+          }),
+        );
+
+        await folderMenuRepository.save(folderMenus);
+
+        return folder.id;
+      },
+    );
+
+    return new FolderIdResponseDto(folderId);
+  }
+
+  async getFolders(
+    user: UserEntity,
+    dto: FolderListRequestDto,
+  ): Promise<FolderListResponseDto> {
+    const limit = dto.limit;
+    const query = this.folderRepository
+      .createQueryBuilder('folder')
+      .innerJoin('folder.user', 'user')
+      .where('user.id = :userId', { userId: user.id })
+      .orderBy('folder.id', 'DESC')
+      .limit(limit + 1);
+
+    if (dto.cursor) {
+      query.andWhere('folder.id < :cursor', { cursor: dto.cursor });
+    }
+
+    const folders = await query.getMany();
+    const hasNext = folders.length > limit;
+    const pagedFolders = hasNext ? folders.slice(0, limit) : folders;
+    const folderIds = pagedFolders.map((folder) => folder.id);
+
+    const folderMenus =
+      folderIds.length > 0
+        ? await this.folderMenuRepository.find({
+            where: {
+              folder: {
+                id: In(folderIds),
+              },
+            },
+            relations: {
+              folder: true,
+              menu: true,
+            },
+            order: {
+              sort_order: 'ASC',
+              id: 'ASC',
+            },
+          })
+        : [];
+
+    const menuNamesByFolderId = new Map<number, string[]>();
+    folderMenus.forEach((folderMenu) => {
+      const folderId = folderMenu.folder.id;
+      const menuNames = menuNamesByFolderId.get(folderId) ?? [];
+      menuNames.push(stripPublicMenuSourcePrefix(folderMenu.menu.name));
+      menuNamesByFolderId.set(folderId, menuNames);
+    });
+
+    const folderList: FolderListItemResponseDto[] = pagedFolders.map(
+      (folder) => ({
+        folder_id: folder.id,
+        folder_name: folder.name,
+        menu_names: menuNamesByFolderId.get(folder.id) ?? [],
+      }),
+    );
+
+    const nextCursor =
+      hasNext && pagedFolders.length > 0
+        ? pagedFolders[pagedFolders.length - 1].id
+        : null;
+
+    return new FolderListResponseDto(folderList, nextCursor);
+  }
+
+  async getFolderDetail(
+    user: UserEntity,
+    dto: FolderDetailRequestDto,
+  ): Promise<FolderDetailResponseDto> {
+    const folder = await this.folderRepository
+      .createQueryBuilder('folder')
+      .innerJoin('folder.user', 'user')
+      .where('folder.id = :folderId', { folderId: dto.folder_id })
+      .andWhere('user.id = :userId', { userId: user.id })
+      .getOne();
+
+    if (!folder) {
+      throw new NotFoundException('Folder not found');
+    }
+
+    const folderMenus = await this.folderMenuRepository.find({
+      where: {
+        folder: {
+          id: folder.id,
+        },
+      },
+      relations: {
+        menu: true,
+      },
+      order: {
+        sort_order: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return new FolderDetailResponseDto(
+      folder.name,
+      folderMenus.map(
+        (folderMenu) => new MenuSimpleResponseDto(folderMenu.menu),
+      ),
+      folderMenus.map((folderMenu) => folderMenu.quantity),
+      folderMenus.map((folderMenu) => folderMenu.menu_input_mode),
+    );
+  }
+
+  private validateFolderMenuArrays(dto: UpsertFolderRequestDto): void {
+    const menuCount = dto.menu_ids.length;
+
+    if (
+      dto.menu_quantities.length !== menuCount ||
+      dto.menu_input_modes.length !== menuCount
+    ) {
+      throw new BadRequestException(
+        'menu_ids, menu_quantities and menu_input_modes must have the same length',
+      );
+    }
+  }
+
+  async upsertMenuSet(
+    user: UserEntity,
+    dto: UpsertMenuSetRequestDto,
+  ): Promise<MenuSetIdResponseDto> {
+    const setName = dto.set_name.trim();
+
+    if (!setName) {
+      throw new BadRequestException('set_name should not be empty');
+    }
+
+    this.validateMenuSetMenuArrays(dto);
+
+    const uniqueMenuIds = Array.from(new Set(dto.menu_ids));
+    const menuCount = await this.menuRepository.count({
+      where: {
+        id: In(uniqueMenuIds),
+        is_deleted: 0,
+      },
+    });
+
+    if (menuCount !== uniqueMenuIds.length) {
+      throw new NotFoundException('Menu not found');
+    }
+
+    const setId = await this.menuSetRepository.manager.transaction(
+      async (manager) => {
+        const menuSetRepository = manager.getRepository(MenuSetEntity);
+        const menuSetMenuRepository =
+          manager.getRepository(MenuSetMenuEntity);
+
+        let menuSet: MenuSetEntity;
+
+        if (dto.set_id) {
+          menuSet = await menuSetRepository
+            .createQueryBuilder('menuSet')
+            .innerJoin('menuSet.user', 'user')
+            .where('menuSet.id = :setId', { setId: dto.set_id })
+            .andWhere('user.id = :userId', { userId: user.id })
+            .getOne();
+
+          if (!menuSet) {
+            throw new NotFoundException('Menu set not found');
+          }
+
+          menuSet.name = setName;
+          menuSet = await menuSetRepository.save(menuSet);
+          await menuSetMenuRepository.delete({ menuSet: { id: menuSet.id } });
+        } else {
+          menuSet = menuSetRepository.create({
+            name: setName,
+            user,
+          });
+          menuSet = await menuSetRepository.save(menuSet);
+        }
+
+        const setMenus = dto.menu_ids.map((menuId, index) =>
+          menuSetMenuRepository.create({
+            menuSet,
+            menu: { id: menuId } as MenuEntity,
+            quantity: roundToOneDecimal(dto.menu_quantities[index]),
+            menu_input_mode: dto.menu_input_modes[index],
+            sort_order: index,
+          }),
+        );
+
+        await menuSetMenuRepository.save(setMenus);
+
+        return menuSet.id;
+      },
+    );
+
+    return new MenuSetIdResponseDto(setId);
+  }
+
+  async getMenuSets(
+    user: UserEntity,
+    dto: MenuSetListRequestDto,
+  ): Promise<MenuSetListResponseDto> {
+    const limit = dto.limit;
+    const query = this.menuSetRepository
+      .createQueryBuilder('menuSet')
+      .innerJoin('menuSet.user', 'user')
+      .where('user.id = :userId', { userId: user.id })
+      .orderBy('menuSet.id', 'DESC')
+      .limit(limit + 1);
+
+    if (dto.cursor) {
+      query.andWhere('menuSet.id < :cursor', { cursor: dto.cursor });
+    }
+
+    const menuSets = await query.getMany();
+    const hasNext = menuSets.length > limit;
+    const pagedMenuSets = hasNext ? menuSets.slice(0, limit) : menuSets;
+    const setIds = pagedMenuSets.map((menuSet) => menuSet.id);
+
+    const setMenus =
+      setIds.length > 0
+        ? await this.menuSetMenuRepository.find({
+            where: {
+              menuSet: {
+                id: In(setIds),
+              },
+            },
+            relations: {
+              menuSet: true,
+              menu: true,
+            },
+            order: {
+              sort_order: 'ASC',
+              id: 'ASC',
+            },
+          })
+        : [];
+
+    const setMenusBySetId = new Map<number, MenuSetMenuEntity[]>();
+    setMenus.forEach((setMenu) => {
+      const setId = setMenu.menuSet.id;
+      const groupedSetMenus = setMenusBySetId.get(setId) ?? [];
+      groupedSetMenus.push(setMenu);
+      setMenusBySetId.set(setId, groupedSetMenus);
+    });
+
+    const setList: MenuSetListItemResponseDto[] = pagedMenuSets.map(
+      (menuSet) => {
+        const groupedSetMenus = this.sortSetMenus(
+          setMenusBySetId.get(menuSet.id) ?? [],
+        );
+
+        return {
+          set_id: menuSet.id,
+          set_name: menuSet.name,
+          menu_names: groupedSetMenus.map((setMenu) =>
+            stripPublicMenuSourcePrefix(setMenu.menu.name),
+          ),
+          total_calories: this.calculateSetTotalCalories(groupedSetMenus),
+        };
+      },
+    );
+
+    const nextCursor =
+      hasNext && pagedMenuSets.length > 0
+        ? pagedMenuSets[pagedMenuSets.length - 1].id
+        : null;
+
+    return new MenuSetListResponseDto(setList, nextCursor);
+  }
+
+  async getMenuSetDetail(
+    user: UserEntity,
+    dto: MenuSetDetailRequestDto,
+  ): Promise<MenuSetDetailResponseDto> {
+    const menuSet = await this.menuSetRepository
+      .createQueryBuilder('menuSet')
+      .innerJoin('menuSet.user', 'user')
+      .where('menuSet.id = :setId', { setId: dto.set_id })
+      .andWhere('user.id = :userId', { userId: user.id })
+      .getOne();
+
+    if (!menuSet) {
+      throw new NotFoundException('Menu set not found');
+    }
+
+    const setMenus = await this.menuSetMenuRepository.find({
+      where: {
+        menuSet: {
+          id: menuSet.id,
+        },
+      },
+      relations: {
+        menu: true,
+      },
+      order: {
+        sort_order: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return new MenuSetDetailResponseDto(
+      menuSet.id,
+      menuSet.name,
+      setMenus.map((setMenu) => new MenuSimpleResponseDto(setMenu.menu)),
+      setMenus.map((setMenu) => setMenu.quantity),
+      setMenus.map((setMenu) => setMenu.menu_input_mode),
+    );
+  }
+
+  private validateMenuSetMenuArrays(dto: UpsertMenuSetRequestDto): void {
+    const menuCount = dto.menu_ids.length;
+
+    if (
+      dto.menu_quantities.length !== menuCount ||
+      dto.menu_input_modes.length !== menuCount
+    ) {
+      throw new BadRequestException(
+        'menu_ids, menu_quantities and menu_input_modes must have the same length',
+      );
     }
   }
 

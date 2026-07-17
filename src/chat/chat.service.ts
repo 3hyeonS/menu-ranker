@@ -15,6 +15,7 @@ import { UserInfoEntity } from '../auth/entity/user/userInfo.entity';
 import { MenuEntity } from '../home/entity/menu.entity';
 import { MealEntity } from '../home/entity/meal.entity';
 import { MealMenuEntity } from '../home/entity/meal-menu.entity';
+import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
@@ -169,20 +170,23 @@ type ChatContextSummary = {
 type ChatUserMenuSearchRawRow = {
   menu_id: number | string;
   menu_name: string;
+  menu_display_name?: string;
   menu_search_name: string | null;
   menu_canonical_name: string | null;
   record_count: number | string;
   source_priority: number | string;
+  source_type?: 'menu' | 'set';
 };
 
 type ChatUserMenuSearchDebugRow = {
-  id: number;
+  id: number | string;
   name: string;
   displayName: string;
   searchName: string | null;
   canonicalName: string | null;
   recordCount: number;
   sourcePriority?: number;
+  sourceType?: 'menu' | 'set';
 };
 
 type LightweightChatContext = {
@@ -409,6 +413,8 @@ export class ChatService {
     private readonly userInfoRepository: Repository<UserInfoEntity>,
     @InjectRepository(MenuEntity)
     private readonly menuRepository: Repository<MenuEntity>,
+    @InjectRepository(MenuSetEntity)
+    private readonly menuSetRepository: Repository<MenuSetEntity>,
     @InjectRepository(MealEntity)
     private readonly mealRepository: Repository<MealEntity>,
     @InjectRepository(MealMenuEntity)
@@ -2279,6 +2285,44 @@ export class ChatService {
     const searchNamePattern = `%${searchName}%`;
     const canonicalNamePattern = `%${canonicalName}%`;
 
+    const menuSetRows = await this.menuSetRepository
+      .createQueryBuilder('menuSet')
+      .innerJoin('menuSet.user', 'setUser')
+      .select('menuSet.id', 'menu_id')
+      .addSelect('menuSet.name', 'menu_name')
+      .where('setUser.id = :userId', { userId: user.id })
+      .orderBy('menuSet.id', 'DESC')
+      .getRawMany<{
+        menu_id: number | string;
+        menu_name: string;
+      }>();
+    const matchedMenuSetRows: ChatUserMenuSearchRawRow[] = menuSetRows
+      .map((row) => {
+        const setName = row.menu_name?.trim() ?? '';
+        const displayName = this.toChatUserMenuSearchSetDisplayName(setName);
+
+        return {
+          menu_id: row.menu_id,
+          menu_name: setName,
+          menu_display_name: displayName,
+          menu_search_name: normalizeMenuSearchName(displayName),
+          menu_canonical_name: canonicalizeMenuSearchName(displayName),
+          record_count: 0,
+          source_priority: 0,
+          source_type: 'set' as const,
+        };
+      })
+      .filter(
+        (row) =>
+          this.getChatUserMenuSearchMatchScore(
+            row,
+            keyword,
+            searchName,
+            canonicalName,
+          ) < 3,
+      )
+      .slice(0, 30);
+
     const personalRows = await this.menuRepository
       .createQueryBuilder('menu')
       .leftJoin('menu.user', 'menuUser')
@@ -2406,9 +2450,16 @@ export class ChatService {
       frequentMatches: frequentRowsWithCounts.map((row) =>
         this.toChatUserMenuSearchDebugRow(row),
       ),
+      setMatches: matchedMenuSetRows.map((row) =>
+        this.toChatUserMenuSearchDebugRow(row),
+      ),
     });
 
-    const rows = [...personalRows, ...frequentRowsWithCounts].sort(
+    const rows = [
+      ...personalRows,
+      ...matchedMenuSetRows,
+      ...frequentRowsWithCounts,
+    ].sort(
       (left, right) => {
         const leftScore = this.getChatUserMenuSearchMatchScore(
           left,
@@ -2426,12 +2477,10 @@ export class ChatService {
         const rightRecordCount = Number(right.record_count) || 0;
         const leftSourcePriority = Number(left.source_priority) || 0;
         const rightSourcePriority = Number(right.source_priority) || 0;
-        const leftNameLength = stripPublicMenuSourcePrefix(
-          left.menu_name,
-        ).length;
-        const rightNameLength = stripPublicMenuSourcePrefix(
-          right.menu_name,
-        ).length;
+        const leftNameLength =
+          this.getChatUserMenuSearchDisplayName(left).length;
+        const rightNameLength =
+          this.getChatUserMenuSearchDisplayName(right).length;
 
         if (leftScore !== rightScore) {
           return leftScore - rightScore;
@@ -2457,7 +2506,7 @@ export class ChatService {
         return;
       }
 
-      const displayName = stripPublicMenuSourcePrefix(row.menu_name);
+      const displayName = this.getChatUserMenuSearchDisplayName(row);
       const dedupeKey = normalizeMenuSearchName(displayName);
 
       if (!displayName || seenNames.has(dedupeKey)) {
@@ -2490,15 +2539,32 @@ export class ChatService {
     row: ChatUserMenuSearchRawRow,
   ): ChatUserMenuSearchDebugRow {
     return {
-      id: Number(row.menu_id),
+      id: row.source_type === 'set' ? `set:${row.menu_id}` : Number(row.menu_id),
       name: row.menu_name,
-      displayName: stripPublicMenuSourcePrefix(row.menu_name),
+      displayName: this.getChatUserMenuSearchDisplayName(row),
       searchName: row.menu_search_name,
       canonicalName: row.menu_canonical_name,
       recordCount: Number(row.record_count) || 0,
       sourcePriority:
         row.source_priority === undefined ? undefined : Number(row.source_priority),
+      sourceType: row.source_type ?? 'menu',
     };
+  }
+
+  private getChatUserMenuSearchDisplayName(
+    row: ChatUserMenuSearchRawRow,
+  ): string {
+    return row.menu_display_name ?? stripPublicMenuSourcePrefix(row.menu_name);
+  }
+
+  private toChatUserMenuSearchSetDisplayName(setName: string): string {
+    const trimmed = setName.trim();
+
+    if (!trimmed) {
+      return '';
+    }
+
+    return trimmed.endsWith('세트') ? trimmed : `${trimmed} 세트`;
   }
 
   private getChatUserMenuSearchMatchScore(
@@ -2507,7 +2573,7 @@ export class ChatService {
     searchName: string,
     canonicalName: string,
   ): number {
-    const displayName = stripPublicMenuSourcePrefix(row.menu_name);
+    const displayName = this.getChatUserMenuSearchDisplayName(row);
     const rowSearchName =
       row.menu_search_name ?? normalizeMenuSearchName(row.menu_name);
     const rowCanonicalName =

@@ -93,4 +93,16 @@ export class RegisterMealRequestDto {
     message: 'each value in menu_input_modes must be 0 or 1',
   })
   menu_input_modes?: number[];
+
+  @ApiPropertyOptional({
+    type: [Number],
+    nullable: true,
+    description: '함께 기록할 세트 id 목록. 없으면 null 또는 생략',
+    example: [1, 2],
+  })
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsNumber({}, { each: true })
+  menu_set_ids?: number[] | null;
 }

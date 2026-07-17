@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { MealMenuEntity } from './meal-menu.entity';
+import { MealSetEntity } from './meal-set.entity';
 
 @Entity('meal')
 export class MealEntity {
@@ -46,6 +47,12 @@ export class MealEntity {
     cascade: true,
   })
   mealMenus: MealMenuEntity[];
+
+  @OneToMany(() => MealSetEntity, (mealSet) => mealSet.meal, {
+    nullable: true,
+    cascade: true,
+  })
+  mealSets: MealSetEntity[];
 
   @ManyToOne(() => UserEntity, (user) => user.meal, {
     eager: true,

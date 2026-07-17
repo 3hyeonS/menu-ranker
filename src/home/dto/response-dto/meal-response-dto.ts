@@ -3,6 +3,49 @@ import { Type } from 'class-transformer';
 import { ValidateNested } from 'class-validator';
 import { MenuSimpleResponseDto } from './menu-simple-response-dto';
 
+export class MealSetResponseDto {
+  @ApiProperty({
+    type: Number,
+    description: '세트 id',
+    example: 1,
+  })
+  set_id: number;
+
+  @ApiProperty({
+    type: String,
+    description: '세트명',
+    example: '단백질 쉐이크',
+  })
+  set_name: string;
+
+  @ValidateNested({ each: true })
+  @ApiProperty({
+    type: [MenuSimpleResponseDto],
+    description: '세트에 포함된 메뉴 리스트',
+  })
+  @Type(() => MenuSimpleResponseDto)
+  menu_list: MenuSimpleResponseDto[];
+
+  @ApiProperty({
+    type: Number,
+    description: '세트 전체 칼로리',
+    example: 320.5,
+  })
+  total_calories: number;
+
+  constructor(
+    setId: number,
+    setName: string,
+    menuList: MenuSimpleResponseDto[],
+    totalCalories: number,
+  ) {
+    this.set_id = setId;
+    this.set_name = setName;
+    this.menu_list = menuList;
+    this.total_calories = totalCalories;
+  }
+}
+
 export class MealResponseDto {
   @ApiProperty({
     type: Number,
@@ -62,6 +105,15 @@ export class MealResponseDto {
   })
   menu_input_modes: number[];
 
+  @ValidateNested({ each: true })
+  @ApiProperty({
+    type: [MealSetResponseDto],
+    nullable: true,
+    description: '세트 리스트',
+  })
+  @Type(() => MealSetResponseDto)
+  set_list: MealSetResponseDto[] | null;
+
   constructor(
     time: number,
     mealTime: string | null,
@@ -71,6 +123,7 @@ export class MealResponseDto {
     menuList: MenuSimpleResponseDto[],
     menuQunatities: number[],
     menuInputModes: number[],
+    setList: MealSetResponseDto[] | null = null,
   ) {
     this.time = time;
     this.meal_time = mealTime;
@@ -80,5 +133,6 @@ export class MealResponseDto {
     this.menu_list = menuList;
     this.menu_quantities = menuQunatities;
     this.menu_input_modes = menuInputModes;
+    this.set_list = setList;
   }
 }

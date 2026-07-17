@@ -54,6 +54,18 @@ import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-r
 import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutrition-label-recognition-response-dto';
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
+import { UpsertFolderRequestDto } from './dto/request-dto/upsert-folder-request-dto';
+import { FolderIdResponseDto } from './dto/response-dto/folder-id-response-dto';
+import { FolderListRequestDto } from './dto/request-dto/folder-list-request-dto';
+import { FolderListResponseDto } from './dto/response-dto/folder-list-response-dto';
+import { FolderDetailRequestDto } from './dto/request-dto/folder-detail-request-dto';
+import { FolderDetailResponseDto } from './dto/response-dto/folder-detail-response-dto';
+import { UpsertMenuSetRequestDto } from './dto/request-dto/upsert-menu-set-request-dto';
+import { MenuSetIdResponseDto } from './dto/response-dto/menu-set-id-response-dto';
+import { MenuSetListRequestDto } from './dto/request-dto/menu-set-list-request-dto';
+import { MenuSetListResponseDto } from './dto/response-dto/menu-set-list-response-dto';
+import { MenuSetDetailRequestDto } from './dto/request-dto/menu-set-detail-request-dto';
+import { MenuSetDetailResponseDto } from './dto/response-dto/menu-set-detail-response-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -564,6 +576,234 @@ export class HomeController {
     @Body() registerMealRequestDto: RegisterMealRequestDto,
   ): Promise<void> {
     await this.homeService.registerMeal(user, registerMealRequestDto);
+  }
+
+  // 폴더 생성 및 수정
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '폴더 생성 및 수정',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '폴더 생성 및 수정 성공',
+    message: 'Folder saved successfully',
+    model: FolderIdResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '수정할 폴더 또는 메뉴를 찾을 수 없음',
+    message: 'Folder not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Folder saved successfully')
+  @UseGuards(AuthGuard())
+  @Post('/folder')
+  async upsertFolder(
+    @GetUser() user: UserEntity,
+    @Body() upsertFolderRequestDto: UpsertFolderRequestDto,
+  ): Promise<FolderIdResponseDto> {
+    return await this.homeService.upsertFolder(user, upsertFolderRequestDto);
+  }
+
+  // 폴더 조회
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '폴더 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '폴더 조회 성공',
+    message: 'Folder list returned successfully',
+    model: FolderListResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Folder list returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/folders')
+  async getFolders(
+    @GetUser() user: UserEntity,
+    @Body() folderListRequestDto: FolderListRequestDto,
+  ): Promise<FolderListResponseDto> {
+    return await this.homeService.getFolders(user, folderListRequestDto);
+  }
+
+  // 폴더 메뉴 상세 조회
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '폴더 메뉴 상세 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '폴더 메뉴 상세 조회 성공',
+    message: 'Folder detail returned successfully',
+    model: FolderDetailResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '폴더를 찾을 수 없음',
+    message: 'Folder not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Folder detail returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/folder/detail')
+  async getFolderDetail(
+    @GetUser() user: UserEntity,
+    @Body() folderDetailRequestDto: FolderDetailRequestDto,
+  ): Promise<FolderDetailResponseDto> {
+    return await this.homeService.getFolderDetail(user, folderDetailRequestDto);
+  }
+
+  // 세트 생성 및 수정
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '세트 생성 및 수정',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '세트 생성 및 수정 성공',
+    message: 'Menu set saved successfully',
+    model: MenuSetIdResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '수정할 세트 또는 메뉴를 찾을 수 없음',
+    message: 'Menu set not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Menu set saved successfully')
+  @UseGuards(AuthGuard())
+  @Post('/set')
+  async upsertMenuSet(
+    @GetUser() user: UserEntity,
+    @Body() upsertMenuSetRequestDto: UpsertMenuSetRequestDto,
+  ): Promise<MenuSetIdResponseDto> {
+    return await this.homeService.upsertMenuSet(
+      user,
+      upsertMenuSetRequestDto,
+    );
+  }
+
+  // 세트 조회
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '세트 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '세트 조회 성공',
+    message: 'Menu set list returned successfully',
+    model: MenuSetListResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Menu set list returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/sets')
+  async getMenuSets(
+    @GetUser() user: UserEntity,
+    @Body() menuSetListRequestDto: MenuSetListRequestDto,
+  ): Promise<MenuSetListResponseDto> {
+    return await this.homeService.getMenuSets(user, menuSetListRequestDto);
+  }
+
+  // 세트 메뉴 상세 조회
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '세트 메뉴 상세 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '세트 메뉴 상세 조회 성공',
+    message: 'Menu set detail returned successfully',
+    model: MenuSetDetailResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '세트를 찾을 수 없음',
+    message: 'Menu set not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Menu set detail returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/set/detail')
+  async getMenuSetDetail(
+    @GetUser() user: UserEntity,
+    @Body() menuSetDetailRequestDto: MenuSetDetailRequestDto,
+  ): Promise<MenuSetDetailResponseDto> {
+    return await this.homeService.getMenuSetDetail(
+      user,
+      menuSetDetailRequestDto,
+    );
   }
 
   // 오늘의 식사 삭제
