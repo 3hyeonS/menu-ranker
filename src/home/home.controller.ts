@@ -60,12 +60,14 @@ import { FolderListRequestDto } from './dto/request-dto/folder-list-request-dto'
 import { FolderListResponseDto } from './dto/response-dto/folder-list-response-dto';
 import { FolderDetailRequestDto } from './dto/request-dto/folder-detail-request-dto';
 import { FolderDetailResponseDto } from './dto/response-dto/folder-detail-response-dto';
+import { DeleteFolderRequestDto } from './dto/request-dto/delete-folder-request-dto';
 import { UpsertMenuSetRequestDto } from './dto/request-dto/upsert-menu-set-request-dto';
 import { MenuSetIdResponseDto } from './dto/response-dto/menu-set-id-response-dto';
 import { MenuSetListRequestDto } from './dto/request-dto/menu-set-list-request-dto';
 import { MenuSetListResponseDto } from './dto/response-dto/menu-set-list-response-dto';
 import { MenuSetDetailRequestDto } from './dto/request-dto/menu-set-detail-request-dto';
 import { MenuSetDetailResponseDto } from './dto/response-dto/menu-set-detail-response-dto';
+import { DeleteMenuSetRequestDto } from './dto/request-dto/delete-menu-set-request-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -689,6 +691,44 @@ export class HomeController {
     return await this.homeService.getFolderDetail(user, folderDetailRequestDto);
   }
 
+  // 폴더 삭제
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '폴더 삭제',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '폴더 삭제 성공',
+    message: 'Folder deleted successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '삭제할 폴더를 찾을 수 없음',
+    message: 'Folder not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Folder deleted successfully')
+  @UseGuards(AuthGuard())
+  @Post('/folder/delete')
+  async deleteFolder(
+    @GetUser() user: UserEntity,
+    @Body() deleteFolderRequestDto: DeleteFolderRequestDto,
+  ): Promise<void> {
+    await this.homeService.deleteFolder(user, deleteFolderRequestDto);
+  }
+
   // 세트 생성 및 수정
   @ApiBearerAuth('accessToken')
   @ApiOperation({
@@ -804,6 +844,44 @@ export class HomeController {
       user,
       menuSetDetailRequestDto,
     );
+  }
+
+  // 세트 삭제
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '세트 삭제',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '세트 삭제 성공',
+    message: 'Menu set deleted successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '삭제할 세트를 찾을 수 없음',
+    message: 'Menu set not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Menu set deleted successfully')
+  @UseGuards(AuthGuard())
+  @Post('/set/delete')
+  async deleteMenuSet(
+    @GetUser() user: UserEntity,
+    @Body() deleteMenuSetRequestDto: DeleteMenuSetRequestDto,
+  ): Promise<void> {
+    await this.homeService.deleteMenuSet(user, deleteMenuSetRequestDto);
   }
 
   // 오늘의 식사 삭제

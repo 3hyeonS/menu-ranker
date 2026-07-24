@@ -2016,6 +2016,15 @@ export class ChatService {
       hasDate: parsedPlan.date !== null,
     });
 
+    const menuSetIds = await this.findMealRecordMenuSetIdsMentionedInText(
+      user.id,
+      text,
+    );
+    timing.mark('meal_record_menu_sets_matched', {
+      matchedSetCount: menuSetIds.length,
+      menuSetIds,
+    });
+
     const exactTextMenus = await this.findMealRecordMenusMentionedExactlyInText(
       user.id,
       text,
@@ -2116,6 +2125,7 @@ export class ChatService {
     const response = new ChatMealRecordParseResponseDto();
     response.menu_ids = menuIds;
     response.menu_quantities = menuQuantities;
+    response.menu_set_ids = menuSetIds.length > 0 ? menuSetIds : null;
 
     if (parsedPlan.time !== null) {
       response.time = parsedPlan.time;
@@ -2137,6 +2147,7 @@ export class ChatService {
             matched_menus: matchedMenus,
             menu_ids: menuIds,
             menu_quantities: menuQuantities,
+            menu_set_ids: response.menu_set_ids,
             ...(parsedPlan.time !== null ? { time: parsedPlan.time } : {}),
             ...(parsedPlan.date !== null ? { date: parsedPlan.date } : {}),
           },
@@ -2149,6 +2160,55 @@ export class ChatService {
 
     timing.end({ matchedCount: menuIds.length });
     return response;
+  }
+
+  private async findMealRecordMenuSetIdsMentionedInText(
+    userId: number,
+    input: string,
+  ): Promise<number[]> {
+    const normalizedInput = this.normalizeMenuMatchText(input);
+
+    if (!normalizedInput) {
+      return [];
+    }
+
+    const menuSets = await this.menuSetRepository
+      .createQueryBuilder('menuSet')
+      .innerJoin('menuSet.user', 'user')
+      .select(['menuSet.id', 'menuSet.name'])
+      .where('user.id = :userId', { userId })
+      .orderBy('menuSet.id', 'DESC')
+      .getMany();
+
+    const matchedSetIds: number[] = [];
+    const usedSetIds = new Set<number>();
+
+    menuSets.forEach((menuSet) => {
+      const setName = menuSet.name?.trim() ?? '';
+      const normalizedSetName = this.normalizeMenuMatchText(setName);
+      const normalizedSetDisplayName = this.normalizeMenuMatchText(
+        this.toChatUserMenuSearchSetDisplayName(setName),
+      );
+
+      if (!normalizedSetName || usedSetIds.has(menuSet.id)) {
+        return;
+      }
+
+      const isShortOrGenericName = normalizedSetName.length < 3;
+      const isMatched = isShortOrGenericName
+        ? normalizedInput.includes(normalizedSetDisplayName)
+        : normalizedInput.includes(normalizedSetName) ||
+          normalizedInput.includes(normalizedSetDisplayName);
+
+      if (!isMatched) {
+        return;
+      }
+
+      usedSetIds.add(menuSet.id);
+      matchedSetIds.push(menuSet.id);
+    });
+
+    return matchedSetIds;
   }
 
   private async findMealRecordMenusMentionedExactlyInText(

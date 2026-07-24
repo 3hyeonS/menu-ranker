@@ -23,6 +23,15 @@ export class ChatMealRecordParseResponseDto {
   })
   menu_quantities: number[];
 
+  @ApiProperty({
+    type: [Number],
+    nullable: true,
+    description:
+      '입력에서 사용자가 등록한 세트명이 감지된 경우 반환하는 메뉴 세트 id 배열. 감지된 세트가 없으면 null',
+    example: [12, 15],
+  })
+  menu_set_ids: number[] | null;
+
   @ApiPropertyOptional({
     type: Number,
     description:

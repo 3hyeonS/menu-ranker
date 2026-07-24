@@ -72,6 +72,7 @@ import {
 } from './dto/response-dto/folder-list-response-dto';
 import { FolderDetailRequestDto } from './dto/request-dto/folder-detail-request-dto';
 import { FolderDetailResponseDto } from './dto/response-dto/folder-detail-response-dto';
+import { DeleteFolderRequestDto } from './dto/request-dto/delete-folder-request-dto';
 import { MenuSetEntity } from './entity/menu-set.entity';
 import { MenuSetMenuEntity } from './entity/menu-set-menu.entity';
 import { MealSetEntity } from './entity/meal-set.entity';
@@ -84,6 +85,7 @@ import {
 } from './dto/response-dto/menu-set-list-response-dto';
 import { MenuSetDetailRequestDto } from './dto/request-dto/menu-set-detail-request-dto';
 import { MenuSetDetailResponseDto } from './dto/response-dto/menu-set-detail-response-dto';
+import { DeleteMenuSetRequestDto } from './dto/request-dto/delete-menu-set-request-dto';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -3425,13 +3427,15 @@ ${JSON.stringify(
   private calculateSetTotalCalories(setMenus: MenuSetMenuEntity[]): number {
     return roundToOneDecimal(
       this.sortSetMenus(setMenus).reduce(
-        (sum, setMenu) =>
-          sum +
-          this.calculateMenuCaloriesForQuantity(
-            setMenu.menu,
-            Number(setMenu.quantity),
-            Number(setMenu.menu_input_mode),
-          ),
+        (sum, setMenu) => {
+          const calories = Number(setMenu.menu.calories ?? 0);
+          const weight = Number(setMenu.menu.weight ?? 0);
+          const quantity = Number(setMenu.quantity);
+          const calculatedCalories =
+            weight > 0 ? calories * (quantity / weight) : calories;
+
+          return sum + calculatedCalories;
+        },
         0,
       ),
     );
@@ -3637,6 +3641,24 @@ ${JSON.stringify(
     );
   }
 
+  async deleteFolder(
+    user: UserEntity,
+    dto: DeleteFolderRequestDto,
+  ): Promise<void> {
+    const folder = await this.folderRepository
+      .createQueryBuilder('folder')
+      .innerJoin('folder.user', 'user')
+      .where('folder.id = :folderId', { folderId: dto.folder_id })
+      .andWhere('user.id = :userId', { userId: user.id })
+      .getOne();
+
+    if (!folder) {
+      throw new NotFoundException('Folder not found');
+    }
+
+    await this.folderRepository.delete(folder.id);
+  }
+
   private validateFolderMenuArrays(dto: UpsertFolderRequestDto): void {
     const menuCount = dto.menu_ids.length;
 
@@ -3784,6 +3806,7 @@ ${JSON.stringify(
           menu_names: groupedSetMenus.map((setMenu) =>
             stripPublicMenuSourcePrefix(setMenu.menu.name),
           ),
+          menu_ids: groupedSetMenus.map((setMenu) => setMenu.menu.id),
           total_calories: this.calculateSetTotalCalories(groupedSetMenus),
         };
       },
@@ -3834,6 +3857,24 @@ ${JSON.stringify(
       setMenus.map((setMenu) => setMenu.quantity),
       setMenus.map((setMenu) => setMenu.menu_input_mode),
     );
+  }
+
+  async deleteMenuSet(
+    user: UserEntity,
+    dto: DeleteMenuSetRequestDto,
+  ): Promise<void> {
+    const menuSet = await this.menuSetRepository
+      .createQueryBuilder('menuSet')
+      .innerJoin('menuSet.user', 'user')
+      .where('menuSet.id = :setId', { setId: dto.set_id })
+      .andWhere('user.id = :userId', { userId: user.id })
+      .getOne();
+
+    if (!menuSet) {
+      throw new NotFoundException('Menu set not found');
+    }
+
+    await this.menuSetRepository.delete(menuSet.id);
   }
 
   private validateMenuSetMenuArrays(dto: UpsertMenuSetRequestDto): void {

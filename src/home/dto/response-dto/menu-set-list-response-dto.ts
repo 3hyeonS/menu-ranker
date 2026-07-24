@@ -25,6 +25,13 @@ export class MenuSetListItemResponseDto {
   menu_names: string[];
 
   @ApiProperty({
+    type: [Number],
+    description: '세트에 포함된 메뉴 id 목록',
+    example: [1, 2],
+  })
+  menu_ids: number[];
+
+  @ApiProperty({
     type: Number,
     description: '세트 전체 칼로리',
     example: 320.5,
