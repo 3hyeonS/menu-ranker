@@ -86,6 +86,25 @@ import {
 import { MenuSetDetailRequestDto } from './dto/request-dto/menu-set-detail-request-dto';
 import { MenuSetDetailResponseDto } from './dto/response-dto/menu-set-detail-response-dto';
 import { DeleteMenuSetRequestDto } from './dto/request-dto/delete-menu-set-request-dto';
+import { WorkoutEntity, WorkoutType } from './entity/workout.entity';
+import { WorkoutRecordEntity } from './entity/workout-record.entity';
+import { WorkoutRecordSetEntity } from './entity/workout-record-set.entity';
+import { GetWorkoutRecordRequestDto } from './dto/request-dto/get-workout-record-request-dto';
+import { DeleteWorkoutRecordRequestDto } from './dto/request-dto/delete-workout-record-request-dto';
+import { SearchWorkoutRequestDto } from './dto/request-dto/search-workout-request-dto';
+import { WorkoutDetailRequestDto } from './dto/request-dto/workout-detail-request-dto';
+import { UpsertWorkoutRecordRequestDto } from './dto/request-dto/upsert-workout-record-request-dto';
+import { WorkoutIdResponseDto } from './dto/response-dto/workout-id-response-dto';
+import {
+  WorkoutRecordItemResponseDto,
+  WorkoutRecordResponseDto,
+  WorkoutRecordSetResponseDto,
+} from './dto/response-dto/workout-record-response-dto';
+import {
+  WorkoutSearchItemResponseDto,
+  WorkoutSearchResponseDto,
+} from './dto/response-dto/workout-search-response-dto';
+import { WorkoutDetailResponseDto } from './dto/response-dto/workout-detail-response-dto';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -321,6 +340,12 @@ export class HomeService {
     private menuSetMenuRepository: Repository<MenuSetMenuEntity>,
     @InjectRepository(MealSetEntity)
     private mealSetRepository: Repository<MealSetEntity>,
+    @InjectRepository(WorkoutEntity)
+    private workoutRepository: Repository<WorkoutEntity>,
+    @InjectRepository(WorkoutRecordEntity)
+    private workoutRecordRepository: Repository<WorkoutRecordEntity>,
+    @InjectRepository(WorkoutRecordSetEntity)
+    private workoutRecordSetRepository: Repository<WorkoutRecordSetEntity>,
     @InjectRepository(WeightStepsEntity)
     private weightStepsRepository: Repository<WeightStepsEntity>,
     @InjectRepository(BrandAddEntity)
@@ -3888,6 +3913,286 @@ ${JSON.stringify(
         'menu_ids, menu_quantities and menu_input_modes must have the same length',
       );
     }
+  }
+
+  async getWorkoutRecord(
+    user: UserEntity,
+    dto: GetWorkoutRecordRequestDto,
+  ): Promise<WorkoutRecordResponseDto> {
+    const records = await this.workoutRecordRepository.find({
+      where: {
+        user: { id: user.id },
+        date: dto.date,
+      },
+      relations: {
+        workout: true,
+        setList: true,
+      },
+      order: {
+        id: 'ASC',
+      },
+    });
+
+    return new WorkoutRecordResponseDto(
+      records.map((record) => this.toWorkoutRecordItemResponse(record)),
+    );
+  }
+
+  async deleteWorkoutRecord(
+    user: UserEntity,
+    dto: DeleteWorkoutRecordRequestDto,
+  ): Promise<void> {
+    const query = this.workoutRecordRepository
+      .createQueryBuilder('record')
+      .innerJoin('record.user', 'user')
+      .innerJoin('record.workout', 'workout')
+      .where('user.id = :userId', { userId: user.id })
+      .andWhere('record.date = :date', { date: dto.date });
+
+    if (dto.workout_id !== null && dto.workout_id !== undefined) {
+      query.andWhere('workout.id = :workoutId', {
+        workoutId: dto.workout_id,
+      });
+    }
+
+    const records = await query.getMany();
+
+    if (records.length === 0) {
+      throw new NotFoundException('Workout record not found');
+    }
+
+    await this.workoutRecordRepository.remove(records);
+  }
+
+  async searchWorkout(
+    dto: SearchWorkoutRequestDto,
+  ): Promise<WorkoutSearchResponseDto> {
+    const limit = Math.min(Math.max(dto.limit, 1), 100);
+    const input = dto.input.trim();
+    const bodyParts = dto.body_parts?.trim();
+    const equipments = dto.equipments?.trim();
+
+    const query = this.workoutRepository
+      .createQueryBuilder('workout')
+      .where('1 = 1');
+
+    if (input.length > 0) {
+      query.andWhere('workout.name LIKE :input', { input: `%${input}%` });
+    }
+
+    if (bodyParts) {
+      query.andWhere('workout.body_parts LIKE :bodyParts', {
+        bodyParts: `%${bodyParts}%`,
+      });
+    }
+
+    if (equipments) {
+      query.andWhere('workout.equipments LIKE :equipments', {
+        equipments: `%${equipments}%`,
+      });
+    }
+
+    if (dto.cursor !== null && dto.cursor !== undefined) {
+      query.andWhere('workout.id > :cursor', { cursor: dto.cursor });
+    }
+
+    const workouts = await query
+      .orderBy('workout.id', 'ASC')
+      .take(limit + 1)
+      .getMany();
+
+    const hasNext = workouts.length > limit;
+    const page = hasNext ? workouts.slice(0, limit) : workouts;
+    const nextCursor = hasNext ? page[page.length - 1].id : null;
+
+    return new WorkoutSearchResponseDto(
+      page.map((workout) => ({
+        workout_id: workout.id,
+        workout_name: workout.name,
+        workout_image: workout.image ?? null,
+        workout_type: workout.workout_type,
+      })),
+      nextCursor,
+    );
+  }
+
+  async getWorkoutDetail(
+    dto: WorkoutDetailRequestDto,
+  ): Promise<WorkoutDetailResponseDto> {
+    const workout = await this.workoutRepository.findOne({
+      where: { id: dto.workout_id },
+    });
+
+    if (!workout) {
+      throw new NotFoundException('Workout not found');
+    }
+
+    return {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      workout_gif: workout.gif ?? null,
+      workout_type: workout.workout_type,
+      equipments: workout.equipments ?? null,
+      body_parts: this.toWorkoutBodyParts(workout.body_parts),
+    };
+  }
+
+  async upsertWorkoutRecord(
+    user: UserEntity,
+    dto: UpsertWorkoutRecordRequestDto,
+  ): Promise<WorkoutIdResponseDto> {
+    const workout = await this.workoutRepository.findOne({
+      where: { id: dto.workout_id },
+    });
+
+    if (!workout) {
+      throw new NotFoundException('Workout not found');
+    }
+
+    if (workout.workout_type !== dto.workout_type) {
+      throw new BadRequestException(
+        'workout_type does not match selected workout',
+      );
+    }
+
+    this.validateWorkoutRecordRequest(dto);
+
+    const date = this.getTodayKstDateString();
+
+    await this.workoutRecordRepository.manager.transaction(async (manager) => {
+      const workoutRecordRepository =
+        manager.getRepository(WorkoutRecordEntity);
+      const workoutRecordSetRepository = manager.getRepository(
+        WorkoutRecordSetEntity,
+      );
+
+      let record = await workoutRecordRepository
+        .createQueryBuilder('record')
+        .innerJoin('record.user', 'user')
+        .innerJoin('record.workout', 'workout')
+        .where('user.id = :userId', { userId: user.id })
+        .andWhere('workout.id = :workoutId', { workoutId: workout.id })
+        .andWhere('record.date = :date', { date })
+        .getOne();
+
+      if (!record) {
+        record = workoutRecordRepository.create({
+          user,
+          workout,
+          date,
+        });
+      }
+
+      record.workout_duration = roundToOneDecimal(dto.workout_duration);
+      record.burned_calories = roundToOneDecimal(dto.burned_calories);
+      record.workout_type = dto.workout_type;
+      record.intensity =
+        dto.workout_type === 'cardio' ? (dto.intensity ?? null) : null;
+
+      const savedRecord = await workoutRecordRepository.save(record);
+
+      await workoutRecordSetRepository.delete({
+        workoutRecord: { id: savedRecord.id },
+      });
+
+      if (dto.workout_type === 'weight') {
+        const setRows = (dto.set_list ?? []).map((set) =>
+          workoutRecordSetRepository.create({
+            workoutRecord: savedRecord,
+            set_order: set.set_order,
+            weight: roundToOneDecimal(set.weight),
+            reps: set.reps,
+          }),
+        );
+
+        await workoutRecordSetRepository.save(setRows);
+      }
+    });
+
+    return new WorkoutIdResponseDto(workout.id);
+  }
+
+  private validateWorkoutRecordRequest(
+    dto: UpsertWorkoutRecordRequestDto,
+  ): void {
+    if (dto.workout_type === 'weight') {
+      if (!dto.set_list || dto.set_list.length === 0) {
+        throw new BadRequestException('set_list is required for weight workout');
+      }
+
+      return;
+    }
+
+    if (
+      dto.intensity !== null &&
+      dto.intensity !== undefined &&
+      ![0, 1, 2].includes(dto.intensity)
+    ) {
+      throw new BadRequestException('intensity must be 0, 1, 2 or null');
+    }
+  }
+
+  private toWorkoutRecordItemResponse(
+    record: WorkoutRecordEntity,
+  ): WorkoutRecordItemResponseDto {
+    const workout = record.workout;
+    const sortedSets = [...(record.setList ?? [])].sort(
+      (a, b) => a.set_order - b.set_order || a.id - b.id,
+    );
+
+    return {
+      workout_id: workout.id,
+      workout_name: workout.name,
+      workout_image: workout.image ?? null,
+      workout_duration: roundToOneDecimal(record.workout_duration),
+      burned_calories: roundToOneDecimal(record.burned_calories),
+      workout_type: record.workout_type,
+      intensity:
+        record.workout_type === 'cardio'
+          ? ((record.intensity ?? null) as 0 | 1 | 2 | null)
+          : null,
+      set_list:
+        record.workout_type === 'weight'
+          ? sortedSets.map<WorkoutRecordSetResponseDto>((set) => ({
+              set_order: set.set_order,
+              weight: roundToOneDecimal(set.weight),
+              reps: set.reps,
+            }))
+          : null,
+    };
+  }
+
+  private toWorkoutBodyParts(bodyParts: string[] | string | null): string[] {
+    if (Array.isArray(bodyParts)) {
+      return bodyParts.filter((bodyPart) => typeof bodyPart === 'string');
+    }
+
+    if (typeof bodyParts !== 'string' || bodyParts.trim().length === 0) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(bodyParts);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((bodyPart) => typeof bodyPart === 'string');
+      }
+    } catch {
+      return bodyParts
+        .split(',')
+        .map((bodyPart) => bodyPart.trim())
+        .filter((bodyPart) => bodyPart.length > 0);
+    }
+
+    return [];
+  }
+
+  private getTodayKstDateString(): string {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
   }
 
   // 오늘의 체중/걸음 수 반환

@@ -23,6 +23,9 @@ import { FolderMenuEntity } from './entity/folder-menu.entity';
 import { MenuSetEntity } from './entity/menu-set.entity';
 import { MenuSetMenuEntity } from './entity/menu-set-menu.entity';
 import { MealSetEntity } from './entity/meal-set.entity';
+import { WorkoutEntity } from './entity/workout.entity';
+import { WorkoutRecordEntity } from './entity/workout-record.entity';
+import { WorkoutRecordSetEntity } from './entity/workout-record-set.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -42,6 +45,9 @@ dotenv.config();
       MenuSetEntity,
       MenuSetMenuEntity,
       MealSetEntity,
+      WorkoutEntity,
+      WorkoutRecordEntity,
+      WorkoutRecordSetEntity,
       WeightStepsEntity,
       BrandAddEntity,
     ]),

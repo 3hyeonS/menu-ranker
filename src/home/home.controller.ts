@@ -68,6 +68,15 @@ import { MenuSetListResponseDto } from './dto/response-dto/menu-set-list-respons
 import { MenuSetDetailRequestDto } from './dto/request-dto/menu-set-detail-request-dto';
 import { MenuSetDetailResponseDto } from './dto/response-dto/menu-set-detail-response-dto';
 import { DeleteMenuSetRequestDto } from './dto/request-dto/delete-menu-set-request-dto';
+import { GetWorkoutRecordRequestDto } from './dto/request-dto/get-workout-record-request-dto';
+import { DeleteWorkoutRecordRequestDto } from './dto/request-dto/delete-workout-record-request-dto';
+import { SearchWorkoutRequestDto } from './dto/request-dto/search-workout-request-dto';
+import { WorkoutDetailRequestDto } from './dto/request-dto/workout-detail-request-dto';
+import { UpsertWorkoutRecordRequestDto } from './dto/request-dto/upsert-workout-record-request-dto';
+import { WorkoutRecordResponseDto } from './dto/response-dto/workout-record-response-dto';
+import { WorkoutSearchResponseDto } from './dto/response-dto/workout-search-response-dto';
+import { WorkoutDetailResponseDto } from './dto/response-dto/workout-detail-response-dto';
+import { WorkoutIdResponseDto } from './dto/response-dto/workout-id-response-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -1142,6 +1151,191 @@ export class HomeController {
     @Body() menuIdRequestDto: MenuIdRequestDto,
   ): Promise<void> {
     await this.homeService.deleteMenu(user, menuIdRequestDto.id);
+  }
+
+  // 오늘 운동 기록 조회
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '오늘 운동 기록 조회',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '오늘 운동 기록 조회 성공',
+    message: 'Workout record returned successfully',
+    model: WorkoutRecordResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Workout record returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/getWorkoutRecord')
+  async getWorkoutRecord(
+    @GetUser() user: UserEntity,
+    @Body() getWorkoutRecordRequestDto: GetWorkoutRecordRequestDto,
+  ): Promise<WorkoutRecordResponseDto> {
+    return await this.homeService.getWorkoutRecord(
+      user,
+      getWorkoutRecordRequestDto,
+    );
+  }
+
+  // 오늘 운동 기록 취소
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '오늘 운동 기록 취소',
+    description: 'workout_id가 null이면 해당 날짜의 전체 운동 기록 취소',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '오늘 운동 기록 취소 성공',
+    message: 'Workout record deleted successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '삭제할 운동 기록을 찾을 수 없음',
+    message: 'Workout record not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Workout record deleted successfully')
+  @UseGuards(AuthGuard())
+  @Post('/deleteWorkoutRecord')
+  async deleteWorkoutRecord(
+    @GetUser() user: UserEntity,
+    @Body() deleteWorkoutRecordRequestDto: DeleteWorkoutRecordRequestDto,
+  ): Promise<void> {
+    await this.homeService.deleteWorkoutRecord(
+      user,
+      deleteWorkoutRecordRequestDto,
+    );
+  }
+
+  // 운동 검색
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '운동 검색',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '운동 검색 성공',
+    message: 'Workout searched successfully',
+    model: WorkoutSearchResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Workout searched successfully')
+  @UseGuards(AuthGuard())
+  @Post('/searchWorkout')
+  async searchWorkout(
+    @Body() searchWorkoutRequestDto: SearchWorkoutRequestDto,
+  ): Promise<WorkoutSearchResponseDto> {
+    return await this.homeService.searchWorkout(searchWorkoutRequestDto);
+  }
+
+  // 운동 상세 내역
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '운동 상세 내역',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '운동 상세 내역 조회 성공',
+    message: 'Workout detail returned successfully',
+    model: WorkoutDetailResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '운동을 찾을 수 없음',
+    message: 'Workout not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Workout detail returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/workout/detail')
+  async getWorkoutDetail(
+    @Body() workoutDetailRequestDto: WorkoutDetailRequestDto,
+  ): Promise<WorkoutDetailResponseDto> {
+    return await this.homeService.getWorkoutDetail(workoutDetailRequestDto);
+  }
+
+  // 운동 추가 및 수정
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '운동 추가 및 수정',
+    description: '오늘 날짜 기준으로 같은 운동 기록이 있으면 수정하고 없으면 추가',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '운동 추가 및 수정 성공',
+    message: 'Workout record registered successfully',
+    model: WorkoutIdResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '운동을 찾을 수 없음',
+    message: 'Workout not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Workout record registered successfully')
+  @UseGuards(AuthGuard())
+  @Post('/registerWorkout')
+  async registerWorkout(
+    @GetUser() user: UserEntity,
+    @Body() upsertWorkoutRecordRequestDto: UpsertWorkoutRecordRequestDto,
+  ): Promise<WorkoutIdResponseDto> {
+    return await this.homeService.upsertWorkoutRecord(
+      user,
+      upsertWorkoutRecordRequestDto,
+    );
   }
 
   // 오늘의 체중 등록
