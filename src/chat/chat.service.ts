@@ -695,12 +695,6 @@ export class ChatService {
       generatedCount: menuBoardPlan.candidates.length,
     });
 
-    if (menuBoardPlan.candidates.length === 0) {
-      throw new BadRequestException(
-        'No recognized menus matched the available menu list',
-      );
-    }
-
     const inferredBrand = this.inferDominantValue(
       menuBoardPlan.candidates.map((candidate) => candidate.brand),
     );
@@ -717,25 +711,21 @@ export class ChatService {
       nutrition_constraints: this.emptyNutritionConstraints(),
     };
     const orderedCandidateMenus =
-      await this.matchGenericMenuCandidatesToDbMenusByVector(
-        user.id,
-        menuBoardPlan.candidates,
-        intent,
-        timing,
-        {
-          disableDefaultNamePrefix: true,
-          useIntentCategoryFilters: false,
-        },
-      );
+      menuBoardPlan.candidates.length > 0
+        ? await this.matchGenericMenuCandidatesToDbMenusByVector(
+            user.id,
+            menuBoardPlan.candidates,
+            intent,
+            timing,
+            {
+              disableDefaultNamePrefix: true,
+              useIntentCategoryFilters: false,
+            },
+          )
+        : [];
     timing.mark('menu_board_candidates_matched', {
       matchedCount: orderedCandidateMenus.length,
     });
-
-    if (orderedCandidateMenus.length === 0) {
-      throw new BadRequestException(
-        'No recognized menus matched the available menu list',
-      );
-    }
 
     const recognizedCandidates = orderedCandidateMenus.map((menu) => ({
       id: menu.id,
@@ -1763,9 +1753,9 @@ export class ChatService {
     if (this.isUnsupportedChatActionRequest(normalizedInput)) {
       return {
         intro_message:
-          '채팅에서 바로 기록을 추가하거나 수정하는 기능은 아직 준비 중이야.',
+          '앱 기능이나 오류는 내가 단정해서 안내하면 틀릴 수 있어.',
         general_answer:
-          '식사 기록은 홈이나 기록 화면에서 직접 추가해줘.\n\n여기서는 메뉴 선택, 식단 피드백, 영양 방향 정리는 바로 도와줄 수 있어.',
+          '[설정 - 문의하기/아이디어 보내기]로 상황을 보내줘.\n\n사진 인식, 기록, 계정, 결제, 구독처럼 앱 동작과 관련된 건 그 경로로 문의하는 게 가장 정확해.',
       };
     }
 
@@ -1795,7 +1785,7 @@ export class ChatService {
 
   private isAppSupportQuestion(normalizedInput: string): boolean {
     const appPattern =
-      /(앱|서비스|기능|사용법|어떻게써|어떻게사용|오류|버그|안돼|안되|문의|아이디어|사진인식|메뉴판인식|영양성분표|구독|결제|탈퇴|계정|로그인|대화초기화|초기화|운동기록|기록이어디|어디에적어)/;
+      /(앱|서비스|기능|사용법|어떻게써|어떻게사용|오류|버그|안돼|안되|문의|아이디어|사진인식|메뉴판인식|영양성분표|구독|결제|탈퇴|계정|로그인|대화초기화|초기화|식사기록|식사기록은어떻게|운동기록|기록이어디|어디에적어)/;
     const foodConversationPattern =
       /(먹어도돼|뭐먹|추천|피드백|칼로리|단백질|탄수|지방|영양|식단)/;
 
@@ -9590,8 +9580,9 @@ JSON shape:
 - 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
 - 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
 - 사용자가 직접 먹었다고 말한 이전 입력이나 실제 오늘 섭취 정보만 섭취 근거로 사용해
-- 앱 기능, 오류, 사진 인식 문제, 기록 기능, 계정, 결제, 구독, 대화 초기화처럼 서비스 동작에 관한 질문에는 기능을 추측해서 설명하지 말고 "[설정 - 문의하기/아이디어 보내기]로 문의해줘"라고 안내해
-- "기록해줘", "등록해줘", "저장해줘", "수정해줘", "삭제해줘"처럼 실제 앱 동작을 대신 수행해 달라는 요청에는 수행했다고 말하지 말고 채팅 직접 기록 기능은 준비 중이니 사용자가 직접 기록해야 한다고 말해
+- 앱 기능, 오류, 사진 인식 문제, 식사 기록, 운동 기록, 계정, 결제, 구독, 대화 초기화처럼 서비스 동작에 관한 질문에는 기능을 추측해서 설명하지 말고 "[설정 - 문의하기/아이디어 보내기]로 문의해줘"라고 안내해
+- 식사 기록과 운동 기록은 같은 방식으로 안내해. "앱 내에서 직접 진행", "직접 추가", "준비 중", "당분간", "활용해줘" 같은 단정형 안내는 쓰지 마
+- "기록해줘", "등록해줘", "저장해줘", "수정해줘", "삭제해줘"처럼 실제 앱 동작을 대신 수행해 달라는 요청에는 수행했다고 말하지 말고 앱 동작 관련 문의는 "[설정 - 문의하기/아이디어 보내기]"로 보내는 게 가장 정확하다고 안내해
 - 질문이 식단/영양과 관련 없으면 사용자 식단 정보는 언급하지 말고, system_instruction의 코치 페르소나와 반말 해체를 유지해
 - 질문이 식단/영양과 관련 없으면 건강/식단/운동 이야기로 억지 전환하지 말고 질문 자체에 답해
 - 실시간 날씨, 최신 뉴스, 주가처럼 현재 조회가 필요한 질문은 실시간 조회가 어렵다고 짧게 말하고, 사용자가 확인할 수 있는 방법을 안내해

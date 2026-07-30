@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ChatRecognizedCandidateResponseDto } from './chat-recognized-candidate-response-dto';
 import { ChatRecommendItemResponseDto } from './chat-recommend-item-response-dto';
 
@@ -36,15 +36,17 @@ export class ChatMenuBoardRecommendResponseDto {
   })
   image_url: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [ChatRecommendItemResponseDto],
-    description: '상위 10개 추천 메뉴',
+    description:
+      '상위 10개 추천 메뉴. 메뉴판 인식은 성공했지만 DB 매칭이 전부 애매하면 반환하지 않습니다.',
   })
-  recommendations: ChatRecommendItemResponseDto[];
+  recommendations?: ChatRecommendItemResponseDto[];
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [ChatRecognizedCandidateResponseDto],
-    description: '메뉴판/이미지 인식으로 좁혀진 후보 메뉴',
+    description:
+      '메뉴판/이미지 인식으로 좁혀진 후보 메뉴. DB 매칭된 후보가 없으면 반환하지 않습니다.',
   })
-  recognized_candidates: ChatRecognizedCandidateResponseDto[];
+  recognized_candidates?: ChatRecognizedCandidateResponseDto[];
 }
