@@ -51,6 +51,7 @@ import {
   normalizeMenuSearchName,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
+import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -3083,6 +3084,8 @@ export class ChatService {
 - 영양성분표에 없는 값은 null로 반환해
 - unit은 g 기준이면 0, ml 기준이면 1로 반환해
 - weight와 calories는 반드시 숫자로 반환해. 1회 제공량 또는 표기 기준량을 우선 사용해
+
+${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
 반환 shape:
 {
@@ -10739,7 +10742,18 @@ ${JSON.stringify(candidates)}
       carbs: roundNullableToOneDecimal(this.asNullableNumber(value?.carbs)),
       sugars: roundNullableToOneDecimal(this.asNullableNumber(value?.sugars)),
       sugar_alchol: roundNullableToOneDecimal(
-        this.asNullableNumber(value?.sugar_alchol),
+        this.asNullableNumber(
+          this.firstDefined(
+            value?.sugar_alchol,
+            value?.sugar_alcohol,
+            value?.alternative_sweetener,
+            value?.alternative_sweeteners,
+            value?.sweetener,
+            value?.sweeteners,
+            value?.sugar_substitute,
+            value?.sugar_substitutes,
+          ),
+        ),
       ),
       dietary_fiber: roundNullableToOneDecimal(
         this.asNullableNumber(value?.dietary_fiber),
@@ -10840,6 +10854,10 @@ ${JSON.stringify(candidates)}
           : NaN;
 
     return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private firstDefined(...values: unknown[]): unknown {
+    return values.find((value) => value !== undefined && value !== null);
   }
 
   private emptyIntentConditionGroup(): IntentConditionGroup {

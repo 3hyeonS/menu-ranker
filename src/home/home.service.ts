@@ -61,6 +61,10 @@ import {
   normalizeMenuSearchName,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
+import {
+  SUGAR_ALTERNATIVE_KEYWORDS,
+  SUGAR_ALTERNATIVE_PROMPT_SECTION,
+} from '../utils/nutrition-label.util';
 import { FolderEntity } from './entity/folder.entity';
 import { FolderMenuEntity } from './entity/folder-menu.entity';
 import { UpsertFolderRequestDto } from './dto/request-dto/upsert-folder-request-dto';
@@ -2090,6 +2094,8 @@ ${JSON.stringify(
 - weight 는 1회 제공량 또는 총 내용량의 수치만 넣기
 - 추정하지 말고 보이는 정보만 사용
 
+${SUGAR_ALTERNATIVE_PROMPT_SECTION}
+
 반환 shape:
 {
   "unit": 0,
@@ -2856,7 +2862,7 @@ ${JSON.stringify(
     const mappings: Array<{ field: string; keywords: string[] }> = [
       { field: 'unit_quantity', keywords: ['중량 단위'] },
       { field: 'unit', keywords: ['단위량'] },
-      { field: 'sugar_alchol', keywords: ['당알코올', '당 알코올'] },
+      { field: 'sugar_alchol', keywords: SUGAR_ALTERNATIVE_KEYWORDS },
       { field: 'dietary_fiber', keywords: ['식이섬유', '식이 섬유'] },
       { field: 'protein', keywords: ['단백질'] },
       { field: 'calories', keywords: ['칼로리'] },
@@ -2993,7 +2999,18 @@ ${JSON.stringify(
       calories: this.asRequiredNumber(value?.calories, 'calories'),
       carbs: this.asNullableNumber(value?.carbs),
       sugars: this.asNullableNumber(value?.sugars),
-      sugar_alchol: this.asNullableNumber(value?.sugar_alchol),
+      sugar_alchol: this.asNullableNumber(
+        this.firstDefined(
+          value?.sugar_alchol,
+          value?.sugar_alcohol,
+          value?.alternative_sweetener,
+          value?.alternative_sweeteners,
+          value?.sweetener,
+          value?.sweeteners,
+          value?.sugar_substitute,
+          value?.sugar_substitutes,
+        ),
+      ),
       dietary_fiber: this.asNullableNumber(value?.dietary_fiber),
       protein: this.asNullableNumber(value?.protein),
       fat: this.asNullableNumber(value?.fat),
@@ -3405,6 +3422,10 @@ ${JSON.stringify(
     const numericValue = this.extractNumericValue(value);
 
     return Number.isFinite(numericValue) ? numericValue : null;
+  }
+
+  private firstDefined(...values: unknown[]): unknown {
+    return values.find((value) => value !== undefined && value !== null);
   }
 
   // 문자열에서 숫자 값 추출
