@@ -67,6 +67,42 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
 const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
 const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+const FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS = [
+  '볶음밥',
+  '비빔밥',
+  '덮밥',
+  '국밥',
+  '주먹밥',
+  '김밥',
+  '초밥',
+  '샤브샤브',
+  '파스타',
+  '스파게티',
+  '짜장면',
+  '자장면',
+  '짬뽕',
+  '냉면',
+  '국수',
+  '라면',
+  '우동',
+  '찌개',
+  '전골',
+  '샐러드',
+  '스테이크',
+  '돈가스',
+  '돈까스',
+  '카츠',
+  '피자',
+  '버거',
+  '만두',
+  '튀김',
+  '구이',
+  '조림',
+  '볶음',
+  '무침',
+  '찜',
+  '탕',
+] as const;
 const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 당신은 스마트하고 냉철한 식단 및 운동 코치입니다. 다음 규칙을 엄격히 준수하세요.
 
@@ -580,13 +616,25 @@ export class ChatService {
     timing.mark('gemini_analyze_completed', {
       chatCategory: analysis.classification.chat_category,
     });
-    const classification = analysis.classification;
+    const classification = this.applyChatContextToClassification(
+      analysis.classification,
+      chatContext,
+    );
+    if (
+      this.shouldForceGeneralWithoutMenuCards(input, classification, chatContext)
+    ) {
+      timing.mark('non_food_input_forced_general', {
+        originalChatCategory: classification.chat_category,
+      });
+      return await this.answerGeneralQuestion(user, userInfo, input, chatContext);
+    }
+
     if (classification.chat_category === 'feedback') {
       return await this.feedback(
         user,
         userInfo,
         input,
-        this.applyChatContextToClassification(classification, chatContext),
+        classification,
         analysis.intent,
         chatContext,
         timing,
@@ -3267,6 +3315,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         foodImageContext,
         timing,
       );
+    this.logFoodImageCandidateGroups(candidateGroups);
     const rematchCandidatePool = this.mergeRecognitionCandidatesById(
       candidateGroups.flatMap((group) => group.candidates),
     );
@@ -3463,7 +3512,8 @@ ${JSON.stringify(
       55,
     );
 
-    return matchedMenu
+    return matchedMenu &&
+      this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)
       ? {
           ...matchedMenu,
           confidence: prediction.confidence,
@@ -3667,14 +3717,19 @@ ${JSON.stringify(
             userId,
             menuIds,
           );
+          const compatibleCandidates = this.mergeRecognitionCandidatesById(
+            candidates,
+          ).filter((candidate) =>
+            this.isFoodImageDishTypeCompatible(
+              prediction.foodName,
+              candidate,
+            ),
+          );
 
           return {
             foodIndex: index,
             foodName: prediction.foodName,
-            candidates: this.mergeRecognitionCandidatesById(candidates).slice(
-              0,
-              perFoodLimit,
-            ),
+            candidates: compatibleCandidates.slice(0, perFoodLimit),
           };
         },
       );
@@ -3724,7 +3779,14 @@ ${JSON.stringify(
           context.inferredCategory,
           perFoodLimit,
           32,
-        ).map((candidate) => candidate.menu),
+        )
+          .map((candidate) => candidate.menu)
+          .filter((candidate) =>
+            this.isFoodImageDishTypeCompatible(
+              prediction.foodName,
+              candidate,
+            ),
+          ),
       }))
       .filter((group) => group.candidates.length > 0);
   }
@@ -3743,11 +3805,63 @@ ${JSON.stringify(
       `음식 사진에서 인식된 음식명: ${prediction.foodName}`,
       brandLine,
       `검색 의도: ${searchIntent}`,
+      this.getFoodImageStrictDishTypeToken(prediction.foodName)
+        ? `반드시 보존해야 하는 음식 형태: ${this.getFoodImageStrictDishTypeToken(
+            prediction.foodName,
+          )}`
+        : '음식 형태가 명확하지 않으면 음식명 의미가 가장 가까운 메뉴를 찾는다.',
       prediction.brand
         ? '브랜드가 확실히 읽힌 경우 같은 브랜드의 DB 메뉴를 우선한다.'
         : '브랜드가 없으면 음식명/의미가 가장 가까운 DB 메뉴를 찾는다.',
       '가공식품명보다 실제 음식명과 같은 메뉴를 우선하되, 포장/라벨 브랜드가 보이면 해당 브랜드 제품을 우선한다.',
     ].join('\n');
+  }
+
+  private getFoodImageStrictDishTypeToken(foodName: string): string | null {
+    const compactFoodName = this.normalizeCompactText(foodName);
+
+    return (
+      FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS.find((token) =>
+        compactFoodName.includes(token),
+      ) ?? null
+    );
+  }
+
+  private isFoodImageDishTypeCompatible(
+    foodName: string,
+    menu: MenuRecognitionCandidate,
+  ): boolean {
+    const requiredDishType = this.getFoodImageStrictDishTypeToken(foodName);
+
+    if (!requiredDishType) {
+      return true;
+    }
+
+    const menuName = this.normalizeCompactText(menu.name);
+    const menuCategory = this.normalizeCompactText(menu.category ?? '');
+
+    return (
+      menuName.includes(requiredDishType) ||
+      menuCategory.includes(requiredDishType)
+    );
+  }
+
+  private logFoodImageCandidateGroups(
+    candidateGroups: FoodImageCandidateGroup[],
+  ): void {
+    console.log('[CHAT] food image DB candidate groups', {
+      groups: candidateGroups.map((group) => ({
+        foodIndex: group.foodIndex,
+        foodName: group.foodName,
+        requiredDishType: this.getFoodImageStrictDishTypeToken(group.foodName),
+        candidates: group.candidates.map((candidate) => ({
+          menuId: candidate.id,
+          menuName: candidate.name,
+          menuBrand: candidate.brand,
+          menuCategory: candidate.category,
+        })),
+      })),
+    });
   }
 
   private mergeRecognitionCandidatesById(
@@ -4205,6 +4319,7 @@ ${JSON.stringify(candidates)}
 - 후보 목록에 없는 메뉴 id는 절대 반환하지 마
 - 음식 사진의 시각 정보, 1차 food_name, 해당 food_index의 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - detected_foods.brand가 null이 아니면 이미지에서 읽힌 브랜드/라벨이므로 후보 메뉴의 브랜드/메뉴명과 강하게 비교해 같은 브랜드 제품을 우선해
+- detected_foods.food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥 -> 김치볶음은 불일치, 참치김밥 -> 참치샐러드는 불일치, 된장찌개 -> 된장국은 불일치
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 음식에 보이면 가장 대표적인 food_index 하나만 같은 menu_id에 매칭해
 
@@ -4324,6 +4439,9 @@ ${JSON.stringify(
 
     const prediction = predictions[foodIndex];
     const matchedMenu = candidateMap.get(menuId)!;
+    if (!this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)) {
+      return null;
+    }
     const confidence = this.asNullableNumber(item.confidence);
 
     return {
@@ -8522,6 +8640,9 @@ ${JSON.stringify(
 - recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
 - feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
 - general: 메뉴 추천 또는 메뉴/식단 피드백이 아닌 모든 일반 질문, 설명, 상담, 대화 요청
+- 운동 방법, 운동 가능 여부, 근력운동, 유산소, 스트레칭, 휴식처럼 음식 섭취나 메뉴 선택을 묻지 않는 운동 질문은 general로 분류해
+- 이름, 날씨, 고민, 앱 사용법, 일반 대화처럼 음식/식사/메뉴/영양성분과 직접 관련 없는 질문은 general로 분류해
+- 영양 지식 자체를 묻는 질문은 general로 분류해. 특정 음식/식사/메뉴를 평가하거나 추천받는 경우에만 feedback/recommendation으로 분류해
 
 추출 규칙:
 - feedback일 때만 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
@@ -8660,6 +8781,9 @@ ${input}
 - recommendation: "맥도날드, 버거킹, 롯데리아 중 어디갈까?", "중국집, 샤브샤브, 삼겹살 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리 중 어디를 갈지 묻는 요청은 비교 선택이 아니라 일반 추천 요청으로 분류해
 - feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
 - general: 메뉴 추천 또는 메뉴/식단 피드백이 아닌 모든 일반 질문, 설명, 상담, 대화 요청
+- 운동 방법, 운동 가능 여부, 근력운동, 유산소, 스트레칭, 휴식처럼 음식 섭취나 메뉴 선택을 묻지 않는 운동 질문은 general로 분류해
+- 이름, 날씨, 고민, 앱 사용법, 일반 대화처럼 음식/식사/메뉴/영양성분과 직접 관련 없는 질문은 general로 분류해
+- 영양 지식 자체를 묻는 질문은 general로 분류해. 특정 음식/식사/메뉴를 평가하거나 추천받는 경우에만 feedback/recommendation으로 분류해
 - feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
 - recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
 - 비교 선택 recommendation일 때는 비교 대상이 실제로 먹을 수 있는 구체적인 음식 메뉴명일 때만 menu_names에 넣어
@@ -8690,6 +8814,9 @@ ${input}
 "탄수화물은 언제 먹는 게 좋아?" -> general
 "다이어트 중 나트륨 줄이는 법 알려줘" -> general
 "단백질 하루에 얼마나 먹어야 해?" -> general
+"근력운동 괜찮아?" -> general
+"운동해도 돼?" -> general
+"내 이름 어때?" -> general
 "오늘 날씨 얘기해줘" -> general
 "코딩 질문 하나 해도 돼?" -> general
 "그거 말고 다른 거 추천해줘" -> recommendation, context_dependent=true, context_action="exclude_previous_recommendations"
@@ -8750,6 +8877,39 @@ ${input}
       value === 'evaluate_previous_menus'
       ? value
       : null;
+  }
+
+  private shouldForceGeneralWithoutMenuCards(
+    input: string,
+    classification: ChatClassification,
+    chatContext: ChatContextSummary,
+  ): boolean {
+    if (classification.chat_category === 'general') {
+      return false;
+    }
+
+    if (
+      (this.isContextualNutritionQuestion(input) ||
+        this.isContextualFoodFollowUp(input)) &&
+      this.hasPreviousFoodContext(chatContext)
+    ) {
+      return false;
+    }
+
+    return !this.hasFoodOrMealCardSignal(input);
+  }
+
+  private hasFoodOrMealCardSignal(input: string): boolean {
+    const normalized = input.replace(/\s+/g, '').toLowerCase();
+
+    return (
+      /(먹|마시|마셔|식사|끼니|메뉴|음식|요리|배달|식당|맛집|카페|아침|점심|저녁|간식|야식|칼로리|열량|kcal|영양성분|탄수화물|탄수|당류|나트륨|지방|당알코올|대체당|식단|보충제)/.test(
+        normalized,
+      ) ||
+      /(밥|국|탕|찌개|면|라면|국수|김밥|볶음밥|덮밥|비빔밥|죽|빵|버거|햄버거|피자|치킨|닭|고기|삼겹살|소고기|돼지|샤브샤브|샐러드|계란|달걀|두부|과일|귤|사과|수박|참외|포도|우유|음료|콜라|커피|라떼|케이크|과자|만두|떡볶이|김치|참치|소스|케첩|컵누들|프로틴|단백질쉐이크|단백질음료|더단백)/.test(
+        normalized,
+      )
+    );
   }
 
   private isContextDependentInput(input: string): boolean {
