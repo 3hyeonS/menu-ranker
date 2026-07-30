@@ -623,6 +623,26 @@ export class HomeService {
     return dedupedMenus;
   }
 
+  private dedupeMenusByCompactNameAndBrand(menus: MenuEntity[]): MenuEntity[] {
+    const seenKeys = new Set<string>();
+    const dedupedMenus: MenuEntity[] = [];
+
+    menus.forEach((menu) => {
+      const compactName = this.normalizeCompactSearchText(menu.name);
+      const compactBrand = this.normalizeCompactSearchText(menu.brand ?? '');
+      const dedupeKey = `${compactName}:${compactBrand}`;
+
+      if (!compactName || seenKeys.has(dedupeKey)) {
+        return;
+      }
+
+      seenKeys.add(dedupeKey);
+      dedupedMenus.push(menu);
+    });
+
+    return dedupedMenus;
+  }
+
   private normalizeMenuDisplayDedupeKey(menuName: string): string {
     return this.normalizeCompactSearchText(
       stripPublicMenuSourcePrefix(menuName),
@@ -1134,7 +1154,9 @@ export class HomeService {
       return 0;
     });
 
-    const uniqueMenuList = this.dedupeMenusByDisplayName(rawMenuList);
+    const uniqueMenuList = this.dedupeMenusByCompactNameAndBrand(
+      this.dedupeMenusByDisplayName(rawMenuList),
+    );
     const basePagedMenuList = uniqueMenuList.slice(0, limit);
     const pagedMenuList =
       cursor === undefined
@@ -1157,9 +1179,9 @@ export class HomeService {
         keyword,
         user,
       );
-      menu_list = this.dedupeMenusByDisplayName(alternativeMenus).map(
-        (menu) => new MenuSimpleResponseDto(menu),
-      );
+      menu_list = this.dedupeMenusByCompactNameAndBrand(
+        this.dedupeMenusByDisplayName(alternativeMenus),
+      ).map((menu) => new MenuSimpleResponseDto(menu));
       nextCursor = null;
     }
 
