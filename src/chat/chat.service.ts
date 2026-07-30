@@ -333,6 +333,7 @@ type FoodImageDimensions = {
 
 type FoodImagePrediction = {
   foodName: string;
+  brand: string | null;
   confidence: number | null;
   position: FoodImagePosition;
 };
@@ -3173,7 +3174,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 - 음식명이 완전히 확정되지 않더라도 사진에서 음식 종류가 충분히 보이면 가장 가까운 일반 음식명으로 반환해
 - 사진 속에서 같은 메뉴로 보이는 음식이 여러 개 있어도 detected_foods에는 1개만 반환해
 - 같은 메뉴가 여러 개 보이면 가장 선명하거나 대표적인 1개의 위치만 반환해
-- food_name에는 사진 속 음식의 가장 구체적인 이름을 넣어
+- food_name에는 사진 속 음식의 가장 구체적인 이름을 넣되, 브랜드명은 제외해. 예: 펩시 콜라 -> food_name은 "콜라", brand는 "펩시"
+- 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣어. 불확실하면 null로 반환해
+- 브랜드가 확실히 보이는 포장식품/음료는 food_name과 brand를 함께 반환해야 DB 매칭이 정확해져
 - 각 음식의 position은 이미지 전체 기준 0~1 정규화 중심 좌표로 반환해
 - position.x는 음식 중심의 가로 좌표야. 왼쪽 끝이 0, 오른쪽 끝이 1이야
 - position.y는 음식 중심의 세로 좌표야. 위쪽 끝이 0, 아래쪽 끝이 1이야
@@ -3192,6 +3195,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
   "detected_foods": [
     {
       "food_name": "싸이버거",
+      "brand": null,
       "confidence": 0.86,
       "position": {
         "x": 0.29,
@@ -3240,6 +3244,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       imageSummary,
       foods: predictions.map((prediction) => ({
         foodName: prediction.foodName,
+        brand: prediction.brand,
         confidence: prediction.confidence,
         position: prediction.position,
       })),
@@ -3324,6 +3329,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     const item = value as Record<string, unknown>;
     const foodName = this.asNonEmptyString(item.food_name);
+    const brand = this.asNonEmptyString(item.brand)?.slice(0, 80) ?? null;
     const position =
       this.normalizeFoodImagePosition(item.position, imageDimensions) ??
       this.normalizeFoodImagePosition(item.bounding_box, imageDimensions) ??
@@ -3337,6 +3343,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     return {
       foodName,
+      brand,
       confidence:
         confidence === null ? null : this.roundNormalizedCoordinate(confidence),
       position,
@@ -3381,6 +3388,7 @@ ${JSON.stringify(
   predictions.map((prediction, index) => ({
     index,
     food_name: prediction.foodName,
+    brand: prediction.brand,
   })),
 )}
 
@@ -3457,7 +3465,7 @@ ${JSON.stringify(
     const matchedMenu = this.findBestRecognitionCandidate(
       prediction.foodName,
       menus,
-      null,
+      prediction.brand,
       null,
       55,
     );
@@ -3655,7 +3663,7 @@ ${JSON.stringify(
         this.getFoodImageVectorMatchConcurrency(),
         async ({ prediction, index }) => {
           const vectorResults = await menuVectorService.searchMenusByText(
-            this.buildSingleFoodImageMatchVectorQuery(prediction.foodName),
+            this.buildSingleFoodImageMatchVectorQuery(prediction),
             {
               userId,
               limit: perFoodLimit,
@@ -3719,7 +3727,7 @@ ${JSON.stringify(
         candidates: this.findTopRecognitionCandidates(
           prediction.foodName,
           menus,
-          context.inferredBrand,
+          prediction.brand ?? context.inferredBrand,
           context.inferredCategory,
           perFoodLimit,
           32,
@@ -3728,11 +3736,24 @@ ${JSON.stringify(
       .filter((group) => group.candidates.length > 0);
   }
 
-  private buildSingleFoodImageMatchVectorQuery(foodName: string): string {
+  private buildSingleFoodImageMatchVectorQuery(
+    prediction: FoodImagePrediction,
+  ): string {
+    const brandLine = prediction.brand
+      ? `이미지에서 읽힌 브랜드/라벨: ${prediction.brand}`
+      : '이미지에서 읽힌 브랜드/라벨: 없음';
+    const searchIntent = prediction.brand
+      ? `${prediction.brand} ${prediction.foodName}`
+      : prediction.foodName;
+
     return [
-      `음식 사진에서 인식된 음식명: ${foodName}`,
-      '이 음식명과 이름/의미가 가장 가까운 DB 메뉴를 찾는다.',
-      '가공식품명보다 실제 음식명과 같은 메뉴를 우선한다.',
+      `음식 사진에서 인식된 음식명: ${prediction.foodName}`,
+      brandLine,
+      `검색 의도: ${searchIntent}`,
+      prediction.brand
+        ? '브랜드가 확실히 읽힌 경우 같은 브랜드의 DB 메뉴를 우선한다.'
+        : '브랜드가 없으면 음식명/의미가 가장 가까운 DB 메뉴를 찾는다.',
+      '가공식품명보다 실제 음식명과 같은 메뉴를 우선하되, 포장/라벨 브랜드가 보이면 해당 브랜드 제품을 우선한다.',
     ].join('\n');
   }
 
@@ -4190,6 +4211,7 @@ ${JSON.stringify(candidates)}
 - 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
 - 후보 목록에 없는 메뉴 id는 절대 반환하지 마
 - 음식 사진의 시각 정보, 1차 food_name, 해당 food_index의 후보 메뉴명/브랜드/카테고리를 함께 비교해
+- detected_foods.brand가 null이 아니면 이미지에서 읽힌 브랜드/라벨이므로 후보 메뉴의 브랜드/메뉴명과 강하게 비교해 같은 브랜드 제품을 우선해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 음식에 보이면 가장 대표적인 food_index 하나만 같은 menu_id에 매칭해
 
@@ -4198,6 +4220,7 @@ ${JSON.stringify(
   predictions.map((prediction, index) => ({
     index,
     food_name: prediction.foodName,
+    brand: prediction.brand,
     confidence: prediction.confidence,
   })),
 )}
