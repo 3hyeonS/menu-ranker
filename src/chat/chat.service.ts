@@ -8703,13 +8703,21 @@ ${input}
     const contextAction =
       this.normalizeContextAction(data?.context_action) ??
       this.inferContextAction(input, chatCategory, contextDependent);
+    const shouldUseFeedbackMenuFallback =
+      chatCategory === 'feedback' &&
+      !this.isExerciseOnlyGeneralQuestion(input) &&
+      (this.hasFoodOrMealCardSignal(input) ||
+        this.isContextualNutritionQuestion(input) ||
+        this.isContextualFoodFollowUp(input));
     const classification: ChatClassification = {
       chat_category: chatCategory,
       menu_names:
         chatCategory === 'feedback'
           ? this.normalizeFreeTextArray(
               data?.menu_names,
-              this.extractFeedbackMenuNamesFallback(input, chatContext),
+              shouldUseFeedbackMenuFallback
+                ? this.extractFeedbackMenuNamesFallback(input, chatContext)
+                : [],
             )
           : chatCategory === 'general'
             ? []
@@ -8721,6 +8729,7 @@ ${input}
       classification.menu_names.length === 0 &&
       (classification.chat_category === 'general' ||
         classification.chat_category === 'feedback') &&
+      !this.isExerciseOnlyGeneralQuestion(input) &&
       (this.isContextualNutritionQuestion(input) ||
         this.isContextualFoodFollowUp(input)) &&
       this.hasPreviousFoodContext(chatContext)
@@ -8853,13 +8862,22 @@ ${input}
       this.normalizeContextAction(data?.context_action) ??
       this.inferContextAction(input, chatCategory, contextDependent);
 
+    const shouldUseFeedbackMenuFallback =
+      chatCategory === 'feedback' &&
+      !this.isExerciseOnlyGeneralQuestion(input) &&
+      (this.hasFoodOrMealCardSignal(input) ||
+        this.isContextualNutritionQuestion(input) ||
+        this.isContextualFoodFollowUp(input));
+
     return {
       chat_category: chatCategory,
       menu_names:
         chatCategory === 'feedback'
           ? this.normalizeFreeTextArray(
               data?.menu_names,
-              this.extractFeedbackMenuNamesFallback(input, chatContext),
+              shouldUseFeedbackMenuFallback
+                ? this.extractFeedbackMenuNamesFallback(input, chatContext)
+                : [],
             )
           : chatCategory === 'general'
             ? []
@@ -8884,6 +8902,10 @@ ${input}
     classification: ChatClassification,
     chatContext: ChatContextSummary,
   ): boolean {
+    if (this.isExerciseOnlyGeneralQuestion(input)) {
+      return true;
+    }
+
     if (classification.chat_category === 'general') {
       return false;
     }
@@ -8912,6 +8934,22 @@ ${input}
     );
   }
 
+  private isExerciseOnlyGeneralQuestion(input: string): boolean {
+    const normalized = input.replace(/\s+/g, '').toLowerCase();
+    const hasWorkoutSignal =
+      /(운동|근력|유산소|웨이트|헬스|근육|근손실|근성장|스트렝스|스쿼트|벤치프레스|데드리프트|오버헤드프레스|사레레|런닝|러닝|달리기|걷기|조깅|스트레칭|휴식|회복|어깨운동|가슴운동|등운동|하체운동|상체운동|복근운동)/.test(
+        normalized,
+      );
+    const hasWorkoutContextTerm =
+      /(세트|반복|횟수|중량|무게|강도|루틴)/.test(normalized) &&
+      /(운동|웨이트|헬스|근력|근육|근성장|근손실)/.test(normalized);
+
+    return (
+      (hasWorkoutSignal || hasWorkoutContextTerm) &&
+      !this.hasFoodOrMealCardSignal(input)
+    );
+  }
+
   private isContextDependentInput(input: string): boolean {
     const normalized = input.replace(/\s+/g, '');
     return /(그거|그것|이거|이것|저거|저것|아까|방금|전에|이전|다른거|다른것|다른메뉴|비슷한|말고|빼고|제외)/.test(
@@ -8928,8 +8966,26 @@ ${input}
 
   private isContextualFoodFollowUp(input: string): boolean {
     const normalized = input.replace(/\s+/g, '');
-    return /(그거|그것|이거|이것|거기에|여기에|같이|함께|곁들|반찬없이|밥이랑만|밥이랑|밥만|밥추가|국물이랑|먹어도돼|괜찮아|어때)/.test(
+    const explicitFoodAction =
+      /(먹어도돼|먹어도될까|먹어도괜찮|마셔도돼|마셔도될까|마셔도괜찮|먹었어|먹었다|먹음|마셨어|마셨다|식사했|기록해|먹어|마셔)/.test(
+        normalized,
+      );
+    const hasFoodContextWord =
+      /(식사|끼니|밥|반찬|국물|메뉴|음식|요리|칼로리|열량|영양성분|탄수|단백질|지방|당류|나트륨|포만감|간식|야식|아침|점심|저녁)/.test(
+        normalized,
+      );
+    const hasContextPointer =
+      /(그거|그것|이거|이것|저거|저것|거기에|여기에|같이|함께|곁들|아까|방금|전에|이전|위에|앞에|반찬없이|밥이랑만|밥이랑|밥만|밥추가|국물이랑)/.test(
+        normalized,
+      );
+    const hasDecisionPhrase = /(괜찮아|어때|될까|나아|좋아)/.test(
       normalized,
+    );
+
+    return (
+      explicitFoodAction ||
+      (hasFoodContextWord && hasContextPointer) ||
+      (hasContextPointer && hasDecisionPhrase)
     );
   }
 
