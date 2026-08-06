@@ -24,6 +24,7 @@
     "db:migration:run": "npm run db:typeorm -- migration:run",
     "db:migration:revert": "npm run db:typeorm -- migration:revert",
     "db:migration:show": "npm run db:typeorm -- migration:show",
+    "exercise:thumbnail-images": "node scripts/generate-workout-thumbnails.js",
     "vector:index-menus": "ts-node -r tsconfig-paths/register src/vector/scripts/index-menu-vectors.ts",
     "vector:test-search": "ts-node -r tsconfig-paths/register src/vector/scripts/test-vector-search.ts"
   },
@@ -68,6 +69,7 @@
     "punycode": "^2.3.1",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.3",
     "swagger-themes": "^1.4.3",
     "typeorm": "^0.3.20",
     "uuid": "^11.0.5"

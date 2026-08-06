@@ -28,6 +28,14 @@ export class WorkoutDetailResponseDto {
   workout_type: 'cardio' | 'weight';
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: '운동 MET 값',
+    example: 5,
+  })
+  met: number | null;
+
+  @ApiProperty({
     type: String,
     nullable: true,
     description: '운동 장비',

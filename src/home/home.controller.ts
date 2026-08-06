@@ -54,6 +54,7 @@ import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-r
 import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutrition-label-recognition-response-dto';
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
+import { WorkoutCsvImportResponseDto } from './dto/response-dto/workout-csv-import-response-dto';
 import { UpsertFolderRequestDto } from './dto/request-dto/upsert-folder-request-dto';
 import { FolderIdResponseDto } from './dto/response-dto/folder-id-response-dto';
 import { FolderListRequestDto } from './dto/request-dto/folder-list-request-dto';
@@ -1075,6 +1076,46 @@ export class HomeController {
     @UploadedFile() file: Express.Multer.File,
   ): Promise<MenuCsvImportResponseDto> {
     return await this.homeService.importMenusCsv(file);
+  }
+
+  // CSV 운동 등록
+  @ApiOperation({
+    summary: 'CSV 운동 등록',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: 'CSV 운동 등록 성공',
+    message: 'Workouts imported successfully',
+    model: WorkoutCsvImportResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'Bad Request  \ncsv 파일 누락 또는 CSV 형식 오류',
+    message: 'csv file is required',
+    error: 'BadRequestException',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description: '운동 CSV 업로드',
+    schema: {
+      type: 'object',
+      properties: {
+        csv: {
+          type: 'string',
+          format: 'binary',
+          description: '운동 CSV 파일',
+        },
+      },
+      required: ['csv'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('csv'))
+  @ResponseMsg('Workouts imported successfully')
+  @Post('/importWorkoutsCsv')
+  async importWorkoutsCsv(
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<WorkoutCsvImportResponseDto> {
+    return await this.homeService.importWorkoutsCsv(file);
   }
 
   // 영양성분 수정

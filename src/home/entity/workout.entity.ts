@@ -35,6 +35,9 @@ export class WorkoutEntity {
   @Column({ type: 'varchar', length: 255, name: 'equipments', nullable: true })
   equipments: string | null;
 
+  @Column({ type: 'float', name: 'met', nullable: true })
+  met: number | null;
+
   @Column({ type: 'simple-json', name: 'body_parts', nullable: true })
   body_parts: string[] | null;
 

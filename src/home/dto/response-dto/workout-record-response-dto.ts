@@ -49,6 +49,14 @@ export class WorkoutRecordItemResponseDto {
   @ApiProperty({
     type: Number,
     nullable: true,
+    description: '운동 MET 값',
+    example: 5,
+  })
+  met: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
     description: '유산소 강도. 0: 낮음, 1: 보통, 2: 높음',
     example: 1,
   })

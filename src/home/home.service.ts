@@ -55,6 +55,7 @@ import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutriti
 import { NutritionLabelRecognition } from './types/nutrition-label-recognition.type';
 import { FoodImageRecognitionResponseDto } from './dto/response-dto/food-image-recognition-response-dto';
 import { MenuCsvImportResponseDto } from './dto/response-dto/menu-csv-import-response-dto';
+import { WorkoutCsvImportResponseDto } from './dto/response-dto/workout-csv-import-response-dto';
 import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
@@ -2614,6 +2615,104 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     return new MenuCsvImportResponseDto(savedMenus.length);
   }
 
+  // CSV 운동 등록
+  async importWorkoutsCsv(
+    file: Express.Multer.File,
+  ): Promise<WorkoutCsvImportResponseDto> {
+    if (!file) {
+      throw new BadRequestException('csv file is required');
+    }
+
+    const csvText = this.decodeCsvBuffer(file.buffer);
+    const rows = this.parseCsv(csvText);
+
+    if (rows.length < 2) {
+      throw new BadRequestException('csv must include header and data rows');
+    }
+
+    const headers = rows[0].map((header) => header.trim());
+    const dataRows = rows
+      .slice(1)
+      .filter((row) => row.some((value) => value.trim().length > 0));
+    const errors: string[] = [];
+    let insertedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    for (let index = 0; index < dataRows.length; index += 1) {
+      try {
+        const workout = this.toWorkoutFromCsvRow(headers, dataRows[index]);
+
+        if (!workout) {
+          skippedCount += 1;
+          continue;
+        }
+
+        let existingWorkout: WorkoutEntity | null = null;
+
+        if (workout.gif) {
+          existingWorkout = await this.workoutRepository.findOne({
+            where: { gif: workout.gif },
+          });
+        }
+
+        if (!existingWorkout && workout.image) {
+          existingWorkout = await this.workoutRepository.findOne({
+            where: { image: workout.image },
+          });
+        }
+
+        if (!existingWorkout && !workout.gif && !workout.image) {
+          existingWorkout = await this.workoutRepository.findOne({
+            where: {
+              name: workout.name,
+              workout_type: workout.workout_type,
+            },
+          });
+        }
+
+        if (existingWorkout) {
+          Object.assign(existingWorkout, {
+            name: workout.name,
+            image: workout.image,
+            gif: workout.gif,
+            workout_type: workout.workout_type,
+            equipments: workout.equipments,
+            met: workout.met,
+            body_parts: workout.body_parts,
+          });
+
+          await this.workoutRepository.save(existingWorkout);
+          updatedCount += 1;
+          continue;
+        }
+
+        await this.workoutRepository.save(workout);
+        insertedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+
+        if (errors.length < 20) {
+          errors.push(
+            `row ${index + 2}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
+
+    return new WorkoutCsvImportResponseDto(
+      dataRows.length,
+      insertedCount,
+      updatedCount,
+      skippedCount,
+      failedCount,
+      errors,
+    );
+  }
+
   // 영양성분 수정
   async modifyMenu(
     user: UserEntity,
@@ -2853,6 +2952,30 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     });
   }
 
+  // CSV 행을 운동 엔티티로 변환
+  private toWorkoutFromCsvRow(
+    headers: string[],
+    row: string[],
+  ): WorkoutEntity | null {
+    const valueByField = this.mapWorkoutCsvRow(headers, row);
+    const name = this.asNullableString(valueByField.name);
+    const workoutType = this.asWorkoutCsvType(valueByField.workout_type);
+
+    if (!name || !workoutType) {
+      return null;
+    }
+
+    return this.workoutRepository.create({
+      name,
+      image: this.asNullableString(valueByField.image),
+      gif: this.asNullableString(valueByField.gif),
+      workout_type: workoutType,
+      equipments: this.asNullableString(valueByField.equipments),
+      met: this.asNullableNumber(valueByField.met),
+      body_parts: this.asWorkoutCsvBodyParts(valueByField.body_parts),
+    });
+  }
+
   // CSV 헤더를 엔티티 필드명에 매칭
   private mapCsvRow(
     headers: string[],
@@ -2897,6 +3020,111 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     });
 
     return valueByField;
+  }
+
+  // CSV 헤더를 운동 엔티티 필드명에 매칭
+  private mapWorkoutCsvRow(
+    headers: string[],
+    row: string[],
+  ): Record<string, string | undefined> {
+    const valueByField: Record<string, string | undefined> = {};
+    const mappings: Array<{ field: string; aliases: string[] }> = [
+      {
+        field: 'name',
+        aliases: ['name', 'workout_name', 'workoutName', '운동명', '운동 이름'],
+      },
+      {
+        field: 'image',
+        aliases: [
+          'image',
+          'image_url',
+          'imageUrl',
+          'workout_image',
+          'workoutImage',
+        ],
+      },
+      {
+        field: 'gif',
+        aliases: ['gif', 'gif_url', 'gifUrl', 'workout_gif', 'workoutGif'],
+      },
+      {
+        field: 'workout_type',
+        aliases: ['workout_type', 'workoutType', 'type', '운동유형', '운동 유형'],
+      },
+      {
+        field: 'equipments',
+        aliases: ['equipments', 'equipment', '장비', '운동기구'],
+      },
+      { field: 'met', aliases: ['met'] },
+      {
+        field: 'body_parts',
+        aliases: [
+          'body_parts',
+          'bodyParts',
+          'body_part',
+          'bodyPart',
+          '부위',
+          '운동부위',
+          '운동 부위',
+        ],
+      },
+    ];
+
+    headers.forEach((header, index) => {
+      const normalizedHeader = this.normalizeWorkoutCsvHeader(header);
+      const matched = mappings.find((mapping) =>
+        mapping.aliases.some(
+          (alias) =>
+            normalizedHeader === this.normalizeWorkoutCsvHeader(alias),
+        ),
+      );
+
+      if (matched) {
+        valueByField[matched.field] = row[index];
+      }
+    });
+
+    return valueByField;
+  }
+
+  private normalizeWorkoutCsvHeader(value: string): string {
+    return value
+      .replace(/^\uFEFF/, '')
+      .replace(/[\s_-]/g, '')
+      .toLowerCase();
+  }
+
+  private asWorkoutCsvType(value: unknown): WorkoutType | null {
+    const text = this.asNullableString(value)?.toLowerCase();
+
+    if (!text) {
+      return null;
+    }
+
+    if (text === 'cardio' || text === '유산소') {
+      return 'cardio';
+    }
+
+    if (text === 'weight' || text === '근력' || text === '웨이트') {
+      return 'weight';
+    }
+
+    return null;
+  }
+
+  private asWorkoutCsvBodyParts(value: unknown): string[] | null {
+    const text = this.asNullableString(value);
+
+    if (!text) {
+      return null;
+    }
+
+    const bodyParts = text
+      .split(/[|,;/]/)
+      .map((bodyPart) => bodyPart.trim())
+      .filter((bodyPart) => bodyPart.length > 0);
+
+    return bodyParts.length > 0 ? Array.from(new Set(bodyParts)) : null;
   }
 
   // CSV 중량 단위 변환
@@ -4054,6 +4282,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
         workout_name: workout.name,
         workout_image: workout.image ?? null,
         workout_type: workout.workout_type,
+        met: workout.met ?? null,
       })),
       nextCursor,
     );
@@ -4075,6 +4304,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       workout_name: workout.name,
       workout_gif: workout.gif ?? null,
       workout_type: workout.workout_type,
+      met: workout.met ?? null,
       equipments: workout.equipments ?? null,
       body_parts: this.toWorkoutBodyParts(workout.body_parts),
     };
@@ -4190,6 +4420,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       workout_duration: roundToOneDecimal(record.workout_duration),
       burned_calories: roundToOneDecimal(record.burned_calories),
       workout_type: record.workout_type,
+      met: workout.met ?? null,
       intensity:
         record.workout_type === 'cardio'
           ? ((record.intensity ?? null) as 0 | 1 | 2 | null)
