@@ -4330,7 +4330,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
     this.validateWorkoutRecordRequest(dto);
 
-    const date = this.getTodayKstDateString();
+    const date = dto.date;
 
     await this.workoutRecordRepository.manager.transaction(async (manager) => {
       const workoutRecordRepository =

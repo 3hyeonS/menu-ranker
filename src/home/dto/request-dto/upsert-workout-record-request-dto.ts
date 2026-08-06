@@ -2,8 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsIn,
   IsNumber,
+  IsNotEmpty,
   IsOptional,
   Max,
   Min,
@@ -41,6 +43,15 @@ export class WorkoutSetRequestDto {
 }
 
 export class UpsertWorkoutRecordRequestDto {
+  @ApiProperty({
+    type: String,
+    description: '운동 기록 날짜',
+    example: '2026-07-28',
+  })
+  @IsNotEmpty()
+  @IsDateString()
+  date: string;
+
   @ApiProperty({
     type: Number,
     description: '운동 id',
