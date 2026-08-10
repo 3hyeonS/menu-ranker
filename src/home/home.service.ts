@@ -4493,7 +4493,6 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
         : null,
       equipment_category: workout.equipment_category ?? null,
       equipment_detail: workout.equipment_detail ?? null,
-      equipment_original_detail: workout.equipment_original_detail ?? null,
     };
   }
 

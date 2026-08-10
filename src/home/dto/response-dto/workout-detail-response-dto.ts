@@ -80,11 +80,4 @@ export class WorkoutDetailResponseDto {
   })
   equipment_detail: string | null;
 
-  @ApiProperty({
-    type: String,
-    nullable: true,
-    description: '원본 운동 데이터의 기구 상세값',
-    example: 'lever sled 45 degree leg press',
-  })
-  equipment_original_detail: string | null;
 }
