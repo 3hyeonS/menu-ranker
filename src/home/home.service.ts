@@ -2678,9 +2678,12 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
             image: workout.image,
             gif: workout.gif,
             workout_type: workout.workout_type,
-            equipments: workout.equipments,
             met: workout.met,
-            body_parts: workout.body_parts,
+            body_part_major: workout.body_part_major,
+            body_part_minor: workout.body_part_minor,
+            equipment_category: workout.equipment_category,
+            equipment_detail: workout.equipment_detail,
+            equipment_original_detail: workout.equipment_original_detail,
           });
 
           await this.workoutRepository.save(existingWorkout);
@@ -2965,14 +2968,41 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       return null;
     }
 
+    const rawBodyParts = this.asWorkoutCsvBodyParts(valueByField.body_parts);
+    const rawEquipment =
+      this.asNullableString(valueByField.equipment_original_detail) ??
+      this.asNullableString(valueByField.equipments);
+    const derivedBodyPartClassification = this.classifyWorkoutBodyParts(
+      rawBodyParts,
+      workoutType,
+    );
+    const derivedEquipmentClassification = this.classifyWorkoutEquipment(rawEquipment);
+    const csvBodyPartMajor = this.asNullableString(
+      valueByField.body_part_major,
+    );
+    const csvBodyPartMinor = this.asWorkoutCsvBodyParts(
+      valueByField.body_part_minor,
+    );
+    const csvEquipmentCategory = this.asNullableString(
+      valueByField.equipment_category,
+    );
+    const csvEquipmentDetail = this.asNullableString(
+      valueByField.equipment_detail,
+    );
+
     return this.workoutRepository.create({
       name,
       image: this.asNullableString(valueByField.image),
       gif: this.asNullableString(valueByField.gif),
       workout_type: workoutType,
-      equipments: this.asNullableString(valueByField.equipments),
       met: this.asNullableNumber(valueByField.met),
-      body_parts: this.asWorkoutCsvBodyParts(valueByField.body_parts),
+      body_part_major: csvBodyPartMajor ?? derivedBodyPartClassification.major,
+      body_part_minor: csvBodyPartMinor ?? derivedBodyPartClassification.minor,
+      equipment_category:
+        csvEquipmentCategory ?? derivedEquipmentClassification.category,
+      equipment_detail:
+        csvEquipmentDetail ?? derivedEquipmentClassification.detail,
+      equipment_original_detail: rawEquipment,
     });
   }
 
@@ -3068,6 +3098,35 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
           '운동 부위',
         ],
       },
+      {
+        field: 'body_part_major',
+        aliases: ['body_part_major', 'bodyPartMajor', '부위대분류'],
+      },
+      {
+        field: 'body_part_minor',
+        aliases: ['body_part_minor', 'bodyPartMinor', '부위소분류'],
+      },
+      {
+        field: 'equipment_category',
+        aliases: ['equipment_category', 'equipmentCategory', '기구대분류'],
+      },
+      {
+        field: 'equipment_detail',
+        aliases: ['equipment_detail', 'equipmentDetail', '기타기구'],
+      },
+      {
+        field: 'equipment_original_detail',
+        aliases: [
+          'equipment_original_detail',
+          'equipmentOriginalDetail',
+          'original_equipment_detail',
+          'originalEquipmentDetail',
+          'raw_equipment',
+          'rawEquipment',
+          '원본기구',
+          '원본기구명',
+        ],
+      },
     ];
 
     headers.forEach((header, index) => {
@@ -3125,6 +3184,107 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       .filter((bodyPart) => bodyPart.length > 0);
 
     return bodyParts.length > 0 ? Array.from(new Set(bodyParts)) : null;
+  }
+
+  private classifyWorkoutBodyParts(
+    bodyParts: string[] | null,
+    workoutType: WorkoutType,
+  ): { major: string; minor: string[] | null } {
+    if (workoutType === 'cardio') {
+      return { major: '유산소', minor: null };
+    }
+
+    const values = bodyParts ?? [];
+    const minor = values.filter((value) =>
+      ['복부', '허리', '상완', '전완', '종아리', '허벅지', '목'].includes(
+        value,
+      ),
+    );
+
+    if (values.some((value) => ['허벅지', '종아리'].includes(value))) {
+      return { major: '하체', minor: minor.length > 0 ? minor : null };
+    }
+
+    if (values.some((value) => ['상완', '전완'].includes(value))) {
+      return { major: '팔', minor: minor.length > 0 ? minor : null };
+    }
+
+    if (values.some((value) => ['복부', '허리', '목'].includes(value))) {
+      return { major: '코어', minor: minor.length > 0 ? minor : null };
+    }
+
+    const major = values.find((value) =>
+      ['가슴', '등', '하체', '어깨', '팔', '코어', '유산소'].includes(value),
+    );
+
+    return { major: major ?? '코어', minor: minor.length > 0 ? minor : null };
+  }
+
+  private classifyWorkoutEquipment(equipment: string | null): {
+    normalizedEquipment: string | null;
+    category: string | null;
+    detail: string | null;
+  } {
+    if (!equipment) {
+      return { normalizedEquipment: null, category: '맨몸', detail: null };
+    }
+
+    const normalizedEquipment = this.normalizeWorkoutEquipment(equipment);
+    const value = normalizedEquipment.toLowerCase();
+    let category: string;
+
+    if (value.includes('스미스 머신')) {
+      category = '스미스 머신';
+    } else if (value.includes('케이블 머신')) {
+      category = '케이블 머신';
+    } else if (value.includes('덤벨')) {
+      category = '덤벨';
+    } else if (value.includes('케틀벨')) {
+      category = '케틀벨';
+    } else if (value.includes('바벨')) {
+      category = '바벨';
+    } else if (value.includes('밴드')) {
+      category = '밴드';
+    } else if (value.includes('맨몸')) {
+      category = '맨몸';
+    } else if (value.includes('폼롤러')) {
+      category = '폼롤러';
+    } else if (value.includes('머신')) {
+      category = '머신';
+    } else {
+      category = '기타';
+    }
+
+    return {
+      normalizedEquipment,
+      category,
+      // 머신은 대분류만으로 실제 장비를 구별할 수 없어 상세명을 함께 보관한다.
+      detail: ['머신', '기타'].includes(category)
+        ? normalizedEquipment
+        : null,
+    };
+  }
+
+  private normalizeWorkoutEquipment(equipment: string): string {
+    const value = equipment.trim();
+    const normalizedKey = value.toLowerCase().replace(/[\s_-]/g, '');
+    const aliases: Record<string, string> = {
+      ez바벨: '이지 바벨',
+      olympicbarbell: '올림픽 바벨',
+      trapbar: '트랩 바벨',
+      hammer: '해머',
+      skiergmachine: '스키에르그 머신',
+      stationarybike: '고정식 자전거',
+      stepmillmachine: '스텝밀 머신',
+      tire: '타이어',
+      upperbodyergometer: '상체 에르고미터',
+      케이블: '케이블 머신',
+      저항밴드: '밴드',
+      롤러: '폼롤러',
+      휠롤러: '폼롤러',
+    };
+
+    return aliases[normalizedKey] ?? value;
   }
 
   // CSV 중량 단위 변환
@@ -4240,8 +4400,11 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   ): Promise<WorkoutSearchResponseDto> {
     const limit = Math.min(Math.max(dto.limit, 1), 100);
     const input = dto.input.trim();
-    const bodyParts = dto.body_parts?.trim();
-    const equipments = dto.equipments?.trim();
+    const bodyPartMajor = dto.body_part_major?.trim();
+    const bodyPartMinor = dto.body_part_minor?.trim();
+    const equipmentCategory = dto.equipment_category?.trim();
+    const equipmentDetail = dto.equipment_detail?.trim();
+    const equipmentOriginalDetail = dto.equipment_original_detail?.trim();
 
     const query = this.workoutRepository
       .createQueryBuilder('workout')
@@ -4251,16 +4414,35 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       query.andWhere('workout.name LIKE :input', { input: `%${input}%` });
     }
 
-    if (bodyParts) {
-      query.andWhere('workout.body_parts LIKE :bodyParts', {
-        bodyParts: `%${bodyParts}%`,
+    if (bodyPartMajor) {
+      query.andWhere('workout.body_part_major = :bodyPartMajor', {
+        bodyPartMajor,
       });
     }
 
-    if (equipments) {
-      query.andWhere('workout.equipments LIKE :equipments', {
-        equipments: `%${equipments}%`,
+    if (bodyPartMinor) {
+      query.andWhere('workout.body_part_minor LIKE :bodyPartMinor', {
+        bodyPartMinor: `%${bodyPartMinor}%`,
       });
+    }
+
+    if (equipmentCategory) {
+      query.andWhere('workout.equipment_category = :equipmentCategory', {
+        equipmentCategory,
+      });
+    }
+
+    if (equipmentDetail) {
+      query.andWhere('workout.equipment_detail LIKE :equipmentDetail', {
+        equipmentDetail: `%${equipmentDetail}%`,
+      });
+    }
+
+    if (equipmentOriginalDetail) {
+      query.andWhere(
+        'workout.equipment_original_detail LIKE :equipmentOriginalDetail',
+        { equipmentOriginalDetail: `%${equipmentOriginalDetail}%` },
+      );
     }
 
     if (dto.cursor !== null && dto.cursor !== undefined) {
@@ -4305,8 +4487,13 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       workout_gif: workout.gif ?? null,
       workout_type: workout.workout_type,
       met: workout.met ?? null,
-      equipments: workout.equipments ?? null,
-      body_parts: this.toWorkoutBodyParts(workout.body_parts),
+      body_part_major: workout.body_part_major ?? null,
+      body_part_minor: workout.body_part_minor
+        ? this.toWorkoutBodyParts(workout.body_part_minor)
+        : null,
+      equipment_category: workout.equipment_category ?? null,
+      equipment_detail: workout.equipment_detail ?? null,
+      equipment_original_detail: workout.equipment_original_detail ?? null,
     };
   }
 

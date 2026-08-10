@@ -32,14 +32,43 @@ export class WorkoutEntity {
   })
   workout_type: WorkoutType;
 
-  @Column({ type: 'varchar', length: 255, name: 'equipments', nullable: true })
-  equipments: string | null;
-
   @Column({ type: 'float', name: 'met', nullable: true })
   met: number | null;
 
-  @Column({ type: 'simple-json', name: 'body_parts', nullable: true })
-  body_parts: string[] | null;
+  @Column({
+    type: 'varchar',
+    length: 20,
+    name: 'body_part_major',
+    nullable: true,
+  })
+  body_part_major: string | null;
+
+  @Column({ type: 'simple-json', name: 'body_part_minor', nullable: true })
+  body_part_minor: string[] | null;
+
+  @Column({
+    type: 'varchar',
+    length: 30,
+    name: 'equipment_category',
+    nullable: true,
+  })
+  equipment_category: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 255,
+    name: 'equipment_detail',
+    nullable: true,
+  })
+  equipment_detail: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 255,
+    name: 'equipment_original_detail',
+    nullable: true,
+  })
+  equipment_original_detail: string | null;
 
   @CreateDateColumn({
     type: 'datetime',
