@@ -16,6 +16,7 @@ import { MenuEntity } from '../home/entity/menu.entity';
 import { MealEntity } from '../home/entity/meal.entity';
 import { MealMenuEntity } from '../home/entity/meal-menu.entity';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
+import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
 import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
@@ -27,6 +28,11 @@ import { ChatRecommendationBasisResponseDto } from './dto/response-dto/chat-reco
 import { ChatRecommendItemResponseDto } from './dto/response-dto/chat-recommend-item-response-dto';
 import { ChatRecognizedCandidateResponseDto } from './dto/response-dto/chat-recognized-candidate-response-dto';
 import { ChatHistoryEntity } from './entity/chat-history.entity';
+import {
+  ChatConversationSessionEntity,
+  ChatConversationSessionSummaryStatus,
+} from './entity/chat-conversation-session.entity';
+import { ChatUserMemoryEntity } from './entity/chat-user-memory.entity';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
 import { ChatHistoryItemResponseDto } from './dto/response-dto/chat-history-item-response-dto';
 import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
@@ -67,6 +73,19 @@ const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
 const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
 const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+const CHAT_SESSION_IDLE_MS = 3 * 60 * 60 * 1000;
+const CHAT_SESSION_SUMMARY_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
+const CHAT_LONG_TERM_COMPACTION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const CHAT_SUMMARY_PROCESSING_STALE_MS = 10 * 60 * 1000;
+const CHAT_RECENT_TURN_LIMIT = 8;
+const CHAT_SESSION_SUMMARY_LIMIT = 10;
+const CHAT_SESSION_SUMMARY_TURN_LIMIT = 50;
+const CHAT_SESSION_RECONCILE_HISTORY_LIMIT = 200;
+const CHAT_SESSION_MAINTENANCE_BATCH_SIZE = 2;
+const CHAT_LONG_TERM_COMPACTION_BATCH_SIZE = 10;
+const CHAT_RECORD_CONTEXT_DAYS = 3;
+const CHAT_CONSUMPTION_INTERPRETATION =
+  '추천 카드, 피드백 카드, AI 제안, 단순 메뉴 언급은 실제 섭취가 아니다. meal_record가 있거나 사용자가 명시적으로 먹었다고 말한 경우만 섭취 사실로 본다.';
 const FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS = [
   '볶음밥',
   '비빔밥',
@@ -195,6 +214,10 @@ type ChatContextSummaryItem = {
 
 type ChatContextSummary = {
   messages: ChatContextSummaryItem[];
+  session_summaries: ChatSessionSummaryItem[];
+  long_term_profile_traits: string | null;
+  recent_meal_records_3_days: RecentMealRecordContextItem[];
+  recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
   previous_user_input: string | null;
   previous_category: ChatCategory | null;
   previous_recommended_menu_names: string[];
@@ -202,6 +225,36 @@ type ChatContextSummary = {
   previous_brand: string | null;
   previous_category_name: string | null;
   previous_meal_time: number | null;
+};
+
+type ChatSessionSummaryItem = {
+  started_at: string;
+  ended_at: string;
+  summary: string;
+};
+
+type RecentMealRecordContextItem = {
+  date: string;
+  meal_time: number;
+  meal_time_label: string;
+  menus: Array<{
+    name: string;
+    quantity: number;
+  }>;
+};
+
+type RecentWorkoutRecordContextItem = {
+  date: string;
+  workout_name: string;
+  workout_type: string;
+  duration_minutes: number;
+  burned_calories: number;
+  intensity: number | null;
+  sets: Array<{
+    order: number;
+    weight: number;
+    reps: number;
+  }>;
 };
 
 type ChatUserMenuSearchRawRow = {
@@ -244,6 +297,11 @@ type LightweightChatContext = {
   previous_discussed_food_names_not_consumed: string[];
   previous_brand: string | null;
   previous_category_name: string | null;
+  session_summaries: ChatSessionSummaryItem[];
+  long_term_profile_traits: string | null;
+  consumption_interpretation: string;
+  recent_meal_records_3_days: RecentMealRecordContextItem[];
+  recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
 };
 
 type ParsedChatIntent = {
@@ -441,6 +499,11 @@ type ChatTimingLogger = {
 export class ChatService {
   private readonly mealTimeLabelMap = ['아침', '점심', '저녁', '간식', '야식'];
   private readonly mealTimeShareMap = [0.24, 0.34, 0.28, 0.08, 0.06];
+  private readonly conversationMemoryMaintenanceUsers = new Set<number>();
+  private readonly conversationSessionIdleTimers = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+  >();
   private readonly s3: S3Client;
   private readonly bucketName: string;
 
@@ -457,8 +520,14 @@ export class ChatService {
     private readonly mealRepository: Repository<MealEntity>,
     @InjectRepository(MealMenuEntity)
     private readonly mealMenuRepository: Repository<MealMenuEntity>,
+    @InjectRepository(WorkoutRecordEntity)
+    private readonly workoutRecordRepository: Repository<WorkoutRecordEntity>,
     @InjectRepository(ChatHistoryEntity)
     private readonly chatHistoryRepository: Repository<ChatHistoryEntity>,
+    @InjectRepository(ChatConversationSessionEntity)
+    private readonly conversationSessionRepository: Repository<ChatConversationSessionEntity>,
+    @InjectRepository(ChatUserMemoryEntity)
+    private readonly chatUserMemoryRepository: Repository<ChatUserMemoryEntity>,
     private readonly httpService: HttpService,
     @Optional()
     private readonly menuVectorService?: MenuVectorService,
@@ -621,12 +690,21 @@ export class ChatService {
       chatContext,
     );
     if (
-      this.shouldForceGeneralWithoutMenuCards(input, classification, chatContext)
+      this.shouldForceGeneralWithoutMenuCards(
+        input,
+        classification,
+        chatContext,
+      )
     ) {
       timing.mark('non_food_input_forced_general', {
         originalChatCategory: classification.chat_category,
       });
-      return await this.answerGeneralQuestion(user, userInfo, input, chatContext);
+      return await this.answerGeneralQuestion(
+        user,
+        userInfo,
+        input,
+        chatContext,
+      );
     }
 
     if (classification.chat_category === 'feedback') {
@@ -940,7 +1018,7 @@ export class ChatService {
       );
       timing.mark('image_uploaded');
 
-      await this.chatHistoryRepository.save(
+      await this.saveNewChatHistory(
         this.chatHistoryRepository.create({
           input_text: '음식 사진 기반 피드백',
           response_payload: response as unknown as Record<string, any>,
@@ -1029,7 +1107,7 @@ export class ChatService {
       );
       timing.mark('image_uploaded');
 
-      await this.chatHistoryRepository.save(
+      await this.saveNewChatHistory(
         this.chatHistoryRepository.create({
           input_text: '영양성분표 사진 기반 피드백',
           response_payload: response as unknown as Record<string, any>,
@@ -1142,7 +1220,7 @@ export class ChatService {
       return;
     }
 
-    await this.chatHistoryRepository.save(
+    await this.saveNewChatHistory(
       this.chatHistoryRepository.create({
         input_text: `영양성분표 인식값 기반 개인 메뉴 등록: ${menu.name}`,
         response_payload: {
@@ -1300,7 +1378,7 @@ export class ChatService {
           response.image_summary = imageSummary;
         }
 
-        await this.chatHistoryRepository.save(
+        await this.saveNewChatHistory(
           this.chatHistoryRepository.create({
             input_text: input,
             response_payload: response as unknown as Record<string, any>,
@@ -1370,7 +1448,7 @@ export class ChatService {
         response.image_summary = imageSummary;
       }
 
-      await this.chatHistoryRepository.save(
+      await this.saveNewChatHistory(
         this.chatHistoryRepository.create({
           input_text: input,
           response_payload: response as unknown as Record<string, any>,
@@ -1445,7 +1523,7 @@ export class ChatService {
         );
     }
 
-    await this.chatHistoryRepository.save(
+    await this.saveNewChatHistory(
       this.chatHistoryRepository.create({
         input_text: input,
         response_payload: response as unknown as Record<string, any>,
@@ -1559,7 +1637,7 @@ export class ChatService {
     response.chat_category = 'feedback';
     response.intro_message = params.introMessage;
 
-    await this.chatHistoryRepository.save(
+    await this.saveNewChatHistory(
       this.chatHistoryRepository.create({
         input_text: params.input,
         response_payload: response as unknown as Record<string, any>,
@@ -1715,7 +1793,7 @@ export class ChatService {
     );
 
     if (!params.skipHistorySave) {
-      await this.chatHistoryRepository.save(
+      await this.saveNewChatHistory(
         this.chatHistoryRepository.create({
           input_text: input,
           response_payload: response as unknown as Record<string, any>,
@@ -1762,7 +1840,7 @@ export class ChatService {
     response.intro_message = answer.intro_message;
     response.general_answer = answer.general_answer;
 
-    await this.chatHistoryRepository.save(
+    await this.saveNewChatHistory(
       this.chatHistoryRepository.create({
         input_text: input,
         response_payload: response as unknown as Record<string, any>,
@@ -1783,7 +1861,7 @@ export class ChatService {
     response.intro_message = answer.intro_message;
     response.general_answer = answer.general_answer;
 
-    await this.chatHistoryRepository.save(
+    await this.saveNewChatHistory(
       this.chatHistoryRepository.create({
         input_text: input,
         response_payload: response as unknown as Record<string, any>,
@@ -1879,28 +1957,118 @@ export class ChatService {
     );
   }
 
+  private async saveNewChatHistory(
+    history: ChatHistoryEntity,
+  ): Promise<ChatHistoryEntity> {
+    const savedHistory = await this.chatHistoryRepository.save(history);
+    const userId = savedHistory.user?.id;
+
+    if (userId) {
+      void this.reconcileConversationSessions(userId).then(() => {
+        this.scheduleConversationSessionIdleMaintenance(
+          userId,
+          savedHistory.createdAt ?? new Date(),
+        );
+      });
+    }
+
+    return savedHistory;
+  }
+
+  private scheduleConversationSessionIdleMaintenance(
+    userId: number,
+    lastMessageAt: Date,
+  ): void {
+    const existingTimer = this.conversationSessionIdleTimers.get(userId);
+
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const delay = Math.max(
+      0,
+      lastMessageAt.getTime() + CHAT_SESSION_IDLE_MS - Date.now(),
+    );
+    const timer = setTimeout(() => {
+      this.conversationSessionIdleTimers.delete(userId);
+      void this.reconcileConversationSessions(userId).then(() => {
+        this.queueConversationMemoryMaintenance(userId);
+      });
+    }, delay);
+    timer.unref?.();
+    this.conversationSessionIdleTimers.set(userId, timer);
+  }
+
   private async getRecentChatContext(
     userId: number,
-    limit = 5,
+    limit = CHAT_RECENT_TURN_LIMIT,
   ): Promise<ChatContextSummary> {
-    const chatHistoryList = await this.chatHistoryRepository.find({
+    await this.reconcileConversationSessions(userId);
+
+    const activeSession = await this.conversationSessionRepository.findOne({
       where: {
-        user: { id: userId },
+        userId,
+        closedAt: null,
       },
       order: {
-        createdAt: 'DESC',
+        lastMessageAt: 'DESC',
         id: 'DESC',
       },
-      take: limit,
     });
+    const chatHistoryList = activeSession
+      ? await this.chatHistoryRepository.find({
+          where: {
+            user: { id: userId },
+            id: Between(
+              activeSession.firstHistoryId,
+              activeSession.lastHistoryId,
+            ),
+          },
+          order: {
+            createdAt: 'DESC',
+            id: 'DESC',
+          },
+          take: Math.min(Math.max(limit, 1), CHAT_RECENT_TURN_LIMIT),
+        })
+      : [];
     const messages = chatHistoryList
       .reverse()
       .map((chatHistory) => this.toChatContextSummaryItem(chatHistory))
       .filter((item): item is ChatContextSummaryItem => !!item);
     const previousMessage = messages[messages.length - 1] ?? null;
+    const summaryCutoff = new Date(
+      Date.now() - CHAT_SESSION_SUMMARY_RETENTION_MS,
+    );
+    const summarizedSessions = await this.conversationSessionRepository
+      .createQueryBuilder('session')
+      .where('session.userId = :userId', { userId })
+      .andWhere('session.summaryStatus = :summaryStatus', {
+        summaryStatus: ChatConversationSessionSummaryStatus.COMPLETED,
+      })
+      .andWhere('session.closedAt >= :summaryCutoff', { summaryCutoff })
+      .andWhere('session.summary IS NOT NULL')
+      .orderBy('session.closedAt', 'DESC')
+      .addOrderBy('session.id', 'DESC')
+      .take(CHAT_SESSION_SUMMARY_LIMIT)
+      .getMany();
+    const memory = await this.chatUserMemoryRepository.findOneBy({ userId });
+    const [recentMealRecords, recentWorkoutRecords] = await Promise.all([
+      this.getRecentMealRecordContext(userId),
+      this.getRecentWorkoutRecordContext(userId),
+    ]);
+
+    this.queueConversationMemoryMaintenance(userId);
 
     return {
       messages,
+      session_summaries: summarizedSessions.reverse().map((session) => ({
+        started_at: session.startedAt.toISOString(),
+        ended_at: (session.closedAt ?? session.lastMessageAt).toISOString(),
+        summary: session.summary,
+      })),
+      long_term_profile_traits: memory?.profileTraits ?? null,
+      recent_meal_records_3_days: recentMealRecords,
+      recent_workout_records_3_days: recentWorkoutRecords,
       previous_user_input: previousMessage?.user_input ?? null,
       previous_category: previousMessage?.chat_category ?? null,
       previous_recommended_menu_names:
@@ -1910,6 +2078,370 @@ export class ChatService {
       previous_category_name: previousMessage?.desired_category ?? null,
       previous_meal_time: previousMessage?.meal_time ?? null,
     };
+  }
+
+  private async reconcileConversationSessions(userId: number): Promise<void> {
+    try {
+      await this.conversationSessionRepository.manager.transaction(
+        async (manager) => {
+          const lockedUser = await manager
+            .getRepository(UserEntity)
+            .createQueryBuilder('user')
+            .setLock('pessimistic_write')
+            .where('user.id = :userId', { userId })
+            .getOne();
+
+          if (!lockedUser) {
+            return;
+          }
+
+          const sessionRepository = manager.getRepository(
+            ChatConversationSessionEntity,
+          );
+          const historyRepository = manager.getRepository(ChatHistoryEntity);
+          let latestSession = await sessionRepository.findOne({
+            where: { userId },
+            order: { lastHistoryId: 'DESC', id: 'DESC' },
+          });
+          const untrackedHistories = await this.loadUntrackedSessionHistories(
+            userId,
+            latestSession?.lastHistoryId ?? null,
+            historyRepository,
+          );
+
+          for (const history of untrackedHistories) {
+            const historyCreatedAt = history.createdAt ?? new Date();
+            const startsNewSession =
+              !latestSession ||
+              historyCreatedAt.getTime() -
+                latestSession.lastMessageAt.getTime() >=
+                CHAT_SESSION_IDLE_MS;
+
+            if (startsNewSession) {
+              if (latestSession && !latestSession.closedAt) {
+                latestSession.closedAt = latestSession.lastMessageAt;
+                latestSession.summaryStatus =
+                  ChatConversationSessionSummaryStatus.PENDING;
+                latestSession = await sessionRepository.save(latestSession);
+              }
+
+              latestSession = await sessionRepository.save(
+                sessionRepository.create({
+                  userId,
+                  firstHistoryId: history.id,
+                  lastHistoryId: history.id,
+                  startedAt: historyCreatedAt,
+                  lastMessageAt: historyCreatedAt,
+                  closedAt: null,
+                  messageCount: 1,
+                  summarizedMessageCount: 0,
+                  summary: null,
+                  summaryStatus: ChatConversationSessionSummaryStatus.PENDING,
+                  summaryUpdatedAt: null,
+                }),
+              );
+              continue;
+            }
+
+            latestSession.lastHistoryId = history.id;
+            latestSession.lastMessageAt = historyCreatedAt;
+            latestSession.messageCount += 1;
+            latestSession = await sessionRepository.save(latestSession);
+          }
+
+          if (
+            latestSession &&
+            !latestSession.closedAt &&
+            Date.now() - latestSession.lastMessageAt.getTime() >=
+              CHAT_SESSION_IDLE_MS
+          ) {
+            latestSession.closedAt = latestSession.lastMessageAt;
+            latestSession.summaryStatus =
+              ChatConversationSessionSummaryStatus.PENDING;
+            await sessionRepository.save(latestSession);
+          }
+        },
+      );
+    } catch (error) {
+      console.warn('[CHAT] conversation session reconciliation failed', {
+        userId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private async loadUntrackedSessionHistories(
+    userId: number,
+    lastHistoryId: number | null,
+    historyRepository = this.chatHistoryRepository,
+  ): Promise<ChatHistoryEntity[]> {
+    const query = historyRepository
+      .createQueryBuilder('history')
+      .innerJoin('history.user', 'user')
+      .where('user.id = :userId', { userId });
+
+    if (lastHistoryId !== null) {
+      return await query
+        .andWhere('history.id > :lastHistoryId', { lastHistoryId })
+        .orderBy('history.id', 'ASC')
+        .take(CHAT_SESSION_RECONCILE_HISTORY_LIMIT)
+        .getMany();
+    }
+
+    const histories = await query
+      .orderBy('history.id', 'DESC')
+      .take(CHAT_SESSION_RECONCILE_HISTORY_LIMIT)
+      .getMany();
+
+    return histories.reverse();
+  }
+
+  private queueConversationMemoryMaintenance(userId: number): void {
+    if (this.conversationMemoryMaintenanceUsers.has(userId)) {
+      return;
+    }
+
+    this.conversationMemoryMaintenanceUsers.add(userId);
+    void this.runConversationMemoryMaintenance(userId)
+      .catch((error) => {
+        console.warn('[CHAT] conversation memory maintenance failed', {
+          userId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        this.conversationMemoryMaintenanceUsers.delete(userId);
+      });
+  }
+
+  private async runConversationMemoryMaintenance(
+    userId: number,
+  ): Promise<void> {
+    await this.retryStaleConversationSummaries(userId);
+
+    const sessions = await this.conversationSessionRepository
+      .createQueryBuilder('session')
+      .where('session.userId = :userId', { userId })
+      .andWhere('session.closedAt IS NOT NULL')
+      .andWhere('session.summaryStatus IN (:...statuses)', {
+        statuses: [
+          ChatConversationSessionSummaryStatus.PENDING,
+          ChatConversationSessionSummaryStatus.FAILED,
+        ],
+      })
+      .orderBy('session.closedAt', 'ASC')
+      .addOrderBy('session.id', 'ASC')
+      .take(CHAT_SESSION_MAINTENANCE_BATCH_SIZE)
+      .getMany();
+
+    for (const session of sessions) {
+      const claimed = await this.conversationSessionRepository
+        .createQueryBuilder()
+        .update(ChatConversationSessionEntity)
+        .set({
+          summaryStatus: ChatConversationSessionSummaryStatus.PROCESSING,
+          summaryUpdatedAt: new Date(),
+        })
+        .where('id = :sessionId', { sessionId: session.id })
+        .andWhere('summaryStatus IN (:...claimableStatuses)', {
+          claimableStatuses: [
+            ChatConversationSessionSummaryStatus.PENDING,
+            ChatConversationSessionSummaryStatus.FAILED,
+          ],
+        })
+        .execute();
+
+      if (claimed.affected !== 1) {
+        continue;
+      }
+
+      session.summaryStatus = ChatConversationSessionSummaryStatus.PROCESSING;
+      session.summaryUpdatedAt = new Date();
+
+      try {
+        await this.summarizeConversationSession(session);
+      } catch (error) {
+        console.warn('[CHAT] conversation session summary failed', {
+          userId,
+          sessionId: session.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    await this.compactOldConversationSummaries(userId);
+  }
+
+  private async retryStaleConversationSummaries(userId: number): Promise<void> {
+    const staleCutoff = new Date(Date.now() - CHAT_SUMMARY_PROCESSING_STALE_MS);
+
+    await this.conversationSessionRepository
+      .createQueryBuilder()
+      .update(ChatConversationSessionEntity)
+      .set({
+        summaryStatus: ChatConversationSessionSummaryStatus.FAILED,
+      })
+      .where('userId = :userId', { userId })
+      .andWhere('summaryStatus = :processingStatus', {
+        processingStatus: ChatConversationSessionSummaryStatus.PROCESSING,
+      })
+      .andWhere(
+        '(summaryUpdatedAt IS NULL OR summaryUpdatedAt < :staleCutoff)',
+        {
+          staleCutoff,
+        },
+      )
+      .execute();
+  }
+
+  private async summarizeConversationSession(
+    session: ChatConversationSessionEntity,
+  ): Promise<void> {
+    try {
+      const histories = await this.chatHistoryRepository.find({
+        where: {
+          user: { id: session.userId },
+          id: Between(session.firstHistoryId, session.lastHistoryId),
+        },
+        order: { id: 'DESC' },
+        take: CHAT_SESSION_SUMMARY_TURN_LIMIT,
+      });
+      histories.reverse();
+      const transcript = histories.map((history) =>
+        this.toConversationSummaryTranscriptItem(history),
+      );
+      const data = await this.callGeminiJson(
+        `다음은 한 사용자의 식단 코치 대화 세션이야. 이후 대화에서 유용한 사실만 한국어 200~300자로 요약해줘.\n\n규칙:\n- 추천 카드, 피드백 카드, AI 제안, 단순 메뉴 언급은 실제 섭취로 기록하지 마.\n- confirmed_meal_record가 있거나 사용자가 명시적으로 먹었다고 말한 경우만 섭취 사실로 요약해.\n- 사용자 목표, 선호, 거절, 결정, 후속 질문에 필요한 맥락을 우선해.\n- 추측하거나 건강 상태를 진단하지 마.\n- JSON으로 {"summary":"..."}만 반환해.\n\n대화:\n${JSON.stringify(transcript)}`,
+        { timeoutMs: this.getGeminiTextTimeoutMs() },
+      );
+      const summary = this.asNonEmptyString(data?.summary)?.slice(0, 300);
+
+      if (!summary) {
+        throw new Error('Gemini returned an empty conversation summary');
+      }
+
+      session.summary = summary;
+      session.summarizedMessageCount = histories.length;
+      session.summaryStatus = ChatConversationSessionSummaryStatus.COMPLETED;
+      session.summaryUpdatedAt = new Date();
+      await this.conversationSessionRepository.save(session);
+    } catch (error) {
+      session.summaryStatus = ChatConversationSessionSummaryStatus.FAILED;
+      session.summaryUpdatedAt = new Date();
+      await this.conversationSessionRepository.save(session);
+      throw error;
+    }
+  }
+
+  private toConversationSummaryTranscriptItem(
+    history: ChatHistoryEntity,
+  ): Record<string, unknown> {
+    const payload = history.response_payload ?? {};
+    const recommendations = Array.isArray(payload.recommendations)
+      ? payload.recommendations
+      : [];
+    const feedbackMenus = Array.isArray(payload.feedback?.menus)
+      ? payload.feedback.menus
+      : [];
+    const menuNamesById = new Map<number, string>();
+
+    [...recommendations, ...feedbackMenus].forEach((menu) => {
+      const menuId = Number(menu?.menu_id);
+      const menuName = this.asNonEmptyString(menu?.menu_name);
+
+      if (Number.isInteger(menuId) && menuName) {
+        menuNamesById.set(menuId, stripPublicMenuSourcePrefix(menuName));
+      }
+    });
+
+    const confirmedMealRecord = history.meal_record
+      ? {
+          time: history.meal_record.time,
+          menus: history.meal_record.menu_ids.map((menuId, index) => ({
+            menu_id: menuId,
+            menu_name: menuNamesById.get(menuId) ?? null,
+            quantity_g: history.meal_record.menu_quantities[index] ?? null,
+          })),
+        }
+      : null;
+
+    return {
+      user_input: history.input_text,
+      assistant: {
+        category: payload.chat_category ?? null,
+        intro:
+          this.asNonEmptyString(payload.intro_message)?.slice(0, 500) ?? null,
+        answer:
+          this.asNonEmptyString(payload.general_answer)?.slice(0, 1000) ?? null,
+        image_summary:
+          this.asNonEmptyString(payload.image_summary)?.slice(0, 500) ?? null,
+      },
+      suggested_menu_names_not_consumed: this.mergeTextValues(
+        recommendations.map((menu) => menu?.menu_name),
+        feedbackMenus.map((menu) => menu?.menu_name),
+      )
+        .map((name) => stripPublicMenuSourcePrefix(name))
+        .slice(0, 10),
+      confirmed_meal_record: confirmedMealRecord,
+    };
+  }
+
+  private async compactOldConversationSummaries(userId: number): Promise<void> {
+    const compactionCutoff = new Date(
+      Date.now() - CHAT_LONG_TERM_COMPACTION_AGE_MS,
+    );
+    const sessions = await this.conversationSessionRepository
+      .createQueryBuilder('session')
+      .where('session.userId = :userId', { userId })
+      .andWhere('session.summaryStatus = :summaryStatus', {
+        summaryStatus: ChatConversationSessionSummaryStatus.COMPLETED,
+      })
+      .andWhere('session.closedAt < :compactionCutoff', { compactionCutoff })
+      .andWhere('session.summary IS NOT NULL')
+      .orderBy('session.closedAt', 'ASC')
+      .addOrderBy('session.id', 'ASC')
+      .take(CHAT_LONG_TERM_COMPACTION_BATCH_SIZE)
+      .getMany();
+
+    if (sessions.length === 0) {
+      return;
+    }
+
+    const existingMemory = await this.chatUserMemoryRepository.findOneBy({
+      userId,
+    });
+    const data = await this.callGeminiJson(
+      `다음 세션 요약에서 앞으로도 유용한 장기 식단 성향만 압축해줘.\n\n규칙:\n- 반복해서 확인된 목표, 선호, 기피, 생활 패턴만 남겨.\n- 추천받은 메뉴와 실제 섭취를 혼동하지 마.\n- 일회성 상황, 추측, 민감정보, 건강 진단은 저장하지 마.\n- 기존 성향과 충돌하면 더 최근에 반복 확인된 내용을 우선해.\n- 유지할 성향이 없으면 profile_traits를 null로 반환해.\n- JSON으로 {"profile_traits":"... 또는 null"}만 반환해.\n\n기존 성향:\n${existingMemory?.profileTraits ?? '없음'}\n\n세션 요약:\n${JSON.stringify(
+        sessions.map((session) => ({
+          ended_at: (session.closedAt ?? session.lastMessageAt).toISOString(),
+          summary: session.summary,
+        })),
+      )}`,
+      { timeoutMs: this.getGeminiTextTimeoutMs() },
+    );
+    const generatedTraits = this.asNonEmptyString(data?.profile_traits);
+    const memory =
+      existingMemory ??
+      this.chatUserMemoryRepository.create({
+        userId,
+        profileTraits: null,
+        lastCompactedAt: null,
+      });
+
+    if (generatedTraits) {
+      memory.profileTraits = generatedTraits.slice(0, 2000);
+    }
+    memory.lastCompactedAt = new Date();
+    await this.chatUserMemoryRepository.save(memory);
+
+    await this.conversationSessionRepository
+      .createQueryBuilder()
+      .update(ChatConversationSessionEntity)
+      .set({
+        summaryStatus: ChatConversationSessionSummaryStatus.COMPACTED,
+      })
+      .whereInIds(sessions.map((session) => session.id))
+      .execute();
   }
 
   private toChatContextSummaryItem(
@@ -1999,6 +2531,11 @@ export class ChatService {
       ).slice(0, 5),
       previous_brand: chatContext.previous_brand,
       previous_category_name: chatContext.previous_category_name,
+      session_summaries: chatContext.session_summaries,
+      long_term_profile_traits: chatContext.long_term_profile_traits,
+      consumption_interpretation: CHAT_CONSUMPTION_INTERPRETATION,
+      recent_meal_records_3_days: chatContext.recent_meal_records_3_days,
+      recent_workout_records_3_days: chatContext.recent_workout_records_3_days,
     };
   }
 
@@ -2175,7 +2712,7 @@ export class ChatService {
       response.date = parsedPlan.date;
     }
 
-    const chatHistory = await this.chatHistoryRepository.save(
+    const chatHistory = await this.saveNewChatHistory(
       this.chatHistoryRepository.create({
         user,
         input_text: text,
@@ -2529,7 +3066,9 @@ export class ChatService {
             .addSelect('menu.canonical_name', 'menu_canonical_name')
             .where('menu.id IN (:...frequentMenuIds)', { frequentMenuIds })
             .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-            .getRawMany<Omit<ChatUserMenuSearchRawRow, 'record_count' | 'source_priority'>>()
+            .getRawMany<
+              Omit<ChatUserMenuSearchRawRow, 'record_count' | 'source_priority'>
+            >()
         : [];
 
     console.log('[CHAT_MENU_SEARCH_DEBUG]', {
@@ -2559,44 +3098,41 @@ export class ChatService {
       ...personalRows,
       ...matchedMenuSetRows,
       ...frequentRowsWithCounts,
-    ].sort(
-      (left, right) => {
-        const leftScore = this.getChatUserMenuSearchMatchScore(
-          left,
-          keyword,
-          searchName,
-          canonicalName,
-        );
-        const rightScore = this.getChatUserMenuSearchMatchScore(
-          right,
-          keyword,
-          searchName,
-          canonicalName,
-        );
-        const leftRecordCount = Number(left.record_count) || 0;
-        const rightRecordCount = Number(right.record_count) || 0;
-        const leftSourcePriority = Number(left.source_priority) || 0;
-        const rightSourcePriority = Number(right.source_priority) || 0;
-        const leftNameLength =
-          this.getChatUserMenuSearchDisplayName(left).length;
-        const rightNameLength =
-          this.getChatUserMenuSearchDisplayName(right).length;
+    ].sort((left, right) => {
+      const leftScore = this.getChatUserMenuSearchMatchScore(
+        left,
+        keyword,
+        searchName,
+        canonicalName,
+      );
+      const rightScore = this.getChatUserMenuSearchMatchScore(
+        right,
+        keyword,
+        searchName,
+        canonicalName,
+      );
+      const leftRecordCount = Number(left.record_count) || 0;
+      const rightRecordCount = Number(right.record_count) || 0;
+      const leftSourcePriority = Number(left.source_priority) || 0;
+      const rightSourcePriority = Number(right.source_priority) || 0;
+      const leftNameLength = this.getChatUserMenuSearchDisplayName(left).length;
+      const rightNameLength =
+        this.getChatUserMenuSearchDisplayName(right).length;
 
-        if (leftScore !== rightScore) {
-          return leftScore - rightScore;
-        }
+      if (leftScore !== rightScore) {
+        return leftScore - rightScore;
+      }
 
-        if (leftRecordCount !== rightRecordCount) {
-          return rightRecordCount - leftRecordCount;
-        }
+      if (leftRecordCount !== rightRecordCount) {
+        return rightRecordCount - leftRecordCount;
+      }
 
-        if (leftSourcePriority !== rightSourcePriority) {
-          return leftSourcePriority - rightSourcePriority;
-        }
+      if (leftSourcePriority !== rightSourcePriority) {
+        return leftSourcePriority - rightSourcePriority;
+      }
 
-        return leftNameLength - rightNameLength;
-      },
-    );
+      return leftNameLength - rightNameLength;
+    });
 
     const names: string[] = [];
     const seenNames = new Set<string>();
@@ -2639,14 +3175,17 @@ export class ChatService {
     row: ChatUserMenuSearchRawRow,
   ): ChatUserMenuSearchDebugRow {
     return {
-      id: row.source_type === 'set' ? `set:${row.menu_id}` : Number(row.menu_id),
+      id:
+        row.source_type === 'set' ? `set:${row.menu_id}` : Number(row.menu_id),
       name: row.menu_name,
       displayName: this.getChatUserMenuSearchDisplayName(row),
       searchName: row.menu_search_name,
       canonicalName: row.menu_canonical_name,
       recordCount: Number(row.record_count) || 0,
       sourcePriority:
-        row.source_priority === undefined ? undefined : Number(row.source_priority),
+        row.source_priority === undefined
+          ? undefined
+          : Number(row.source_priority),
       sourceType: row.source_type ?? 'menu',
     };
   }
@@ -3027,6 +3566,96 @@ export class ChatService {
     };
   }
 
+  private getRecentRecordDateRange(referenceDate = new Date()): {
+    start: Date;
+    end: Date;
+  } {
+    const end = new Date(referenceDate);
+    end.setHours(23, 59, 59, 999);
+
+    const start = new Date(referenceDate);
+    start.setDate(start.getDate() - (CHAT_RECORD_CONTEXT_DAYS - 1));
+    start.setHours(0, 0, 0, 0);
+
+    return { start, end };
+  }
+
+  private formatLocalDate(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+  }
+
+  private async getRecentMealRecordContext(
+    userId: number,
+  ): Promise<RecentMealRecordContextItem[]> {
+    const { start, end } = this.getRecentRecordDateRange();
+    const meals = await this.mealRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(start, end),
+      },
+      relations: {
+        mealMenus: {
+          menu: true,
+        },
+      },
+      order: {
+        date: 'ASC',
+        time: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return meals.map((meal) => ({
+      date: this.formatLocalDate(new Date(meal.date)),
+      meal_time: meal.time,
+      meal_time_label: this.mealTimeLabelMap[meal.time] ?? '기타',
+      menus: meal.mealMenus.map((mealMenu) => ({
+        name: stripPublicMenuSourcePrefix(mealMenu.menu.name),
+        quantity: roundToOneDecimal(mealMenu.quantity ?? 0),
+      })),
+    }));
+  }
+
+  private async getRecentWorkoutRecordContext(
+    userId: number,
+  ): Promise<RecentWorkoutRecordContextItem[]> {
+    const { start, end } = this.getRecentRecordDateRange();
+    const records = await this.workoutRecordRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(this.formatLocalDate(start), this.formatLocalDate(end)),
+      },
+      relations: {
+        workout: true,
+        setList: true,
+      },
+      order: {
+        date: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return records.map((record) => ({
+      date: record.date,
+      workout_name: record.workout.name,
+      workout_type: record.workout_type,
+      duration_minutes: roundToOneDecimal(record.workout_duration),
+      burned_calories: roundToOneDecimal(record.burned_calories),
+      intensity: record.intensity,
+      sets: [...(record.setList ?? [])]
+        .sort((left, right) => left.set_order - right.set_order)
+        .map((set) => ({
+          order: set.set_order,
+          weight: roundToOneDecimal(set.weight),
+          reps: set.reps,
+        })),
+    }));
+  }
+
   private async getAvailableMenuRecognitionCandidates(
     userId: number,
   ): Promise<MenuRecognitionCandidate[]> {
@@ -3119,7 +3748,7 @@ export class ChatService {
 - intro_message는 영양성분표 내용과 사용자 식사 목표/오늘 실제 식사 기록을 보고 가장 자연스럽게 작성해
 - intro_message 작성 시 메뉴 카드나 DB 매칭 가능성은 의식하지 마
 - 특정 브랜드명/제품명은 직접 언급하지 말고 "이 제품은", "이 구성은"처럼 표현해
-- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 사용자 식사 정보의 todayLoggedMealSummary와 최근 대화 맥락의 recent_meal_records_3_days만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
 - 이전 대화는 주어가 생략된 후속 질문의 맥락을 이해하는 용도로만 사용해
 - 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
@@ -3200,11 +3829,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 - image_summary에는 확실히 보이는 내용만 쓰고, 구체적인 영양 수치는 쓰지 마
 - intro_message에는 특정 브랜드명/매장명을 직접 언급하지 마. 브랜드 단서가 있어도 "이 구성은", "사진 속 메뉴는"처럼 표현해
 - 단, 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유, 이전 채팅 맥락은 판단에 적극 반영해
-- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 사용자 식사 정보의 todayLoggedMealSummary와 최근 대화 맥락의 recent_meal_records_3_days만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
 - 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
 - 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
-- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary 또는 recent_meal_records_3_days에 있는 메뉴만 섭취했다고 판단해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 사용자가 입력이나 사진/메뉴판 맥락에서 시간 관련 표현을 직접 언급한 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
@@ -3720,10 +4349,7 @@ ${JSON.stringify(
           const compatibleCandidates = this.mergeRecognitionCandidatesById(
             candidates,
           ).filter((candidate) =>
-            this.isFoodImageDishTypeCompatible(
-              prediction.foodName,
-              candidate,
-            ),
+            this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
           );
 
           return {
@@ -3782,10 +4408,7 @@ ${JSON.stringify(
         )
           .map((candidate) => candidate.menu)
           .filter((candidate) =>
-            this.isFoodImageDishTypeCompatible(
-              prediction.foodName,
-              candidate,
-            ),
+            this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
           ),
       }))
       .filter((group) => group.candidates.length > 0);
@@ -5160,7 +5783,7 @@ ${JSON.stringify(
       recentMenuSummary: todayLoggedMealSummary,
       todayLoggedMealSummary,
       contextCaution:
-        '오늘 실제 섭취 메뉴는 todayLoggedMealSummary만 기준으로 판단해. 최근 대화의 추천/피드백 카드 메뉴는 사용자가 먹은 음식이 아니라 이전 답변에서 제안하거나 평가한 후보일 수 있어.',
+        '실제 섭취 메뉴는 todayLoggedMealSummary와 recent_meal_records_3_days만 기준으로 판단해. 최근 대화의 추천/피드백 카드 메뉴는 사용자가 먹은 음식이 아니라 이전 답변에서 제안하거나 평가한 후보일 수 있어.',
     };
   }
 
@@ -5207,11 +5830,11 @@ ${JSON.stringify(
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
-- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 사용자 식사 정보의 todayLoggedMealSummary와 최근 대화 맥락의 recent_meal_records_3_days만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
 - 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
 - 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
-- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary 또는 recent_meal_records_3_days에 있는 메뉴만 섭취했다고 판단해
 - 오늘 실제 기록 메뉴와 최근 추천 메뉴가 있다면 같은 메뉴를 반복 추천하지 말고 사용자의 목표와 남은 섭취 여유에 맞춰 다양하게 제안해
 - 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
 - 이전 답변을 이어받아 조건을 바꾸는 요청이면, 현재 입력에서 바꾼 조건만 덮어쓰고 나머지 맥락은 유지해
@@ -5313,11 +5936,11 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - category는 명확할 때만 넣어. 불명확하면 null
 - 후보는 intro_message에 언급된 순서와 중요도 기준으로 최대 10개
 - 아래 사용자 식사 정보는 후보 생성과 답변 개인화를 위한 내부 참고 정보야
-- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 사용자 식사 정보의 todayLoggedMealSummary와 최근 대화 맥락의 recent_meal_records_3_days만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
 - 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
 - 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
-- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary 또는 recent_meal_records_3_days에 있는 메뉴만 섭취했다고 판단해
 - 최근 대화 맥락이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 거", "방금"처럼 이전 대화를 가리키면 최근 대화의 사용자 입력, assistant_intro, 추천/피드백 메뉴명을 우선 반영해
 - 이전 답변을 이어받아 조건을 바꾸는 요청이면, 현재 입력에서 바꾼 조건만 덮어쓰고 나머지 맥락은 유지해
 
@@ -5484,11 +6107,11 @@ ${input}
 - 가격, 원산지, 알레르기 안내, 광고 문구, 주류/음료 메뉴는 음식 추천에 필요할 때가 아니면 언급하지 마
 - 메뉴판에 보이는 음식 중 사용자에게 추천할 만한 메뉴만 자연스럽게 언급해
 - 사용자 목표, 오늘 실제 기록된 식사, 남은 섭취 여유, 이전 채팅 맥락은 판단에 적극 반영해
-- 사용자 식사 정보의 todayLoggedMealSummary만 실제로 기록된 섭취 메뉴야
+- 사용자 식사 정보의 todayLoggedMealSummary와 최근 대화 맥락의 recent_meal_records_3_days만 실제로 기록된 섭취 메뉴야
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
 - 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
 - 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
-- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary에 있는 메뉴만 섭취했다고 판단해
+- 사용자가 직접 "먹었어", "먹은 것", "오늘 먹은"처럼 말했거나 todayLoggedMealSummary 또는 recent_meal_records_3_days에 있는 메뉴만 섭취했다고 판단해
 - 사용자의 실제 현재 시각을 알 수 없으니 사용자가 직접 말하지 않은 시간대/날짜/남은 하루를 추정하거나 언급하지 마
 - 단, 메뉴판 이미지나 이전 채팅 맥락에서 시간 관련 표현이 직접 제공된 경우 그 표현은 그대로 반영해도 돼
 - target_meal_calories 같은 서비스 내부 계산 기준이나 "이번 끼니 목표 칼로리" 표현은 사용자에게 말하지 마
@@ -8978,9 +9601,7 @@ ${input}
       /(그거|그것|이거|이것|저거|저것|거기에|여기에|같이|함께|곁들|아까|방금|전에|이전|위에|앞에|반찬없이|밥이랑만|밥이랑|밥만|밥추가|국물이랑)/.test(
         normalized,
       );
-    const hasDecisionPhrase = /(괜찮아|어때|될까|나아|좋아)/.test(
-      normalized,
-    );
+    const hasDecisionPhrase = /(괜찮아|어때|될까|나아|좋아)/.test(normalized);
 
     return (
       explicitFoodAction ||
@@ -9796,9 +10417,11 @@ JSON shape:
 - 예: 이전에 "참치캔 먹었어"라고 했고 현재 "칼로리 몇이야?"라고 물으면, 현재 질문은 참치캔의 칼로리를 묻는 뜻으로 해석해
 - 단, DB 영양정보를 받은 상황이 아니면 특정 칼로리 수치를 단정하지 말고 "제품마다 다르다"처럼 범위를 조심스럽게 안내해
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
+- 최근 대화 맥락의 recent_meal_records_3_days와 recent_workout_records_3_days는 DB에 실제 저장된 최근 3일 기록이야
+- 운동 질문에는 recent_workout_records_3_days를 참고하되, 기록에 없는 운동을 했다고 추측하지 마
 - 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
 - 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
-- 사용자가 직접 먹었다고 말한 이전 입력이나 실제 오늘 섭취 정보만 섭취 근거로 사용해
+- 사용자가 직접 먹었다고 말한 이전 입력이나 recent_meal_records_3_days의 실제 식단 기록만 섭취 근거로 사용해
 - 앱 기능, 오류, 사진 인식 문제, 식사 기록, 운동 기록, 계정, 결제, 구독, 대화 초기화처럼 서비스 동작에 관한 질문에는 기능을 추측해서 설명하지 말고 "[설정 - 문의하기/아이디어 보내기]로 문의해줘"라고 안내해
 - 식사 기록과 운동 기록은 같은 방식으로 안내해. "앱 내에서 직접 진행", "직접 추가", "준비 중", "당분간", "활용해줘" 같은 단정형 안내는 쓰지 마
 - "기록해줘", "등록해줘", "저장해줘", "수정해줘", "삭제해줘"처럼 실제 앱 동작을 대신 수행해 달라는 요청에는 수행했다고 말하지 말고 앱 동작 관련 문의는 "[설정 - 문의하기/아이디어 보내기]"로 보내는 게 가장 정확하다고 안내해

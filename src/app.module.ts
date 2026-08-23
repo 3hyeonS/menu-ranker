@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { HomeModule } from './home/home.module';
 import { ChatModule } from './chat/chat.module';
 import { ProfileModule } from './profile/profile.module';
+import { MenstrualModule } from './menstrual/menstrual.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { ProfileModule } from './profile/profile.module';
     HomeModule,
     ChatModule,
     ProfileModule,
+    MenstrualModule,
   ],
   controllers: [AppController],
   providers: [AppService],

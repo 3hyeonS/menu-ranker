@@ -13,8 +13,11 @@ import { JwtStrategy } from '../auth/jwt.startegy';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { ChatHistoryEntity } from './entity/chat-history.entity';
+import { ChatConversationSessionEntity } from './entity/chat-conversation-session.entity';
+import { ChatUserMemoryEntity } from './entity/chat-user-memory.entity';
 import { VectorModule } from '../vector/vector.module';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
+import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -29,6 +32,9 @@ dotenv.config();
       MenuEntity,
       MenuSetEntity,
       ChatHistoryEntity,
+      ChatConversationSessionEntity,
+      ChatUserMemoryEntity,
+      WorkoutRecordEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
