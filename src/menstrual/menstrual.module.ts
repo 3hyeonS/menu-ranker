@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtStrategy } from '../auth/jwt.startegy';
+import { UserEntity } from '../auth/entity/user/user.entity';
 import { MenstrualCycleEntity } from './entity/menstrual-cycle.entity';
 import { MenstrualRecordEntity } from './entity/menstrual-record.entity';
 import { MenstrualController } from './menstrual.controller';
@@ -10,7 +11,11 @@ import { MenstrualService } from './menstrual.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([MenstrualCycleEntity, MenstrualRecordEntity]),
+    TypeOrmModule.forFeature([
+      UserEntity,
+      MenstrualCycleEntity,
+      MenstrualRecordEntity,
+    ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
   ],
