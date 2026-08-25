@@ -658,6 +658,44 @@ export class ChatService {
     user: UserEntity,
     chatRecommendRequestDto: ChatRecommendRequestDto,
   ): Promise<ChatRecommendResponseDto> {
+    // LEGACY CHAT FEATURE ROLLBACK: 아래 return의 주석을 해제하면 기존 분기/카드 파이프라인이 다시 활성화됩니다.
+    // return await this.recommendWithLegacyPipeline(user, chatRecommendRequestDto);
+
+    const input = chatRecommendRequestDto.input?.trim();
+
+    if (!input) {
+      throw new BadRequestException('input must not be empty');
+    }
+
+    const [userInfo, chatContext] = await Promise.all([
+      this.getRequiredUserInfo(user.id),
+      this.getRecentChatContext(user.id),
+    ]);
+    const answer = await this.callGeminiText(input, chatContext, userInfo);
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'general';
+    response.intro_message = answer;
+
+    await this.saveNewChatHistory(
+      this.chatHistoryRepository.create({
+        input_text: input,
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
+
+    return response;
+  }
+
+  /**
+   * 메뉴 분류, 추천/피드백 카드, 사용자 데이터 기반 후처리를 포함한 기존
+   * 파이프라인입니다. 현재는 호출하지 않으며 위 recommend()의 주석 한 줄로
+   * 되돌릴 수 있도록 코드를 보존합니다.
+   */
+  private async recommendWithLegacyPipeline(
+    user: UserEntity,
+    chatRecommendRequestDto: ChatRecommendRequestDto,
+  ): Promise<ChatRecommendResponseDto> {
     const input = chatRecommendRequestDto.input?.trim();
 
     if (!input) {
@@ -2482,7 +2520,9 @@ export class ChatService {
     return {
       user_input: chatHistory.input_text,
       chat_category: chatCategory,
-      intro_message: payload.intro_message ?? null,
+      intro_message:
+        this.asNonEmptyString(payload.general_answer) ??
+        this.asNonEmptyString(payload.intro_message),
       image_summary:
         this.asNonEmptyString(payload.image_summary)?.slice(0, 500) ?? null,
       recommended_menu_names: recommendedMenus,
@@ -11092,6 +11132,166 @@ ${JSON.stringify(candidates)}
     } catch {
       return [];
     }
+  }
+
+  private async callGeminiText(
+    input: string,
+    chatContext: ChatContextSummary,
+    userInfo: UserInfoEntity,
+  ): Promise<string> {
+    const apiKey = process.env.GEMINI_API_KEY;
+    const primaryModel = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
+    const configuredFallbackModels = [
+      ...(process.env.GEMINI_FALLBACK_MODELS?.split(',').map((model) =>
+        model.trim(),
+      ) ?? []),
+      process.env.GEMINI_FALLBACK_MODEL,
+    ];
+    const hasConfiguredFallbackModels =
+      process.env.GEMINI_FALLBACK_MODELS !== undefined ||
+      process.env.GEMINI_FALLBACK_MODEL !== undefined;
+    const fallbackModels = hasConfiguredFallbackModels
+      ? configuredFallbackModels
+      : DEFAULT_GEMINI_FALLBACK_MODELS;
+    const baseUrlOverride = process.env.GEMINI_BASE_URL;
+
+    if (!apiKey) {
+      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
+    }
+
+    const attempts = Array.from(
+      new Set(
+        [
+          primaryModel,
+          ...fallbackModels,
+          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
+        ].filter(
+          (model): model is string =>
+            typeof model === 'string' && model.trim().length > 0,
+        ),
+      ),
+    );
+    const previousContents = chatContext.messages.flatMap((message) => {
+      const assistantMessage = this.asNonEmptyString(message.intro_message);
+
+      if (!assistantMessage) {
+        return [];
+      }
+
+      return [
+        {
+          role: 'user',
+          parts: [{ text: message.user_input }],
+        },
+        {
+          role: 'model',
+          parts: [{ text: assistantMessage }],
+        },
+      ];
+    });
+    const storedContext = [
+      `사용자 정보:\n${JSON.stringify({
+        gender: userInfo.gender,
+        birth_year: userInfo.birthYear,
+        height: userInfo.height,
+        weight: userInfo.weight,
+        activity: userInfo.activity,
+        goal: this.goalToLabel(userInfo.goal),
+        target_weight: userInfo.target_weight,
+        target_calories: userInfo.target_calories,
+        target_ratio: this.normalizeTargetRatio(userInfo.target_ratio),
+        diet_management_status: userInfo.diet_management_status,
+        persona_type: userInfo.persona_type,
+        eating_out_freq_weekly: userInfo.eating_out_freq_weekly,
+        job_type: userInfo.job_type,
+        lunch_location: userInfo.lunch_location,
+      })}`,
+      `최근 3일 식단 기록:\n${JSON.stringify(
+        chatContext.recent_meal_records_3_days,
+      )}`,
+      `최근 3일 운동 기록:\n${JSON.stringify(
+        chatContext.recent_workout_records_3_days,
+      )}`,
+      chatContext.long_term_profile_traits
+        ? `장기 대화 기억:\n${chatContext.long_term_profile_traits}`
+        : null,
+      chatContext.session_summaries.length > 0
+        ? `이전 대화 세션 요약:\n${chatContext.session_summaries
+            .map((session) => session.summary)
+            .join('\n')}`
+        : null,
+    ]
+      .filter((value): value is string => !!value)
+      .join('\n\n');
+
+    for (const [index, model] of attempts.entries()) {
+      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
+
+      try {
+        const response = await firstValueFrom(
+          this.httpService.post(
+            `${baseUrl}?key=${apiKey}`,
+            {
+              ...(storedContext
+                ? {
+                    system_instruction: {
+                      parts: [
+                        {
+                          text: `다음은 앱에 저장된 사용자 정보와 기록, 과거 대화 맥락이야. 현재 메시지에 답할 때 필요한 경우에만 자연스럽게 참고하고, 없는 사실은 만들지 마.\n\n${storedContext}`,
+                        },
+                      ],
+                    },
+                  }
+                : {}),
+              contents: [
+                ...previousContents,
+                {
+                  role: 'user',
+                  parts: [{ text: input }],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.7,
+                responseMimeType: 'text/plain',
+              },
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              timeout: this.getGeminiTextTimeoutMs(),
+            },
+          ),
+        );
+
+        const text = response.data?.candidates?.[0]?.content?.parts
+          ?.map((part) => part.text ?? '')
+          .join('')
+          ?.trim();
+
+        if (!text) {
+          throw new Error('Gemini returned empty content');
+        }
+
+        return text;
+      } catch (error) {
+        this.logGeminiError(
+          index === 0 ? 'pure-chat' : `pure-chat-fallback:${model}`,
+          error,
+        );
+
+        if (
+          index === attempts.length - 1 ||
+          !this.shouldRetryGeminiWithFallback(error)
+        ) {
+          break;
+        }
+      }
+    }
+
+    throw new ServiceUnavailableException(
+      'Gemini recommendation pipeline is unavailable',
+    );
   }
 
   private async callGeminiJson(

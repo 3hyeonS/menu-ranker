@@ -15,9 +15,7 @@ import {
   ApiConsumes,
   ApiExtraModels,
   ApiOperation,
-  ApiResponse,
   ApiTags,
-  getSchemaPath,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { GetUser } from '../decorators/get-user-decorator';
@@ -41,8 +39,6 @@ import { ChatMenuBoardRecommendResponseDto } from './dto/response-dto/chat-menu-
 import { ChatFoodImageFeedbackResponseDto } from './dto/response-dto/chat-food-image-feedback-response-dto';
 import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-nutrition-label-feedback-response-dto';
 import { ChatNutritionLabelMenuRegisterResponseDto } from './dto/response-dto/chat-nutrition-label-menu-register-response-dto';
-import { ChatFeedbackResponseDto } from './dto/response-dto/chat-feedback-response-dto';
-import { ChatFeedbackMenuResponseDto } from './dto/response-dto/chat-feedback-menu-response-dto';
 import { ChatMealRecordParseResponseDto } from './dto/response-dto/chat-meal-record-parse-response-dto';
 import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu-search-response-dto';
 
@@ -96,130 +92,15 @@ export class ChatController {
 
   @ApiBearerAuth('accessToken')
   @ApiOperation({
-    summary: '채팅형 메뉴 피드백/추천/범용 질문',
+    summary: '과거 대화 맥락 기반 Gemini 채팅',
     description:
-      '입력값을 Gemini로 피드백/추천/범용 질문으로 분류. 피드백은 입력 메뉴를 DB 메뉴와 매핑한 뒤 현재 유저 목표와 식사기록 기준으로 판단하고, 추천은 기존 메뉴 추천 로직을 사용. 범용 질문은 메뉴 DB 랭킹 없이 질문에 직접 답변',
+      '사용자 프로필, 최근 3일 식단·운동 기록, 최근 대화, 이전 세션 요약과 장기 대화 기억을 Gemini에 전달하고 텍스트 답변을 그대로 반환합니다. 메뉴 분류, 추천 카드 및 서버 후처리는 수행하지 않습니다.',
   })
-  @ApiExtraModels(
-    ResponseDto,
-    ChatRecommendResponseDto,
-    ChatFeedbackResponseDto,
-    ChatFeedbackMenuResponseDto,
-  )
-  @ApiResponse({
+  @GenericApiResponse({
     status: 201,
-    description: '채팅형 메뉴 추천 성공',
-    content: {
-      'application/json': {
-        schema: {
-          allOf: [
-            { $ref: getSchemaPath(ResponseDto) },
-            {
-              properties: {
-                message: {
-                  type: 'string',
-                  example: 'Menu recommendations generated successfully',
-                },
-                statusCode: {
-                  type: 'number',
-                  example: 201,
-                },
-                data: {
-                  $ref: getSchemaPath(ChatRecommendResponseDto),
-                },
-              },
-            },
-          ],
-        },
-        examples: {
-          recommendation: {
-            summary: '추천으로 분류된 경우',
-            value: {
-              message: 'Menu recommendations generated successfully',
-              statusCode: 201,
-              data: {
-                chat_category: 'recommendation',
-                intro_message:
-                  '단백질을 채우기 좋게 다이어트식으로 맘스터치에서 추천하는 메뉴를 정리해드렸어요!',
-                recommendations: [
-                  {
-                    menu_id: 512,
-                    menu_name: '그릴드 치킨 버거',
-                    brand: '맘스터치',
-                    unit: 0,
-                    weight: 230,
-                    unit_quantity: '인분',
-                    calories: 412.5,
-                    data_source: 0,
-                    score: 84.6,
-                    rank: 1,
-                  },
-                ],
-              },
-            },
-          },
-          feedback: {
-            summary: '피드백으로 분류된 경우',
-            value: {
-              message: 'Menu recommendations generated successfully',
-              statusCode: 201,
-              data: {
-                chat_category: 'feedback',
-                intro_message:
-                  '감량 목표와 오늘 식사 기록을 기준으로 입력한 메뉴를 확인했어요.',
-                feedback: {
-                  menus: [
-                    {
-                      input_menu_name: '싸이버거',
-                      menu_id: 1,
-                      menu_name: '싸이버거',
-                      brand: '맘스터치',
-                      unit: 0,
-                      weight: 230,
-                      unit_quantity: '인분',
-                      calories: 594,
-                      score: 71.2,
-                      is_appropriate: true,
-                      data_source: 0,
-                    },
-                    {
-                      input_menu_name: '콜라',
-                      menu_id: 42,
-                      menu_name: '콜라',
-                      brand: '맘스터치',
-                      unit: 1,
-                      weight: 355,
-                      unit_quantity: '잔',
-                      calories: 150,
-                      score: 48.5,
-                      is_appropriate: false,
-                      data_source: 0,
-                    },
-                  ],
-                  total_calories: 744,
-                  score: 63.2,
-                  is_appropriate: false,
-                },
-              },
-            },
-          },
-          general: {
-            summary: '범용 일반 질문으로 분류된 경우',
-            value: {
-              message: 'Menu recommendations generated successfully',
-              statusCode: 201,
-              data: {
-                chat_category: 'general',
-                intro_message:
-                  '탄수화물 섭취 타이밍은 목표와 활동량에 맞춰 조절하는 편이 좋습니다.',
-                general_answer:
-                  '탄수화물은 무조건 줄이기보다 하루 활동량이 큰 시간대에 배치하는 방식이 현실적입니다. 운동을 한다면 운동 전후나 활동량이 많은 낮 시간대에 나눠 먹는 편이 컨디션 유지에 도움이 될 수 있어요.\n\n감량 중이라도 탄수화물을 완전히 끊으면 식욕이 커지거나 다음 끼니에서 과하게 먹기 쉬울 수 있습니다. 밥, 고구마, 과일처럼 양을 조절하기 쉬운 식품을 기준으로 잡고, 저녁에는 오늘 섭취 흐름에 따라 양만 조금 줄이는 식으로 접근해보세요.',
-              },
-            },
-          },
-        },
-      },
-    },
+    description: 'Gemini 채팅 답변 생성 성공',
+    message: 'Menu recommendations generated successfully',
+    model: ChatRecommendResponseDto,
   })
   @ErrorApiResponse({
     status: 400,
@@ -302,7 +183,8 @@ export class ChatController {
   @ResponseMsg('Menu board recommendations generated successfully')
   @UseGuards(AuthGuard())
   @UseInterceptors(FileInterceptor('image'))
-  @Post('/menu-board')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 메뉴판 추천 API가 다시 활성화됩니다.
+  // @Post('/menu-board')
   async recommendMenusFromMenuBoard(
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
@@ -441,7 +323,8 @@ export class ChatController {
   @ResponseMsg('Food image feedback generated successfully')
   @UseGuards(AuthGuard())
   @UseInterceptors(FileInterceptor('image'))
-  @Post('/food-image-feedback')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 음식 사진 피드백 API가 다시 활성화됩니다.
+  // @Post('/food-image-feedback')
   async feedbackMenusFromFoodImage(
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
@@ -523,7 +406,8 @@ export class ChatController {
   @ResponseMsg('Nutrition label feedback generated successfully')
   @UseGuards(AuthGuard())
   @UseInterceptors(FileInterceptor('image'))
-  @Post('/nutrition-label-feedback')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 영양성분표 피드백 API가 다시 활성화됩니다.
+  // @Post('/nutrition-label-feedback')
   async feedbackFromNutritionLabel(
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
@@ -565,7 +449,8 @@ export class ChatController {
   })
   @ResponseMsg('Nutrition label menu registered successfully')
   @UseGuards(AuthGuard())
-  @Post('/nutrition-label-feedback/register-menu')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 영양성분표 메뉴 등록 API가 다시 활성화됩니다.
+  // @Post('/nutrition-label-feedback/register-menu')
   async registerNutritionLabelMenu(
     @GetUser() user: UserEntity,
     @Body() dto: ChatNutritionLabelMenuRegisterRequestDto,
@@ -618,7 +503,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat meal record candidates parsed successfully')
   @UseGuards(AuthGuard())
-  @Post('/meal-record/parse')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 식사 기록 파싱 API가 다시 활성화됩니다.
+  // @Post('/meal-record/parse')
   async parseMealRecordFromChatText(
     @GetUser() user: UserEntity,
     @Body() dto: ChatMealRecordParseRequestDto,
@@ -659,7 +545,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat user menu search completed successfully')
   @UseGuards(AuthGuard())
-  @Post('/menu/search')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 메뉴 검색 API가 다시 활성화됩니다.
+  // @Post('/menu/search')
   async searchUserMenusForChat(
     @GetUser() user: UserEntity,
     @Body() dto: ChatUserMenuSearchRequestDto,
@@ -706,7 +593,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat meal record saved successfully')
   @UseGuards(AuthGuard())
-  @Post('/meal-record')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 식사 기록 메타데이터 API가 다시 활성화됩니다.
+  // @Post('/meal-record')
   async recordMealFromChat(
     @GetUser() user: UserEntity,
     @Body() chatMealRecordRequestDto: ChatMealRecordRequestDto,
@@ -745,7 +633,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat meal record deleted successfully')
   @UseGuards(AuthGuard())
-  @Post('/meal-record/delete')
+  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 식사 기록 삭제 API가 다시 활성화됩니다.
+  // @Post('/meal-record/delete')
   async deleteMealRecordFromChat(
     @GetUser() user: UserEntity,
     @Body() chatMealRecordDeleteRequestDto: ChatMealRecordDeleteRequestDto,
