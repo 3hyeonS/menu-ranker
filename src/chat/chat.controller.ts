@@ -589,8 +589,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat meal record saved successfully')
   @UseGuards(AuthGuard())
-  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 식사 기록 메타데이터 API가 다시 활성화됩니다.
-  // @Post('/meal-record')
+  // 음식 사진 채팅의 식사 기록 확정 메타데이터 저장 API입니다.
+  @Post('/meal-record')
   async recordMealFromChat(
     @GetUser() user: UserEntity,
     @Body() chatMealRecordRequestDto: ChatMealRecordRequestDto,
@@ -629,8 +629,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat meal record deleted successfully')
   @UseGuards(AuthGuard())
-  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 식사 기록 삭제 API가 다시 활성화됩니다.
-  // @Post('/meal-record/delete')
+  // 음식 사진 채팅의 식사 기록 확정 메타데이터 취소 API입니다.
+  @Post('/meal-record/delete')
   async deleteMealRecordFromChat(
     @GetUser() user: UserEntity,
     @Body() chatMealRecordDeleteRequestDto: ChatMealRecordDeleteRequestDto,

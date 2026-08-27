@@ -1104,13 +1104,14 @@ export class ChatService {
       );
       timing.mark('image_uploaded');
 
-      await this.saveNewChatHistory(
+      const savedHistory = await this.saveNewChatHistory(
         this.chatHistoryRepository.create({
           input_text: '음식 사진 기반 피드백',
           response_payload: response as unknown as Record<string, any>,
           user,
         }),
       );
+      response.chat_id = savedHistory.id;
       timing.mark('history_saved');
       timing.end({
         recognizedFoodCount: response.recognized_foods?.length ?? 0,
@@ -2714,16 +2715,10 @@ ${JSON.stringify(
       );
     }
 
-    const chatHistory = await this.chatHistoryRepository.findOne({
-      where: {
-        id: chat_id,
-        user: { id: user.id },
-      },
-    });
-
-    if (!chatHistory) {
-      throw new NotFoundException('Chat history not found');
-    }
+    const chatHistory = await this.getRequiredImageChatHistory(
+      user.id,
+      chat_id,
+    );
 
     chatHistory.meal_record = {
       time,
@@ -3416,10 +3411,24 @@ ${JSON.stringify(
     user: UserEntity,
     chatMealRecordDeleteRequestDto: ChatMealRecordDeleteRequestDto,
   ): Promise<void> {
+    const chatHistory = await this.getRequiredImageChatHistory(
+      user.id,
+      chatMealRecordDeleteRequestDto.chat_id,
+    );
+
+    chatHistory.meal_record = null;
+
+    await this.chatHistoryRepository.save(chatHistory);
+  }
+
+  private async getRequiredImageChatHistory(
+    userId: number,
+    chatId: number,
+  ): Promise<ChatHistoryEntity> {
     const chatHistory = await this.chatHistoryRepository.findOne({
       where: {
-        id: chatMealRecordDeleteRequestDto.chat_id,
-        user: { id: user.id },
+        id: chatId,
+        user: { id: userId },
       },
     });
 
@@ -3427,9 +3436,17 @@ ${JSON.stringify(
       throw new NotFoundException('Chat history not found');
     }
 
-    chatHistory.meal_record = null;
+    const imageUrl = this.asNonEmptyString(
+      chatHistory.response_payload?.image_url,
+    );
 
-    await this.chatHistoryRepository.save(chatHistory);
+    if (!imageUrl) {
+      throw new BadRequestException(
+        'meal record mode is available only for image chat',
+      );
+    }
+
+    return chatHistory;
   }
 
   private buildRecommendationIntroFallback(params: {
