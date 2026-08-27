@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { Brackets, Between, Repository } from 'typeorm';
+import { Brackets, Between, IsNull, Not, Repository } from 'typeorm';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { UserEntity } from '../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../auth/entity/user/userInfo.entity';
@@ -17,6 +17,7 @@ import { MealEntity } from '../home/entity/meal.entity';
 import { MealMenuEntity } from '../home/entity/meal-menu.entity';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
+import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
 import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
@@ -84,8 +85,18 @@ const CHAT_SESSION_RECONCILE_HISTORY_LIMIT = 200;
 const CHAT_SESSION_MAINTENANCE_BATCH_SIZE = 2;
 const CHAT_LONG_TERM_COMPACTION_BATCH_SIZE = 10;
 const CHAT_RECORD_CONTEXT_DAYS = 3;
+const CHAT_WEIGHT_CONTEXT_DAYS = 7;
 const CHAT_CONSUMPTION_INTERPRETATION =
   '추천 카드, 피드백 카드, AI 제안, 단순 메뉴 언급은 실제 섭취가 아니다. meal_record가 있거나 사용자가 명시적으로 먹었다고 말한 경우만 섭취 사실로 본다.';
+const CHAT_USER_FACT_PROVENANCE_RULES = `
+[사용자 사실의 출처 규칙]
+- 사용자 사실로 확정할 수 있는 출처는 사용자가 직접 말한 내용과 DB의 사용자 정보, 실제 식단 기록, 실제 운동 기록뿐이야.
+- 과거 assistant 답변은 AI가 생성한 조언이나 추론일 뿐이며, 사용자의 습관·선호·목표·실제 행동을 증명하지 않아.
+- 세션 요약과 장기 대화 기억도 AI가 생성한 2차 자료야. 사용자 직접 발언이나 DB 기록으로 뒷받침되지 않으면 사용자 사실처럼 단정하거나 반복하지 마.
+- AI가 이전에 "건더기 위주로 먹어", "저칼로리 식이섬유 식품을 골라"라고 조언했더라도 사용자가 직접 동의하거나 자신의 목표라고 말하지 않았다면 사용자 습관이나 목표로 표현하지 마.
+- 사용자가 메뉴 추천이나 분석을 요청했다는 사실만으로 그 추천 내용을 장기 선호나 목표로 만들지 마.
+- 음식의 영양 특성을 보고 사용자의 평소 습관이나 목표를 새로 추론하지 마.
+`.trim();
 const FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS = [
   '볶음밥',
   '비빔밥',
@@ -218,6 +229,7 @@ type ChatContextSummary = {
   long_term_profile_traits: string | null;
   recent_meal_records_3_days: RecentMealRecordContextItem[];
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
+  recent_weight_records_7_days: RecentWeightRecordContextItem[];
   previous_user_input: string | null;
   previous_category: ChatCategory | null;
   previous_recommended_menu_names: string[];
@@ -240,7 +252,21 @@ type RecentMealRecordContextItem = {
   menus: Array<{
     name: string;
     quantity: number;
+    quantity_unit: string;
+    input_mode: number;
+    consumed_nutrition: RecentMealNutritionContext;
   }>;
+  nutrition_totals: RecentMealNutritionContext;
+};
+
+type RecentMealNutritionContext = {
+  calories: number;
+  carbs: number;
+  protein: number;
+  fat: number;
+  sugars: number;
+  dietary_fiber: number;
+  sodium: number;
 };
 
 type RecentWorkoutRecordContextItem = {
@@ -255,6 +281,11 @@ type RecentWorkoutRecordContextItem = {
     weight: number;
     reps: number;
   }>;
+};
+
+type RecentWeightRecordContextItem = {
+  date: string;
+  weight_kg: number;
 };
 
 type ChatUserMenuSearchRawRow = {
@@ -302,6 +333,7 @@ type LightweightChatContext = {
   consumption_interpretation: string;
   recent_meal_records_3_days: RecentMealRecordContextItem[];
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
+  recent_weight_records_7_days: RecentWeightRecordContextItem[];
 };
 
 type ParsedChatIntent = {
@@ -522,6 +554,8 @@ export class ChatService {
     private readonly mealMenuRepository: Repository<MealMenuEntity>,
     @InjectRepository(WorkoutRecordEntity)
     private readonly workoutRecordRepository: Repository<WorkoutRecordEntity>,
+    @InjectRepository(WeightStepsEntity)
+    private readonly weightStepsRepository: Repository<WeightStepsEntity>,
     @InjectRepository(ChatHistoryEntity)
     private readonly chatHistoryRepository: Repository<ChatHistoryEntity>,
     @InjectRepository(ChatConversationSessionEntity)
@@ -1045,6 +1079,20 @@ export class ChatService {
         timing,
       })) as ChatFoodImageFeedbackResponseDto;
 
+      try {
+        response.intro_message = await this.generateFoodImagePureIntroMessage({
+          userInfo,
+          chatContext,
+          imageSummary: foodImageRecognition.imageSummary,
+          recognizedFoods,
+          feedback: response.feedback,
+        });
+        timing.mark('food_image_pure_intro_completed');
+      } catch (error) {
+        this.logGeminiError('food-image-pure-intro', error);
+        timing.mark('food_image_pure_intro_failed_using_existing_intro');
+      }
+
       response.recognized_foods = recognizedFoods.map((food) =>
         this.toFoodImageRecognizedMenuResponse(food),
       );
@@ -1078,6 +1126,36 @@ export class ChatService {
       );
       throw error;
     }
+  }
+
+  private async generateFoodImagePureIntroMessage(params: {
+    userInfo: UserInfoEntity;
+    chatContext: ChatContextSummary;
+    imageSummary: string | null;
+    recognizedFoods: RecognizedFoodImageMenu[];
+    feedback: ChatFeedbackResponseDto;
+  }): Promise<string> {
+    const currentRequestContext = {
+      source: 'food_image_feedback',
+      image_summary: params.imageSummary,
+      recognized_foods: params.recognizedFoods.map((food) => ({
+        menu_name: food.name,
+        category: food.category,
+        confidence: food.confidence,
+      })),
+      calculated_feedback: params.feedback,
+      interpretation:
+        '사진에서 인식한 식사 후보이며 아직 사용자가 먹었다거나 식사 기록을 완료했다는 뜻은 아니다.',
+    };
+
+    return await this.callGeminiText(
+      '이 사진 속 식사 구성을 분석해줘.',
+      params.chatContext,
+      params.userInfo,
+      `현재 업로드된 음식 사진 분석 결과:\n${JSON.stringify(
+        currentRequestContext,
+      )}\n위 결과를 근거로 텍스트 채팅과 같은 형식과 말투로 직접 답해. 내부 필드명이나 점수 계산 과정을 그대로 노출하지 마.`,
+    );
   }
 
   async feedbackFromNutritionLabel(
@@ -2090,10 +2168,12 @@ export class ChatService {
       .take(CHAT_SESSION_SUMMARY_LIMIT)
       .getMany();
     const memory = await this.chatUserMemoryRepository.findOneBy({ userId });
-    const [recentMealRecords, recentWorkoutRecords] = await Promise.all([
-      this.getRecentMealRecordContext(userId),
-      this.getRecentWorkoutRecordContext(userId),
-    ]);
+    const [recentMealRecords, recentWorkoutRecords, recentWeightRecords] =
+      await Promise.all([
+        this.getRecentMealRecordContext(userId),
+        this.getRecentWorkoutRecordContext(userId),
+        this.getRecentWeightRecordContext(userId),
+      ]);
 
     this.queueConversationMemoryMaintenance(userId);
 
@@ -2104,9 +2184,12 @@ export class ChatService {
         ended_at: (session.closedAt ?? session.lastMessageAt).toISOString(),
         summary: session.summary,
       })),
-      long_term_profile_traits: memory?.profileTraits ?? null,
+      long_term_profile_traits: this.normalizeVerifiedProfileTraits(
+        memory?.profileTraits,
+      ),
       recent_meal_records_3_days: recentMealRecords,
       recent_workout_records_3_days: recentWorkoutRecords,
+      recent_weight_records_7_days: recentWeightRecords,
       previous_user_input: previousMessage?.user_input ?? null,
       previous_category: previousMessage?.chat_category ?? null,
       previous_recommended_menu_names:
@@ -2349,7 +2432,21 @@ export class ChatService {
         this.toConversationSummaryTranscriptItem(history),
       );
       const data = await this.callGeminiJson(
-        `다음은 한 사용자의 식단 코치 대화 세션이야. 이후 대화에서 유용한 사실만 한국어 200~300자로 요약해줘.\n\n규칙:\n- 추천 카드, 피드백 카드, AI 제안, 단순 메뉴 언급은 실제 섭취로 기록하지 마.\n- confirmed_meal_record가 있거나 사용자가 명시적으로 먹었다고 말한 경우만 섭취 사실로 요약해.\n- 사용자 목표, 선호, 거절, 결정, 후속 질문에 필요한 맥락을 우선해.\n- 추측하거나 건강 상태를 진단하지 마.\n- JSON으로 {"summary":"..."}만 반환해.\n\n대화:\n${JSON.stringify(transcript)}`,
+        `다음은 한 사용자의 식단 코치 대화 세션이야. 이후 대화에서 유용한 사실만 한국어 200~300자로 요약해줘.
+
+${CHAT_USER_FACT_PROVENANCE_RULES}
+
+[세션 요약 규칙]
+- transcript의 user_input은 사용자 발언이고 assistant는 AI 답변이야. assistant 내용을 사용자 발언으로 바꾸지 마.
+- 추천 카드, 피드백 카드, AI 제안, 단순 메뉴 언급은 실제 섭취로 기록하지 마.
+- confirmed_meal_record가 있거나 사용자가 user_input에서 명시적으로 먹었다고 말한 경우만 섭취 사실로 요약해.
+- 사용자가 직접 밝힌 목표, 선호, 기피는 "사용자 직접 진술:"이라는 출처 표시와 함께 적어.
+- 질문이나 일회성 요청은 장기 목표·선호로 요약하지 말고, 후속 질문에 꼭 필요한 현재 맥락으로만 적어.
+- 추측하거나 건강 상태를 진단하지 마.
+- JSON으로 {"summary":"..."}만 반환해.
+
+대화:
+${JSON.stringify(transcript)}`,
         { timeoutMs: this.getGeminiTextTimeoutMs() },
       );
       const summary = this.asNonEmptyString(data?.summary)?.slice(0, 300);
@@ -2449,15 +2546,36 @@ export class ChatService {
       userId,
     });
     const data = await this.callGeminiJson(
-      `다음 세션 요약에서 앞으로도 유용한 장기 식단 성향만 압축해줘.\n\n규칙:\n- 반복해서 확인된 목표, 선호, 기피, 생활 패턴만 남겨.\n- 추천받은 메뉴와 실제 섭취를 혼동하지 마.\n- 일회성 상황, 추측, 민감정보, 건강 진단은 저장하지 마.\n- 기존 성향과 충돌하면 더 최근에 반복 확인된 내용을 우선해.\n- 유지할 성향이 없으면 profile_traits를 null로 반환해.\n- JSON으로 {"profile_traits":"... 또는 null"}만 반환해.\n\n기존 성향:\n${existingMemory?.profileTraits ?? '없음'}\n\n세션 요약:\n${JSON.stringify(
-        sessions.map((session) => ({
-          ended_at: (session.closedAt ?? session.lastMessageAt).toISOString(),
-          summary: session.summary,
-        })),
-      )}`,
+      `다음 세션 요약에서 앞으로도 유용한 장기 식단 성향만 압축해줘.
+
+${CHAT_USER_FACT_PROVENANCE_RULES}
+
+[장기 기억 압축 규칙]
+- 기존 성향과 세션 요약은 모두 AI가 만든 2차 자료이므로 그 자체만으로 사실이 아니야.
+- 세션 요약에서 "사용자 직접 진술:"로 출처가 표시된 목표·선호·기피만 장기 성향 후보로 인정해.
+- 한 번의 질문, 추천 요청, AI 조언, 메뉴의 영양 특성은 장기 성향으로 저장하지 마.
+- 기존 성향도 새 세션 요약의 사용자 직접 진술로 뒷받침되지 않으면 제거해.
+- 추천받은 메뉴와 실제 섭취를 혼동하지 마.
+- 일회성 상황, 추측, 민감정보, 건강 진단은 저장하지 마.
+- 유지할 근거가 없으면 profile_traits를 null로 반환해.
+- 유지할 각 성향은 반드시 "사용자 직접 진술:"로 시작해. 이 출처 표시가 없는 profile_traits는 서버에서 폐기돼.
+- JSON으로 {"profile_traits":"... 또는 null"}만 반환해.
+
+기존 성향:
+${existingMemory?.profileTraits ?? '없음'}
+
+세션 요약:
+${JSON.stringify(
+  sessions.map((session) => ({
+    ended_at: (session.closedAt ?? session.lastMessageAt).toISOString(),
+    summary: session.summary,
+  })),
+)}`,
       { timeoutMs: this.getGeminiTextTimeoutMs() },
     );
-    const generatedTraits = this.asNonEmptyString(data?.profile_traits);
+    const generatedTraits = this.normalizeVerifiedProfileTraits(
+      data?.profile_traits,
+    );
     const memory =
       existingMemory ??
       this.chatUserMemoryRepository.create({
@@ -2466,9 +2584,9 @@ export class ChatService {
         lastCompactedAt: null,
       });
 
-    if (generatedTraits) {
-      memory.profileTraits = generatedTraits.slice(0, 2000);
-    }
+    memory.profileTraits = generatedTraits
+      ? generatedTraits.slice(0, 2000)
+      : null;
     memory.lastCompactedAt = new Date();
     await this.chatUserMemoryRepository.save(memory);
 
@@ -2576,6 +2694,7 @@ export class ChatService {
       consumption_interpretation: CHAT_CONSUMPTION_INTERPRETATION,
       recent_meal_records_3_days: chatContext.recent_meal_records_3_days,
       recent_workout_records_3_days: chatContext.recent_workout_records_3_days,
+      recent_weight_records_7_days: chatContext.recent_weight_records_7_days,
     };
   }
 
@@ -3606,7 +3725,10 @@ export class ChatService {
     };
   }
 
-  private getRecentRecordDateRange(referenceDate = new Date()): {
+  private getRecentRecordDateRange(
+    referenceDate = new Date(),
+    days = CHAT_RECORD_CONTEXT_DAYS,
+  ): {
     start: Date;
     end: Date;
   } {
@@ -3614,7 +3736,7 @@ export class ChatService {
     end.setHours(23, 59, 59, 999);
 
     const start = new Date(referenceDate);
-    start.setDate(start.getDate() - (CHAT_RECORD_CONTEXT_DAYS - 1));
+    start.setDate(start.getDate() - (days - 1));
     start.setHours(0, 0, 0, 0);
 
     return { start, end };
@@ -3626,6 +3748,41 @@ export class ChatService {
     const day = String(date.getDate()).padStart(2, '0');
 
     return `${year}-${month}-${day}`;
+  }
+
+  private formatKoreaDate(date = new Date()): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const values = Object.fromEntries(
+      parts.map((part) => [part.type, part.value]),
+    );
+
+    return `${values.year}-${values.month}-${values.day}`;
+  }
+
+  private addDateOnlyDays(date: string, amount: number): string {
+    const parsed = new Date(`${date}T00:00:00.000Z`);
+    parsed.setUTCDate(parsed.getUTCDate() + amount);
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private getKoreanWeekday(date: string): string {
+    const weekdayNames = [
+      '일요일',
+      '월요일',
+      '화요일',
+      '수요일',
+      '목요일',
+      '금요일',
+      '토요일',
+    ];
+    const parsed = new Date(`${date}T00:00:00.000Z`);
+
+    return weekdayNames[parsed.getUTCDay()];
   }
 
   private async getRecentMealRecordContext(
@@ -3649,15 +3806,84 @@ export class ChatService {
       },
     });
 
-    return meals.map((meal) => ({
-      date: this.formatLocalDate(new Date(meal.date)),
-      meal_time: meal.time,
-      meal_time_label: this.mealTimeLabelMap[meal.time] ?? '기타',
-      menus: meal.mealMenus.map((mealMenu) => ({
+    return meals.map((meal) => {
+      const menus = meal.mealMenus.map((mealMenu) => ({
         name: stripPublicMenuSourcePrefix(mealMenu.menu.name),
         quantity: roundToOneDecimal(mealMenu.quantity ?? 0),
-      })),
-    }));
+        quantity_unit:
+          mealMenu.menu_input_mode === 1 ? 'g' : mealMenu.menu.unit_quantity,
+        input_mode: mealMenu.menu_input_mode,
+        consumed_nutrition: this.calculateRecordedMenuNutrition(
+          mealMenu.menu,
+          mealMenu.quantity ?? 0,
+          mealMenu.menu_input_mode,
+        ),
+      }));
+
+      return {
+        date: this.formatLocalDate(new Date(meal.date)),
+        meal_time: meal.time,
+        meal_time_label: this.mealTimeLabelMap[meal.time] ?? '기타',
+        menus,
+        nutrition_totals: this.sumRecentMealNutrition(
+          menus.map((menu) => menu.consumed_nutrition),
+        ),
+      };
+    });
+  }
+
+  private calculateRecordedMenuNutrition(
+    menu: MenuEntity,
+    quantity: number,
+    inputMode: number,
+  ): RecentMealNutritionContext {
+    const menuWeight = Number(menu.weight ?? 0);
+    const multiplier =
+      inputMode === 1 ? (menuWeight > 0 ? quantity / menuWeight : 1) : quantity;
+
+    return {
+      calories: roundToOneDecimal(Number(menu.calories ?? 0) * multiplier),
+      carbs: roundToOneDecimal(this.getEffectiveCarbs(menu) * multiplier),
+      protein: roundToOneDecimal(Number(menu.protein ?? 0) * multiplier),
+      fat: roundToOneDecimal(this.getEffectiveFat(menu) * multiplier),
+      sugars: roundToOneDecimal(Number(menu.sugars ?? 0) * multiplier),
+      dietary_fiber: roundToOneDecimal(
+        Number(menu.dietary_fiber ?? 0) * multiplier,
+      ),
+      sodium: roundToOneDecimal(Number(menu.sodium ?? 0) * multiplier),
+    };
+  }
+
+  private sumRecentMealNutrition(
+    items: RecentMealNutritionContext[],
+  ): RecentMealNutritionContext {
+    const totals = items.reduce(
+      (sum, item) => ({
+        calories: sum.calories + item.calories,
+        carbs: sum.carbs + item.carbs,
+        protein: sum.protein + item.protein,
+        fat: sum.fat + item.fat,
+        sugars: sum.sugars + item.sugars,
+        dietary_fiber: sum.dietary_fiber + item.dietary_fiber,
+        sodium: sum.sodium + item.sodium,
+      }),
+      {
+        calories: 0,
+        carbs: 0,
+        protein: 0,
+        fat: 0,
+        sugars: 0,
+        dietary_fiber: 0,
+        sodium: 0,
+      },
+    );
+
+    return Object.fromEntries(
+      Object.entries(totals).map(([key, value]) => [
+        key,
+        roundToOneDecimal(value),
+      ]),
+    ) as RecentMealNutritionContext;
   }
 
   private async getRecentWorkoutRecordContext(
@@ -3693,6 +3919,31 @@ export class ChatService {
           weight: roundToOneDecimal(set.weight),
           reps: set.reps,
         })),
+    }));
+  }
+
+  private async getRecentWeightRecordContext(
+    userId: number,
+  ): Promise<RecentWeightRecordContextItem[]> {
+    const { start, end } = this.getRecentRecordDateRange(
+      new Date(),
+      CHAT_WEIGHT_CONTEXT_DAYS,
+    );
+    const records = await this.weightStepsRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(start, end),
+        weight: Not(IsNull()),
+      },
+      order: {
+        date: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return records.map((record) => ({
+      date: this.formatLocalDate(new Date(record.date)),
+      weight_kg: roundToOneDecimal(record.weight),
     }));
   }
 
@@ -11138,6 +11389,7 @@ ${JSON.stringify(candidates)}
     input: string,
     chatContext: ChatContextSummary,
     userInfo: UserInfoEntity,
+    currentRequestContext?: string,
   ): Promise<string> {
     const apiKey = process.env.GEMINI_API_KEY;
     const primaryModel = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
@@ -11189,8 +11441,57 @@ ${JSON.stringify(candidates)}
         },
       ];
     });
+    const referenceDate = this.formatKoreaDate();
+    const yesterdayDate = this.addDateOnlyDays(referenceDate, -1);
+    const tomorrowDate = this.addDateOnlyDays(referenceDate, 1);
+    const todayMealRecords = chatContext.recent_meal_records_3_days.filter(
+      (record) => record.date === referenceDate,
+    );
+    const recordedMealSlotsToday = Array.from(
+      new Set(todayMealRecords.map((record) => record.meal_time_label)),
+    );
+    const dailyNutritionTotals = Array.from(
+      chatContext.recent_meal_records_3_days.reduce((totalsByDate, record) => {
+        const existing = totalsByDate.get(record.date) ?? [];
+        existing.push(record.nutrition_totals);
+        totalsByDate.set(record.date, existing);
+        return totalsByDate;
+      }, new Map<string, RecentMealNutritionContext[]>()),
+    ).map(([date, totals]) => ({
+      date,
+      weekday: this.getKoreanWeekday(date),
+      nutrition_totals: this.sumRecentMealNutrition(totals),
+    }));
+    const nickname = this.asNonEmptyString(userInfo.user?.nickname);
+    const preferredAddress = nickname
+      ? nickname.endsWith('님')
+        ? nickname
+        : `${nickname}님`
+      : null;
     const storedContext = [
+      `날짜 기준표:\n${JSON.stringify({
+        timezone: 'Asia/Seoul',
+        yesterday: {
+          date: yesterdayDate,
+          weekday: this.getKoreanWeekday(yesterdayDate),
+        },
+        today: {
+          date: referenceDate,
+          weekday: this.getKoreanWeekday(referenceDate),
+        },
+        tomorrow: {
+          date: tomorrowDate,
+          weekday: this.getKoreanWeekday(tomorrowDate),
+        },
+      })}`,
+      `오늘 식사 기록 상태:\n${JSON.stringify({
+        date: referenceDate,
+        recorded_meal_slots: recordedMealSlotsToday,
+        records: todayMealRecords,
+      })}`,
       `사용자 정보:\n${JSON.stringify({
+        nickname,
+        preferred_address: preferredAddress,
         gender: userInfo.gender,
         birth_year: userInfo.birthYear,
         height: userInfo.height,
@@ -11206,11 +11507,27 @@ ${JSON.stringify(candidates)}
         job_type: userInfo.job_type,
         lunch_location: userInfo.lunch_location,
       })}`,
+      currentRequestContext
+        ? `현재 요청 추가 맥락:\n${currentRequestContext}`
+        : null,
       `최근 3일 식단 기록:\n${JSON.stringify(
-        chatContext.recent_meal_records_3_days,
+        chatContext.recent_meal_records_3_days.map((record) => ({
+          ...record,
+          weekday: this.getKoreanWeekday(record.date),
+        })),
       )}`,
+      `최근 3일 일별 영양 합계:\n${JSON.stringify(dailyNutritionTotals)}`,
       `최근 3일 운동 기록:\n${JSON.stringify(
-        chatContext.recent_workout_records_3_days,
+        chatContext.recent_workout_records_3_days.map((record) => ({
+          ...record,
+          weekday: this.getKoreanWeekday(record.date),
+        })),
+      )}`,
+      `최근 7일 체중 기록:\n${JSON.stringify(
+        chatContext.recent_weight_records_7_days.map((record) => ({
+          ...record,
+          weekday: this.getKoreanWeekday(record.date),
+        })),
       )}`,
       chatContext.long_term_profile_traits
         ? `장기 대화 기억:\n${chatContext.long_term_profile_traits}`
@@ -11237,7 +11554,45 @@ ${JSON.stringify(candidates)}
                     system_instruction: {
                       parts: [
                         {
-                          text: `다음은 앱에 저장된 사용자 정보와 기록, 과거 대화 맥락이야. 현재 메시지에 답할 때 필요한 경우에만 자연스럽게 참고하고, 없는 사실은 만들지 마.\n\n${storedContext}`,
+                          text: `다음은 앱에 저장된 사용자 정보와 기록, 과거 대화 맥락이야. 현재 메시지에 답할 때 필요한 경우에만 자연스럽게 참고하고, 없는 사실은 만들지 마.
+
+[식사 기록 반영 규칙]
+- 최근 3일 식단 기록은 사용자가 실제로 먹은 음식이야. 단순 대화나 이전 추천보다 우선해서 판단해.
+- 각 메뉴의 consumed_nutrition, 각 끼니의 nutrition_totals, 최근 3일 일별 영양 합계는 서버가 DB 메뉴 영양정보와 저장 수량으로 계산한 값이야.
+- 기록된 날짜의 총 섭취량을 말할 때는 최근 3일 일별 영양 합계의 수치를 그대로 사용해. 이미 합계가 있으면 "예상", "추정", "~로 보임"이라고 표현하지 마.
+- DB 기록 기준임을 밝혀야 할 때는 "기록 기준"이라고 표현하고, 합계를 다시 암산하거나 음식명만 보고 추측하지 마.
+- 오늘 식사 기록 상태의 recorded_meal_slots에 있는 끼니는 이미 기록이 끝난 끼니야. 해당 끼니를 아직 고르지 않은 미래 식사처럼 말하거나 메뉴 선택을 제안하지 마.
+- 예를 들어 저녁이 recorded_meal_slots에 있으면 "오늘 저녁 메뉴 선택", "저녁에는 무엇을 먹을지"처럼 저녁이 남아 있다고 전제하는 표현을 절대 쓰지 마.
+- 사용자가 직접 다음 식사나 다른 날짜의 식사를 묻지 않았다면, 기록되지 않은 끼니가 남아 있다고 추측하지 마.
+- 사용자가 식사를 추천해 달라고 하면 기준 날짜와 같은 날에 이미 먹은 메뉴를 먼저 확인해.
+- 같은 날 먹은 메뉴와 동일한 메뉴뿐 아니라 같은 음식 문화권이나 매우 비슷한 종류도 반복 추천하지 마. 예를 들어 팟타이, 똠얌처럼 태국 음식을 먹었다면 다음 끼니에는 다른 음식 문화권을 우선해.
+- 최근 3일의 다른 날짜에 먹은 메뉴도 가능한 한 그대로 반복하지 말고 다양성을 우선해.
+- 단, 사용자가 특정 메뉴나 음식 문화권을 명시적으로 요청하면 그 요청을 우선해.
+- 운동 질문에는 사용자가 식사 조언도 함께 요청했거나 식사가 답변에 꼭 필요한 경우가 아니면 메뉴 선택 이야기를 덧붙이지 마.
+
+[날짜와 요일 규칙]
+- 날짜 기준표는 Asia/Seoul 기준으로 서버가 계산한 확정값이야. 오늘, 어제, 내일과 요일은 반드시 이 값을 그대로 사용해.
+- 날짜 문자열을 보고 요일을 직접 계산하거나 추측하지 마.
+- 최근 식단·운동 기록에 포함된 weekday도 서버가 계산한 확정값이므로 다른 요일로 바꾸지 마.
+- 답변에 날짜나 요일이 꼭 필요하지 않으면 불필요하게 덧붙이지 마.
+
+[체중 기록 반영 규칙]
+- 최근 7일 체중 기록은 DB에 실제 저장된 날짜별 체중이야. 기록된 수치를 그대로 사용하고 없는 날짜의 체중은 추측하지 마.
+- 체중 변화나 추세를 말할 때는 기록 날짜와 수치를 기준으로 하고, 기록이 부족하면 장기 추세를 단정하지 마.
+
+${CHAT_USER_FACT_PROVENANCE_RULES}
+
+[답변 말투 규칙]
+- 모든 답변은 친구에게 말하듯 자연스럽고 친근한 반말 해체로 작성해.
+- 존댓말, 해요체, 하십시오체를 쓰지 마. "좋아요", "추천해요", "드릴게요", "해주세요", "습니다" 같은 어미는 금지야.
+- 문장 끝은 문맥에 맞게 "~야", "~해", "~먹어", "~괜찮아", "~있어", "~나아"처럼 작성해.
+- 과거 대화의 assistant 답변이 존댓말이어도 말투는 따라 하지 말고 현재 규칙을 우선해.
+- 사용자를 직접 부를 필요가 있으면 사용자 정보의 preferred_address를 그대로 사용해. "사용자님", "고객님", "회원님" 같은 일반 호칭은 절대 쓰지 마.
+- preferred_address가 null이면 별도의 호칭 없이 바로 답해. 닉네임이나 이름을 추측해서 만들지 마.
+- 사용자를 매 문단마다 반복해서 부르지 말고, 자연스러울 때만 제한적으로 사용해.
+- 말투 외에는 Gemini가 질문에 자연스럽게 직접 답해.
+
+${storedContext}`,
                         },
                       ],
                     },
@@ -11639,6 +11994,12 @@ ${JSON.stringify(candidates)}
     return typeof value === 'string' && value.trim().length > 0
       ? value.trim()
       : null;
+  }
+
+  private normalizeVerifiedProfileTraits(value: unknown): string | null {
+    const traits = this.asNonEmptyString(value);
+
+    return traits?.includes('사용자 직접 진술:') ? traits : null;
   }
 
   private normalizeGenericMenuCandidate(

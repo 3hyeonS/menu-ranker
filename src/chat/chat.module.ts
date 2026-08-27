@@ -18,6 +18,7 @@ import { ChatUserMemoryEntity } from './entity/chat-user-memory.entity';
 import { VectorModule } from '../vector/vector.module';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
+import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -35,6 +36,7 @@ dotenv.config();
       ChatConversationSessionEntity,
       ChatUserMemoryEntity,
       WorkoutRecordEntity,
+      WeightStepsEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
