@@ -692,6 +692,33 @@ export class HomeService {
     );
   }
 
+  private isPreferredShineMuscatSearchResult(
+    menu: MenuEntity,
+    keyword: string,
+  ): boolean {
+    return (
+      normalizeMenuSearchName(keyword) ===
+        normalizeMenuSearchName('샤인머스캣') &&
+      normalizeMenuSearchName(menu.name) ===
+        normalizeMenuSearchName('포도(샤인머스캣)')
+    );
+  }
+
+  private getPreferredShineMuscatNameCandidates(keyword: string): string[] {
+    if (
+      normalizeMenuSearchName(keyword) !== normalizeMenuSearchName('샤인머스캣')
+    ) {
+      return [];
+    }
+
+    return [
+      '포도(샤인머스캣)',
+      '포도 (샤인머스캣)',
+      '(식약처_음식) 포도(샤인머스캣)',
+      '(식약처_음식) 포도 (샤인머스캣)',
+    ];
+  }
+
   private hasAnyKeyword(text: string, keywords: string[]): boolean {
     return keywords.some((keyword) => text.includes(keyword));
   }
@@ -991,6 +1018,7 @@ export class HomeService {
       keyword,
       `(식약처_음식) ${keyword}`,
       `(식약처_가공) ${keyword}`,
+      ...this.getPreferredShineMuscatNameCandidates(keyword),
     ];
     const exactParentheticalPatterns = [
       `${keyword}(%`,
@@ -1128,6 +1156,18 @@ export class HomeService {
           ]
         : exactMenus,
     ).sort((left, right) => {
+      const leftPreferred = this.isPreferredShineMuscatSearchResult(
+        left,
+        keyword,
+      )
+        ? 0
+        : 1;
+      const rightPreferred = this.isPreferredShineMuscatSearchResult(
+        right,
+        keyword,
+      )
+        ? 0
+        : 1;
       const leftExact = this.isExactDisplayNameMatch(left, keyword) ? 0 : 1;
       const rightExact = this.isExactDisplayNameMatch(right, keyword) ? 0 : 1;
       const sourcePriorityDiff =
@@ -1143,6 +1183,10 @@ export class HomeService {
         canonicalName
           ? 0
           : 1;
+
+      if (leftPreferred !== rightPreferred) {
+        return leftPreferred - rightPreferred;
+      }
 
       if (leftExact !== rightExact) {
         return leftExact - rightExact;
@@ -4405,6 +4449,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const equipmentCategory = dto.equipment_category?.trim();
     const equipmentDetail = dto.equipment_detail?.trim();
     const equipmentOriginalDetail = dto.equipment_original_detail?.trim();
+    const normalizedExactInput = this.normalizeWorkoutExactSearchName(input);
+    const exactWorkoutNameExpression =
+      "LOWER(REPLACE(workout.name, ' ', ''))";
 
     const query = this.workoutRepository
       .createQueryBuilder('workout')
@@ -4445,18 +4492,44 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       );
     }
 
-    if (dto.cursor !== null && dto.cursor !== undefined) {
+    const isFirstPage = dto.cursor === null || dto.cursor === undefined;
+    const exactWorkouts =
+      isFirstPage && normalizedExactInput
+        ? await query
+            .clone()
+            .andWhere(
+              `${exactWorkoutNameExpression} = :normalizedExactInput`,
+              { normalizedExactInput },
+            )
+            .orderBy('workout.id', 'ASC')
+            .take(limit)
+            .getMany()
+        : [];
+    const remainingLimit = Math.max(limit - exactWorkouts.length, 0);
+
+    if (normalizedExactInput) {
+      query.andWhere(
+        `${exactWorkoutNameExpression} <> :normalizedExactInput`,
+        { normalizedExactInput },
+      );
+    }
+
+    if (!isFirstPage) {
       query.andWhere('workout.id > :cursor', { cursor: dto.cursor });
     }
 
-    const workouts = await query
+    const nonExactWorkouts = await query
       .orderBy('workout.id', 'ASC')
-      .take(limit + 1)
+      .take(remainingLimit + 1)
       .getMany();
-
-    const hasNext = workouts.length > limit;
-    const page = hasNext ? workouts.slice(0, limit) : workouts;
-    const nextCursor = hasNext ? page[page.length - 1].id : null;
+    const hasNext = nonExactWorkouts.length > remainingLimit;
+    const nonExactPage = hasNext
+      ? nonExactWorkouts.slice(0, remainingLimit)
+      : nonExactWorkouts;
+    const page = [...exactWorkouts, ...nonExactPage];
+    const nextCursor = hasNext
+      ? nonExactPage[nonExactPage.length - 1]?.id ?? 0
+      : null;
 
     return new WorkoutSearchResponseDto(
       page.map((workout) => ({
@@ -4468,6 +4541,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       })),
       nextCursor,
     );
+  }
+
+  private normalizeWorkoutExactSearchName(value: string): string {
+    return value.toLowerCase().replace(/\s+/g, '');
   }
 
   async getWorkoutDetail(
