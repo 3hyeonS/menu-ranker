@@ -183,8 +183,7 @@ export class ChatController {
   @ResponseMsg('Menu board recommendations generated successfully')
   @UseGuards(AuthGuard())
   @UseInterceptors(FileInterceptor('image'))
-  // LEGACY CHAT FEATURE: 주석을 해제하면 메뉴판 추천 API가 다시 활성화됩니다.
-  // @Post('/menu-board')
+  @Post('/menu-board')
   async recommendMenusFromMenuBoard(
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
@@ -323,8 +322,7 @@ export class ChatController {
   @ResponseMsg('Food image feedback generated successfully')
   @UseGuards(AuthGuard())
   @UseInterceptors(FileInterceptor('image'))
-  // LEGACY CHAT FEATURE: 주석을 해제하면 음식 사진 피드백 API가 다시 활성화됩니다.
-  // @Post('/food-image-feedback')
+  @Post('/food-image-feedback')
   async feedbackMenusFromFoodImage(
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
@@ -406,8 +404,7 @@ export class ChatController {
   @ResponseMsg('Nutrition label feedback generated successfully')
   @UseGuards(AuthGuard())
   @UseInterceptors(FileInterceptor('image'))
-  // LEGACY CHAT FEATURE: 주석을 해제하면 영양성분표 피드백 API가 다시 활성화됩니다.
-  // @Post('/nutrition-label-feedback')
+  @Post('/nutrition-label-feedback')
   async feedbackFromNutritionLabel(
     @GetUser() user: UserEntity,
     @UploadedFile() file: Express.Multer.File,
@@ -449,8 +446,7 @@ export class ChatController {
   })
   @ResponseMsg('Nutrition label menu registered successfully')
   @UseGuards(AuthGuard())
-  // LEGACY CHAT FEATURE: 주석을 해제하면 영양성분표 메뉴 등록 API가 다시 활성화됩니다.
-  // @Post('/nutrition-label-feedback/register-menu')
+  @Post('/nutrition-label-feedback/register-menu')
   async registerNutritionLabelMenu(
     @GetUser() user: UserEntity,
     @Body() dto: ChatNutritionLabelMenuRegisterRequestDto,
