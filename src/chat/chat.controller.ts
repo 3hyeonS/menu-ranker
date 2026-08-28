@@ -541,8 +541,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat user menu search completed successfully')
   @UseGuards(AuthGuard())
-  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 메뉴 검색 API가 다시 활성화됩니다.
-  // @Post('/menu/search')
+  // 사진 식사 기록에서 인식 메뉴를 수정하거나 교체할 때 사용합니다.
+  @Post('/menu/search')
   async searchUserMenusForChat(
     @GetUser() user: UserEntity,
     @Body() dto: ChatUserMenuSearchRequestDto,
