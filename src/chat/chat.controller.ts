@@ -499,8 +499,8 @@ export class ChatController {
   })
   @ResponseMsg('Chat meal record candidates parsed successfully')
   @UseGuards(AuthGuard())
-  // LEGACY CHAT FEATURE: 주석을 해제하면 채팅 식사 기록 파싱 API가 다시 활성화됩니다.
-  // @Post('/meal-record/parse')
+  // 텍스트 채팅에서 식사 기록 모드를 선택한 경우 후보 카드를 생성합니다.
+  @Post('/meal-record/parse')
   async parseMealRecordFromChatText(
     @GetUser() user: UserEntity,
     @Body() dto: ChatMealRecordParseRequestDto,

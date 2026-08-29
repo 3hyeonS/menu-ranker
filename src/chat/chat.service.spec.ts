@@ -335,7 +335,7 @@ describe('ChatService conversation memory', () => {
     );
   });
 
-  it('allows meal record metadata only for image chat history', async () => {
+  it('allows meal record metadata for image chat history', async () => {
     const service = createService() as any;
     const imageHistory = {
       id: 21,
@@ -366,7 +366,38 @@ describe('ChatService conversation memory', () => {
     });
   });
 
-  it('rejects meal record metadata for text chat history', async () => {
+  it('allows meal record metadata for parsed text meal record chat', async () => {
+    const service = createService() as any;
+    const textMealRecordHistory = {
+      id: 22,
+      response_payload: { chat_category: 'meal_record_parse' },
+      meal_record: null,
+    };
+    service.chatHistoryRepository = {
+      findOne: jest.fn().mockResolvedValue(textMealRecordHistory),
+      save: jest.fn(async (value) => value),
+    };
+
+    await service.recordMealFromChat(
+      { id: 9 },
+      {
+        chat_id: 22,
+        time: 1,
+        menu_ids: [3],
+        menu_quantities: [120],
+        menu_input_modes: [1],
+      },
+    );
+
+    expect(textMealRecordHistory.meal_record).toEqual({
+      time: 1,
+      menu_ids: [3],
+      menu_quantities: [120],
+      menu_input_modes: [1],
+    });
+  });
+
+  it('rejects meal record metadata for ordinary text chat history', async () => {
     const service = createService() as any;
     service.chatHistoryRepository = {
       findOne: jest.fn().mockResolvedValue({
@@ -388,7 +419,9 @@ describe('ChatService conversation memory', () => {
           menu_input_modes: [0],
         },
       ),
-    ).rejects.toThrow('meal record mode is available only for image chat');
+    ).rejects.toThrow(
+      'meal record mode is available only for image or meal record chat',
+    );
   });
 
   it('ignores legacy long-term traits without explicit user provenance', () => {

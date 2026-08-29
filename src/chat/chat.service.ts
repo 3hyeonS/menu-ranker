@@ -2717,7 +2717,7 @@ ${JSON.stringify(
       );
     }
 
-    const chatHistory = await this.getRequiredImageChatHistory(
+    const chatHistory = await this.getRequiredMealRecordChatHistory(
       user.id,
       chat_id,
     );
@@ -3413,7 +3413,7 @@ ${JSON.stringify(
     user: UserEntity,
     chatMealRecordDeleteRequestDto: ChatMealRecordDeleteRequestDto,
   ): Promise<void> {
-    const chatHistory = await this.getRequiredImageChatHistory(
+    const chatHistory = await this.getRequiredMealRecordChatHistory(
       user.id,
       chatMealRecordDeleteRequestDto.chat_id,
     );
@@ -3423,7 +3423,7 @@ ${JSON.stringify(
     await this.chatHistoryRepository.save(chatHistory);
   }
 
-  private async getRequiredImageChatHistory(
+  private async getRequiredMealRecordChatHistory(
     userId: number,
     chatId: number,
   ): Promise<ChatHistoryEntity> {
@@ -3441,10 +3441,12 @@ ${JSON.stringify(
     const imageUrl = this.asNonEmptyString(
       chatHistory.response_payload?.image_url,
     );
+    const isTextMealRecordChat =
+      chatHistory.response_payload?.chat_category === 'meal_record_parse';
 
-    if (!imageUrl) {
+    if (!imageUrl && !isTextMealRecordChat) {
       throw new BadRequestException(
-        'meal record mode is available only for image chat',
+        'meal record mode is available only for image or meal record chat',
       );
     }
 
