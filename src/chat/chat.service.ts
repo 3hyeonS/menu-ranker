@@ -22,6 +22,7 @@ import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
 } from '../utils/number.util';
+import { getRecordedWeightMultiplier } from '../utils/recorded-nutrition.util';
 import { ChatRecommendRequestDto } from './dto/request-dto/chat-recommend-request-dto';
 import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-response-dto';
 import { ChatParsedRequestResponseDto } from './dto/response-dto/chat-parsed-request-response-dto';
@@ -254,6 +255,7 @@ type RecentMealRecordContextItem = {
     quantity: number;
     quantity_unit: string;
     input_mode: number;
+    input_mode_label: string;
     consumed_nutrition: RecentMealNutritionContext;
   }>;
   nutrition_totals: RecentMealNutritionContext;
@@ -3717,10 +3719,14 @@ ${JSON.stringify(
       (acc, meal) => {
         meal.mealMenus.forEach((mealMenu) => {
           const quantity = mealMenu.quantity ?? 0;
-          acc.calories += (mealMenu.menu.calories ?? 0) * quantity;
-          acc.carbs += this.getEffectiveCarbs(mealMenu.menu) * quantity;
-          acc.protein += (mealMenu.menu.protein ?? 0) * quantity;
-          acc.fat += this.getEffectiveFat(mealMenu.menu) * quantity;
+          const multiplier = getRecordedWeightMultiplier(
+            quantity,
+            mealMenu.menu.weight,
+          );
+          acc.calories += (mealMenu.menu.calories ?? 0) * multiplier;
+          acc.carbs += this.getEffectiveCarbs(mealMenu.menu) * multiplier;
+          acc.protein += (mealMenu.menu.protein ?? 0) * multiplier;
+          acc.fat += this.getEffectiveFat(mealMenu.menu) * multiplier;
         });
         return acc;
       },
@@ -3827,13 +3833,13 @@ ${JSON.stringify(
       const menus = meal.mealMenus.map((mealMenu) => ({
         name: stripPublicMenuSourcePrefix(mealMenu.menu.name),
         quantity: roundToOneDecimal(mealMenu.quantity ?? 0),
-        quantity_unit:
-          mealMenu.menu_input_mode === 1 ? 'g' : mealMenu.menu.unit_quantity,
+        quantity_unit: mealMenu.menu.unit === 1 ? 'ml' : 'g',
         input_mode: mealMenu.menu_input_mode,
+        input_mode_label:
+          mealMenu.menu_input_mode === 1 ? '중량 탭' : '단위 탭',
         consumed_nutrition: this.calculateRecordedMenuNutrition(
           mealMenu.menu,
           mealMenu.quantity ?? 0,
-          mealMenu.menu_input_mode,
         ),
       }));
 
@@ -3852,11 +3858,8 @@ ${JSON.stringify(
   private calculateRecordedMenuNutrition(
     menu: MenuEntity,
     quantity: number,
-    inputMode: number,
   ): RecentMealNutritionContext {
-    const menuWeight = Number(menu.weight ?? 0);
-    const multiplier =
-      inputMode === 1 ? (menuWeight > 0 ? quantity / menuWeight : 1) : quantity;
+    const multiplier = getRecordedWeightMultiplier(quantity, menu.weight);
 
     return {
       calories: roundToOneDecimal(Number(menu.calories ?? 0) * multiplier),
@@ -11575,7 +11578,8 @@ ${JSON.stringify(candidates)}
 
 [식사 기록 반영 규칙]
 - 최근 3일 식단 기록은 사용자가 실제로 먹은 음식이야. 단순 대화나 이전 추천보다 우선해서 판단해.
-- 각 메뉴의 consumed_nutrition, 각 끼니의 nutrition_totals, 최근 3일 일별 영양 합계는 서버가 DB 메뉴 영양정보와 저장 수량으로 계산한 값이야.
+- 각 메뉴의 quantity는 input_mode와 관계없이 DB에 저장된 실제 중량(g 또는 ml)이야. input_mode는 사용자가 사용한 UI 탭 정보일 뿐 영양 계산 방식이 아니야.
+- 각 메뉴의 consumed_nutrition, 각 끼니의 nutrition_totals, 최근 3일 일별 영양 합계는 서버가 DB 메뉴 영양정보에 저장 중량/메뉴 기준 중량 비율을 적용해 계산한 값이야.
 - 기록된 날짜의 총 섭취량을 말할 때는 최근 3일 일별 영양 합계의 수치를 그대로 사용해. 이미 합계가 있으면 "예상", "추정", "~로 보임"이라고 표현하지 마.
 - DB 기록 기준임을 밝혀야 할 때는 "기록 기준"이라고 표현하고, 합계를 다시 암산하거나 음식명만 보고 추측하지 마.
 - 오늘 식사 기록 상태의 recorded_meal_slots에 있는 끼니는 이미 기록이 끝난 끼니야. 해당 끼니를 아직 고르지 않은 미래 식사처럼 말하거나 메뉴 선택을 제안하지 마.

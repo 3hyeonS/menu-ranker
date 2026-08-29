@@ -44,6 +44,7 @@ import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
 } from '../utils/number.util';
+import { getRecordedWeightMultiplier } from '../utils/recorded-nutrition.util';
 import { BrandAddEntity } from './entity/brand-add.entity';
 import {
   DeleteObjectCommand,
@@ -3906,16 +3907,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   private calculateMenuCaloriesForQuantity(
     menu: MenuEntity,
     quantity: number,
-    inputMode: number,
+    _inputMode: number,
   ): number {
     const calories = Number(menu.calories ?? 0);
-
-    if (inputMode === 1) {
-      const weight = Number(menu.weight ?? 0);
-      return weight > 0 ? calories * (quantity / weight) : calories;
-    }
-
-    return calories * quantity;
+    return calories * getRecordedWeightMultiplier(quantity, menu.weight);
   }
 
   private sortSetMenus(setMenus: MenuSetMenuEntity[]): MenuSetMenuEntity[] {
@@ -3929,10 +3924,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       this.sortSetMenus(setMenus).reduce(
         (sum, setMenu) => {
           const calories = Number(setMenu.menu.calories ?? 0);
-          const weight = Number(setMenu.menu.weight ?? 0);
           const quantity = Number(setMenu.quantity);
           const calculatedCalories =
-            weight > 0 ? calories * (quantity / weight) : calories;
+            calories *
+            getRecordedWeightMultiplier(quantity, setMenu.menu.weight);
 
           return sum + calculatedCalories;
         },

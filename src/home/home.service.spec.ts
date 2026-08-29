@@ -33,4 +33,24 @@ describe('HomeService menu search priority', () => {
       '벤치프레스',
     );
   });
+
+  it('calculates recorded calories from weight regardless of input tab', () => {
+    const menu = { weight: 100, calories: 80 };
+
+    expect(service.calculateMenuCaloriesForQuantity(menu, 150, 0)).toBe(120);
+    expect(service.calculateMenuCaloriesForQuantity(menu, 150, 1)).toBe(120);
+    expect(service.calculateMenuCaloriesForQuantity(menu, 150, 0)).toBe(
+      service.calculateMenuCaloriesForQuantity(menu, 150, 1),
+    );
+  });
+
+  it('does not calculate nutrition with an invalid reference weight', () => {
+    expect(
+      service.calculateMenuCaloriesForQuantity(
+        { weight: 0, calories: 80 },
+        150,
+        0,
+      ),
+    ).toBe(0);
+  });
 });

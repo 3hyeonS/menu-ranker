@@ -114,8 +114,9 @@ describe('ChatService conversation memory', () => {
                 {
                   name: '닭가슴살',
                   quantity: 1,
-                  quantity_unit: '인분',
+                  quantity_unit: 'g',
                   input_mode: 0,
+                  input_mode_label: '단위 탭',
                   consumed_nutrition: {
                     calories: 150,
                     carbs: 2,
@@ -229,7 +230,7 @@ describe('ChatService conversation memory', () => {
     expect(service.getKoreanWeekday('2026-08-26')).toBe('수요일');
   });
 
-  it('calculates recorded nutrition using the saved quantity mode', () => {
+  it('calculates recorded nutrition from saved weight regardless of input mode', () => {
     const service = createService() as any;
     const menu = {
       weight: 200,
@@ -242,7 +243,7 @@ describe('ChatService conversation memory', () => {
       sodium: 500,
     };
 
-    expect(service.calculateRecordedMenuNutrition(menu, 100, 1)).toEqual({
+    expect(service.calculateRecordedMenuNutrition(menu, 100)).toEqual({
       calories: 200,
       carbs: 25,
       protein: 10,
@@ -251,14 +252,47 @@ describe('ChatService conversation memory', () => {
       dietary_fiber: 3,
       sodium: 250,
     });
-    expect(service.calculateRecordedMenuNutrition(menu, 2, 0)).toEqual({
-      calories: 800,
-      carbs: 100,
-      protein: 40,
-      fat: 20,
-      sugars: 16,
-      dietary_fiber: 12,
-      sodium: 1000,
+    expect(service.calculateRecordedMenuNutrition(menu, 2)).toEqual({
+      calories: 4,
+      carbs: 0.5,
+      protein: 0.2,
+      fat: 0.1,
+      sugars: 0.1,
+      dietary_fiber: 0.1,
+      sodium: 5,
+    });
+  });
+
+  it('calculates the daily snapshot from stored weight instead of raw quantity', async () => {
+    const service = createService() as any;
+    service.mealRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          mealMenus: [
+            {
+              quantity: 150,
+              menu_input_mode: 0,
+              menu: {
+                name: '테스트 메뉴',
+                weight: 100,
+                calories: 80,
+                carbs: 20,
+                protein: 10,
+                fat: 4,
+              },
+            },
+          ],
+        },
+      ]),
+    };
+
+    const snapshot = await service.getDailyMealSnapshot(9, new Date());
+
+    expect(snapshot.nutrition).toEqual({
+      calories: 120,
+      carbs: 30,
+      protein: 15,
+      fat: 6,
     });
   });
 
