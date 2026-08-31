@@ -5,7 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, MoreThan, Repository } from 'typeorm';
+import {
+  Between,
+  EntityManager,
+  LessThan,
+  MoreThan,
+  Repository,
+} from 'typeorm';
 import { UserEntity } from '../auth/entity/user/user.entity';
 import { CreateMenstrualCycleRequestDto } from './dto/request-dto/create-menstrual-cycle-request.dto';
 import { CreateMenstrualRecordRequestDto } from './dto/request-dto/create-menstrual-record-request.dto';
@@ -24,6 +30,9 @@ import {
 
 @Injectable()
 export class MenstrualService {
+  private static readonly DEFAULT_MENSTRUAL_DURATION_DAYS = 5;
+  private static readonly MAX_MENSTRUAL_DURATION_DAYS = 14;
+
   constructor(
     @InjectRepository(MenstrualCycleEntity)
     private readonly cycleRepository: Repository<MenstrualCycleEntity>,
@@ -182,6 +191,27 @@ export class MenstrualService {
     await this.cycleRepository.remove(cycle);
   }
 
+  async finalizeDueCycles(today: string): Promise<number> {
+    this.assertValidDate(today);
+    const openCycles = await this.cycleRepository.find({
+      where: { isEnd: false },
+      select: { id: true },
+    });
+    let finalizedCount = 0;
+
+    for (const openCycle of openCycles) {
+      const finalized = await this.cycleRepository.manager.transaction(
+        async (manager) =>
+          this.finalizeCycleIfDue(manager, openCycle.id, today),
+      );
+      if (finalized) {
+        finalizedCount += 1;
+      }
+    }
+
+    return finalizedCount;
+  }
+
   private async findOwnedCycle(
     manager: EntityManager,
     userId: number,
@@ -194,6 +224,100 @@ export class MenstrualService {
       throw new NotFoundException('Menstrual cycle not found');
     }
     return cycle;
+  }
+
+  private async finalizeCycleIfDue(
+    manager: EntityManager,
+    cycleId: number,
+    today: string,
+  ): Promise<boolean> {
+    const cycleRepository = manager.getRepository(MenstrualCycleEntity);
+    const cycle = await cycleRepository.findOne({
+      where: { id: cycleId, isEnd: false },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!cycle) {
+      return false;
+    }
+
+    const expectedDuration = await this.getExpectedMenstrualDuration(
+      cycleRepository,
+      cycle,
+    );
+    const observedDuration =
+      this.daysBetween(cycle.startDate, cycle.endDate) + 1;
+    const duration = Math.max(expectedDuration, observedDuration);
+    const endDate = this.addDays(cycle.startDate, duration - 1);
+    const finalizeDate = this.addDays(cycle.startDate, duration);
+
+    if (today < finalizeDate) {
+      return false;
+    }
+
+    const recordRepository = manager.getRepository(MenstrualRecordEntity);
+    const existingRecords = await recordRepository.find({
+      where: {
+        user: { id: cycle.user.id },
+        date: Between(cycle.startDate, endDate),
+      },
+      select: { date: true },
+    });
+    const recordedDates = new Set(existingRecords.map((record) => record.date));
+    const missingRecords: MenstrualRecordEntity[] = [];
+
+    for (
+      let date = cycle.startDate;
+      date <= endDate;
+      date = this.addDays(date, 1)
+    ) {
+      if (!recordedDates.has(date)) {
+        missingRecords.push(
+          recordRepository.create({
+            date,
+            menstruationStatus: '있음',
+            flow: null,
+            symptoms: null,
+            cycle,
+            user: cycle.user,
+          }),
+        );
+      }
+    }
+
+    if (missingRecords.length > 0) {
+      await recordRepository.save(missingRecords);
+    }
+
+    cycle.endDate = endDate;
+    cycle.isEnd = true;
+    await cycleRepository.save(cycle);
+    return true;
+  }
+
+  private async getExpectedMenstrualDuration(
+    repository: Repository<MenstrualCycleEntity>,
+    cycle: MenstrualCycleEntity,
+  ): Promise<number> {
+    const previousCycle = await repository.findOne({
+      where: {
+        user: { id: cycle.user.id },
+        isEnd: true,
+        startDate: LessThan(cycle.startDate),
+      },
+      order: { startDate: 'DESC', id: 'DESC' },
+    });
+
+    if (!previousCycle) {
+      return MenstrualService.DEFAULT_MENSTRUAL_DURATION_DAYS;
+    }
+
+    const duration =
+      this.daysBetween(previousCycle.startDate, previousCycle.endDate) + 1;
+    return Math.min(
+      Math.max(duration, 1),
+      MenstrualService.MAX_MENSTRUAL_DURATION_DAYS,
+    );
   }
 
   private async applyCycleStatus(
@@ -279,5 +403,11 @@ export class MenstrualService {
     const parsed = new Date(`${date}T00:00:00.000Z`);
     parsed.setUTCDate(parsed.getUTCDate() + amount);
     return parsed.toISOString().slice(0, 10);
+  }
+
+  private daysBetween(startDate: string, endDate: string): number {
+    const start = new Date(`${startDate}T00:00:00.000Z`).getTime();
+    const end = new Date(`${endDate}T00:00:00.000Z`).getTime();
+    return Math.floor((end - start) / 86_400_000);
   }
 }
