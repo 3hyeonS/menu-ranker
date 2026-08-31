@@ -174,12 +174,17 @@ describe('ChatService conversation memory', () => {
       expect(JSON.stringify(requestBody)).toContain('태국 음식을 먹었다면');
       const systemInstruction = requestBody.system_instruction.parts[0]
         .text as string;
-      expect(systemInstruction).toContain(
-        '"nickname":"튼튼이","preferred_address":"튼튼이님"',
-      );
+      expect(systemInstruction).not.toContain('"nickname"');
+      expect(systemInstruction).not.toContain('"preferred_address"');
       expect(systemInstruction).toContain('"recorded_meal_slots":["저녁"]');
       expect(systemInstruction).toContain(
-        '저녁이 남아 있다고 전제하는 표현을 절대 쓰지 마',
+        '가장 최근 사용자 메시지의 질문이나 요청을 최우선으로 해석하고',
+      );
+      expect(systemInstruction).toContain(
+        '식사 기록은 답변의 참고 근거이지 사용자의 현재 질문을 거절하는 조건이 아니야',
+      );
+      expect(systemInstruction).toContain(
+        '이전 assistant 답변의 결론이나 거절 논리를 반복하지 말고',
       );
       expect(systemInstruction).toContain(
         '"date":"2026-08-27","weekday":"목요일"',
@@ -190,14 +195,19 @@ describe('ChatService conversation memory', () => {
       expect(systemInstruction).toContain(
         '모든 답변은 친구에게 말하듯 자연스럽고 친근한 반말 해체',
       );
+      expect(systemInstruction).toContain('동사에 높임 표현을 섞지 마');
+      expect(systemInstruction).toContain('"먹은/먹었는데/먹을/먹어봐"처럼');
       expect(systemInstruction).toContain(
-        '과거 대화의 assistant 답변이 존댓말이어도 말투는 따라 하지 말고',
+        '과거 대화의 assistant 답변에 존댓말이나 주체 높임 표현이 있어도',
       );
       expect(systemInstruction).toContain(
         '과거 assistant 답변은 AI가 생성한 조언이나 추론일 뿐이며',
       );
       expect(systemInstruction).toContain(
-        '"사용자님", "고객님", "회원님" 같은 일반 호칭은 절대 쓰지 마',
+        '사용자의 닉네임이나 이름을 답변에 언급하지 마',
+      );
+      expect(systemInstruction).toContain(
+        '일반 호칭도 쓰지 말고 별도의 호칭 없이 바로 답해',
       );
       expect(systemInstruction).toContain('건더기 위주로 먹어');
       expect(systemInstruction).toContain('사용자 습관이나 목표로 표현하지 마');
