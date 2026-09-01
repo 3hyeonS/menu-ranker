@@ -1214,26 +1214,15 @@ export class HomeService {
             basePagedMenuList,
           )
         : basePagedMenuList;
-    let menu_list: MenuSimpleResponseDto[] = pagedMenuList.map(
+    const menu_list: MenuSimpleResponseDto[] = pagedMenuList.map(
       (menu) => new MenuSimpleResponseDto(menu),
     );
-    let nextCursor =
+    const nextCursor =
       (uniqueMenuList.length > limit || rawMenuList.length >= rawFetchLimit) &&
       rawMenuList.length > 0
         ? rawMenuList[rawMenuList.length - 1].id
         : null;
-    let has_result = menu_list.length > 0;
-
-    if (!has_result && cursor === undefined) {
-      const alternativeMenus = await this.findAlternativeMenusByIntent(
-        keyword,
-        user,
-      );
-      menu_list = this.dedupeMenusByCompactNameAndBrand(
-        this.dedupeMenusByDisplayName(alternativeMenus),
-      ).map((menu) => new MenuSimpleResponseDto(menu));
-      nextCursor = null;
-    }
+    const has_result = menu_list.length > 0;
 
     return new SearchResponseDto(has_result, menu_list, nextCursor);
   }

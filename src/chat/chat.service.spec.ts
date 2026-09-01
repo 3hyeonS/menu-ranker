@@ -85,6 +85,9 @@ describe('ChatService conversation memory', () => {
     process.env.GEMINI_API_KEY = 'test-key';
     process.env.GEMINI_MODEL = 'test-model';
     jest.spyOn(service, 'formatKoreaDate').mockReturnValue('2026-08-28');
+    jest
+      .spyOn(service, 'formatKoreaDateTime')
+      .mockReturnValue('2026-08-28T15:30:00+09:00');
 
     try {
       const answer = await service.callGeminiText(
@@ -92,6 +95,7 @@ describe('ChatService conversation memory', () => {
         {
           messages: [
             {
+              created_at: '2026-08-27T22:30:00+09:00',
               user_input: '이전 질문',
               chat_category: 'general',
               intro_message: '이전 답변',
@@ -162,8 +166,22 @@ describe('ChatService conversation memory', () => {
       expect(answer).toBe('이어진 답변');
       const requestBody = post.mock.calls[0][1];
       expect(requestBody.contents).toEqual([
-        { role: 'user', parts: [{ text: '이전 질문' }] },
-        { role: 'model', parts: [{ text: '이전 답변' }] },
+        {
+          role: 'user',
+          parts: [
+            {
+              text: '[과거 사용자 메시지 | 작성 시각: 2026-08-27T22:30:00+09:00 | 시간대: Asia/Seoul]\n이전 질문',
+            },
+          ],
+        },
+        {
+          role: 'model',
+          parts: [
+            {
+              text: '[해당 시점의 과거 assistant 답변 | 작성 시각: 2026-08-27T22:30:00+09:00 | 시간대: Asia/Seoul]\n이전 답변',
+            },
+          ],
+        },
         { role: 'user', parts: [{ text: '현재 질문' }] },
       ]);
       expect(JSON.stringify(requestBody)).toContain('닭가슴살');
@@ -177,6 +195,15 @@ describe('ChatService conversation memory', () => {
       expect(systemInstruction).not.toContain('"nickname"');
       expect(systemInstruction).not.toContain('"preferred_address"');
       expect(systemInstruction).toContain('"recorded_meal_slots":["저녁"]');
+      expect(systemInstruction).toContain(
+        '"current_request_datetime":"2026-08-28T15:30:00+09:00"',
+      );
+      expect(systemInstruction).toContain(
+        '과거 메시지의 "지금", "방금", "오늘", "어제", "아까"는 해당 작성 시각을 기준으로만 해석하고',
+      );
+      expect(systemInstruction).toContain(
+        '오늘 식사 기록 상태의 records를 먼저 확인해',
+      );
       expect(systemInstruction).toContain(
         '가장 최근 사용자 메시지의 질문이나 요청을 최우선으로 해석하고',
       );

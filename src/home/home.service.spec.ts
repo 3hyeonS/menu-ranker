@@ -53,4 +53,42 @@ describe('HomeService menu search priority', () => {
       ),
     ).toBe(0);
   });
+
+  it('returns an empty result instead of unrelated alternative menus', async () => {
+    const createEmptyQueryBuilder = () => {
+      const builder: Record<string, jest.Mock> = {};
+      ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'take'].forEach(
+        (method) => {
+          builder[method] = jest.fn(() => builder);
+        },
+      );
+      builder.getMany = jest.fn().mockResolvedValue([]);
+      return builder;
+    };
+    const searchService = Object.create(HomeService.prototype) as any;
+    const exactQuery = createEmptyQueryBuilder();
+    const partialQuery = createEmptyQueryBuilder();
+    searchService.menuRepository = {
+      createQueryBuilder: jest
+        .fn()
+        .mockReturnValueOnce(exactQuery)
+        .mockReturnValueOnce(partialQuery),
+    };
+    const alternativeSearch = jest.spyOn(
+      searchService,
+      'findAlternativeMenusByIntent',
+    );
+
+    const result = await searchService.search(
+      { input: 'DB에 없는 특수 음료', limit: 20 },
+      { id: 7 },
+    );
+
+    expect(result).toEqual({
+      has_result: false,
+      menu_list: [],
+      next_cursor: null,
+    });
+    expect(alternativeSearch).not.toHaveBeenCalled();
+  });
 });

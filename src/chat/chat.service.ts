@@ -213,6 +213,7 @@ type ChatAnalysis = {
 };
 
 type ChatContextSummaryItem = {
+  created_at: string;
   user_input: string;
   chat_category: ChatCategory;
   intro_message: string | null;
@@ -314,6 +315,7 @@ type ChatUserMenuSearchDebugRow = {
 
 type LightweightChatContext = {
   recent_messages: Array<{
+    created_at: string;
     user_input: string;
     chat_category: ChatCategory;
     assistant_intro: string | null;
@@ -2183,8 +2185,10 @@ export class ChatService {
     return {
       messages,
       session_summaries: summarizedSessions.reverse().map((session) => ({
-        started_at: session.startedAt.toISOString(),
-        ended_at: (session.closedAt ?? session.lastMessageAt).toISOString(),
+        started_at: this.formatKoreaDateTime(session.startedAt),
+        ended_at: this.formatKoreaDateTime(
+          session.closedAt ?? session.lastMessageAt,
+        ),
         summary: session.summary,
       })),
       long_term_profile_traits: this.normalizeVerifiedProfileTraits(
@@ -2639,6 +2643,7 @@ ${JSON.stringify(
         .filter((brand): brand is string => !!brand) ?? [];
 
     return {
+      created_at: this.formatKoreaDateTime(chatHistory.createdAt),
       user_input: chatHistory.input_text,
       chat_category: chatCategory,
       intro_message:
@@ -2662,6 +2667,7 @@ ${JSON.stringify(
   ): LightweightChatContext {
     return {
       recent_messages: chatContext.messages.map((message) => ({
+        created_at: message.created_at,
         user_input: message.user_input,
         chat_category: message.chat_category,
         assistant_intro: message.intro_message,
@@ -3787,6 +3793,24 @@ ${JSON.stringify(
     );
 
     return `${values.year}-${values.month}-${values.day}`;
+  }
+
+  private formatKoreaDateTime(date = new Date()): string {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(date);
+    const values = Object.fromEntries(
+      parts.map((part) => [part.type, part.value]),
+    );
+
+    return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}+09:00`;
   }
 
   private addDateOnlyDays(date: string, amount: number): string {
@@ -11455,15 +11479,25 @@ ${JSON.stringify(candidates)}
       return [
         {
           role: 'user',
-          parts: [{ text: message.user_input }],
+          parts: [
+            {
+              text: `[과거 사용자 메시지 | 작성 시각: ${message.created_at} | 시간대: Asia/Seoul]\n${message.user_input}`,
+            },
+          ],
         },
         {
           role: 'model',
-          parts: [{ text: assistantMessage }],
+          parts: [
+            {
+              text: `[해당 시점의 과거 assistant 답변 | 작성 시각: ${message.created_at} | 시간대: Asia/Seoul]\n${assistantMessage}`,
+            },
+          ],
         },
       ];
     });
-    const referenceDate = this.formatKoreaDate();
+    const requestReceivedAt = new Date();
+    const referenceDate = this.formatKoreaDate(requestReceivedAt);
+    const currentRequestDateTime = this.formatKoreaDateTime(requestReceivedAt);
     const yesterdayDate = this.addDateOnlyDays(referenceDate, -1);
     const tomorrowDate = this.addDateOnlyDays(referenceDate, 1);
     const todayMealRecords = chatContext.recent_meal_records_3_days.filter(
@@ -11487,6 +11521,7 @@ ${JSON.stringify(candidates)}
     const storedContext = [
       `날짜 기준표:\n${JSON.stringify({
         timezone: 'Asia/Seoul',
+        current_request_datetime: currentRequestDateTime,
         yesterday: {
           date: yesterdayDate,
           weekday: this.getKoreanWeekday(yesterdayDate),
@@ -11547,9 +11582,9 @@ ${JSON.stringify(candidates)}
         ? `장기 대화 기억:\n${chatContext.long_term_profile_traits}`
         : null,
       chatContext.session_summaries.length > 0
-        ? `이전 대화 세션 요약:\n${chatContext.session_summaries
-            .map((session) => session.summary)
-            .join('\n')}`
+        ? `이전 대화 세션 요약:\n${JSON.stringify(
+            chatContext.session_summaries,
+          )}`
         : null,
     ]
       .filter((value): value is string => !!value)
@@ -11582,6 +11617,7 @@ ${JSON.stringify(candidates)}
 - 기록된 날짜의 총 섭취량을 말할 때는 최근 3일 일별 영양 합계의 수치를 그대로 사용해. 이미 합계가 있으면 "예상", "추정", "~로 보임"이라고 표현하지 마.
 - DB 기록 기준임을 밝혀야 할 때는 "기록 기준"이라고 표현하고, 합계를 다시 암산하거나 음식명만 보고 추측하지 마.
 - 오늘 식사 기록 상태의 recorded_meal_slots에 있는 끼니는 이미 기록이 끝난 끼니야. 사용자가 묻지 않았는데 해당 끼니가 아직 남아 있거나 메뉴를 고르지 않았다고 먼저 가정하지 마.
+- 오늘 식사를 언급하기 전에 오늘 식사 기록 상태의 records를 먼저 확인해. 오늘 기록된 아침·점심·저녁을 누락하거나 어제 기록과 혼동하지 마.
 - 식사 기록은 답변의 참고 근거이지 사용자의 현재 질문을 거절하는 조건이 아니야. 이미 기록된 끼니와 관련된 메뉴 비교나 선택을 요청해도 질문의 결론부터 직접 답하고, 기록은 필요한 이유를 설명할 때만 활용해.
 - 사용자가 직접 다음 식사나 다른 날짜의 식사를 묻지 않았다면, 기록되지 않은 끼니가 남아 있다고 추측하지 마.
 - 사용자가 식사를 추천해 달라고 하면 기준 날짜와 같은 날에 이미 먹은 메뉴를 먼저 확인해.
@@ -11592,9 +11628,13 @@ ${JSON.stringify(candidates)}
 
 [날짜와 요일 규칙]
 - 날짜 기준표는 Asia/Seoul 기준으로 서버가 계산한 확정값이야. 오늘, 어제, 내일과 요일은 반드시 이 값을 그대로 사용해.
+- current_request_datetime은 현재 요청을 받은 확정 시각이야. 현재 시각이 필요하면 이 값만 사용하고 과거 메시지에 적힌 시각을 현재 시각으로 재사용하지 마.
+- 각 과거 메시지 앞의 작성 시각은 그 메시지가 오간 시점이야. 과거 메시지의 "지금", "방금", "오늘", "어제", "아까"는 해당 작성 시각을 기준으로만 해석하고 현재 요청 시점의 사실로 옮기지 마.
+- 이전 세션 요약의 started_at과 ended_at은 그 요약이 유효했던 과거 기간이야. 요약 속 일회성 행동이나 당시 상태를 현재도 이어지는 사실로 단정하지 마.
+- 특히 과거에 양치, 식사, 운동 등을 했다는 말이 있어도 현재 메시지에서 다시 말했다고 가정하거나 "방금 했다"고 표현하지 마.
 - 날짜 문자열을 보고 요일을 직접 계산하거나 추측하지 마.
 - 최근 식단·운동 기록에 포함된 weekday도 서버가 계산한 확정값이므로 다른 요일로 바꾸지 마.
-- 답변에 날짜나 요일이 꼭 필요하지 않으면 불필요하게 덧붙이지 마.
+- 답변에 현재 시각이나 날짜, 요일이 꼭 필요하지 않으면 불필요하게 덧붙이지 마.
 
 [체중 기록 반영 규칙]
 - 최근 7일 체중 기록은 DB에 실제 저장된 날짜별 체중이야. 기록된 수치를 그대로 사용하고 없는 날짜의 체중은 추측하지 마.
