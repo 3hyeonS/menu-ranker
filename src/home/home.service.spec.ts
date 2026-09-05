@@ -34,6 +34,21 @@ describe('HomeService menu search priority', () => {
     );
   });
 
+  it('resolves inner and outer thigh workout search aliases', () => {
+    expect(service.resolveWorkoutSearchNameAlias('아웃타이')).toBe(
+      '레버 시티드 힙 애덕션',
+    );
+    expect(service.resolveWorkoutSearchNameAlias('아웃 타이')).toBe(
+      '레버 시티드 힙 애덕션',
+    );
+    expect(service.resolveWorkoutSearchNameAlias('이너타이')).toBe(
+      '레버 시티드 힙 어덕션',
+    );
+    expect(service.resolveWorkoutSearchNameAlias('이너 타이')).toBe(
+      '레버 시티드 힙 어덕션',
+    );
+  });
+
   it('calculates recorded calories from weight regardless of input tab', () => {
     const menu = { weight: 100, calories: 80 };
 

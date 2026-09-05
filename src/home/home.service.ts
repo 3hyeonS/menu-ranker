@@ -4433,7 +4433,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const equipmentCategory = dto.equipment_category?.trim();
     const equipmentDetail = dto.equipment_detail?.trim();
     const equipmentOriginalDetail = dto.equipment_original_detail?.trim();
-    const normalizedExactInput = this.normalizeWorkoutExactSearchName(input);
+    const resolvedInput = this.resolveWorkoutSearchNameAlias(input);
+    const normalizedExactInput =
+      this.normalizeWorkoutExactSearchName(resolvedInput);
     const exactWorkoutNameExpression =
       "LOWER(REPLACE(workout.name, ' ', ''))";
 
@@ -4442,7 +4444,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       .where('1 = 1');
 
     if (input.length > 0) {
-      query.andWhere('workout.name LIKE :input', { input: `%${input}%` });
+      query.andWhere('workout.name LIKE :input', {
+        input: `%${resolvedInput}%`,
+      });
     }
 
     if (bodyPartMajor) {
@@ -4529,6 +4533,16 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
   private normalizeWorkoutExactSearchName(value: string): string {
     return value.toLowerCase().replace(/\s+/g, '');
+  }
+
+  private resolveWorkoutSearchNameAlias(value: string): string {
+    const normalizedValue = this.normalizeWorkoutExactSearchName(value);
+    const aliases: Record<string, string> = {
+      아웃타이: '레버 시티드 힙 애덕션',
+      이너타이: '레버 시티드 힙 어덕션',
+    };
+
+    return aliases[normalizedValue] ?? value;
   }
 
   async getWorkoutDetail(
