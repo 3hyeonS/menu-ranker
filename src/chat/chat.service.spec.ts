@@ -165,6 +165,7 @@ describe('ChatService conversation memory', () => {
 
       expect(answer).toBe('이어진 답변');
       const requestBody = post.mock.calls[0][1];
+      expect(requestBody.generationConfig.maxOutputTokens).toBe(600);
       expect(requestBody.contents).toEqual([
         {
           role: 'user',
@@ -205,6 +206,15 @@ describe('ChatService conversation memory', () => {
         '오늘 식사 기록 상태의 records를 먼저 확인해',
       );
       expect(systemInstruction).toContain(
+        '하루 식사 기록 전체가 완료됐다는 뜻이 아니야',
+      );
+      expect(systemInstruction).toContain(
+        '"오늘 식사 기록을 마쳤다", "오늘 식사가 끝났다", "이미 모든 식사를 했다"',
+      );
+      expect(systemInstruction).toContain(
+        '"아침 기록이 있다", "아침과 점심을 먹었다"처럼',
+      );
+      expect(systemInstruction).toContain(
         '가장 최근 사용자 메시지의 질문이나 요청을 최우선으로 해석하고',
       );
       expect(systemInstruction).toContain(
@@ -236,6 +246,8 @@ describe('ChatService conversation memory', () => {
       expect(systemInstruction).toContain(
         '일반 호칭도 쓰지 말고 별도의 호칭 없이 바로 답해',
       );
+      expect(systemInstruction).toContain('최대 3문장으로 답해');
+      expect(systemInstruction).toContain('가장 적합한 3개까지만 제시');
       expect(systemInstruction).toContain('건더기 위주로 먹어');
       expect(systemInstruction).toContain('사용자 습관이나 목표로 표현하지 마');
       expect(systemInstruction).toContain('최근 3일 일별 영양 합계');

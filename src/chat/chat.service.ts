@@ -11616,7 +11616,10 @@ ${JSON.stringify(candidates)}
 - 각 메뉴의 consumed_nutrition, 각 끼니의 nutrition_totals, 최근 3일 일별 영양 합계는 서버가 DB 메뉴 영양정보에 저장 중량/메뉴 기준 중량 비율을 적용해 계산한 값이야.
 - 기록된 날짜의 총 섭취량을 말할 때는 최근 3일 일별 영양 합계의 수치를 그대로 사용해. 이미 합계가 있으면 "예상", "추정", "~로 보임"이라고 표현하지 마.
 - DB 기록 기준임을 밝혀야 할 때는 "기록 기준"이라고 표현하고, 합계를 다시 암산하거나 음식명만 보고 추측하지 마.
-- 오늘 식사 기록 상태의 recorded_meal_slots에 있는 끼니는 이미 기록이 끝난 끼니야. 사용자가 묻지 않았는데 해당 끼니가 아직 남아 있거나 메뉴를 고르지 않았다고 먼저 가정하지 마.
+- 오늘 식사 기록 상태의 recorded_meal_slots는 해당 끼니의 기록이 존재한다는 뜻일 뿐, 하루 식사 기록 전체가 완료됐다는 뜻이 아니야.
+- 일부 끼니만 기록된 경우 "오늘 식사 기록을 마쳤다", "오늘 식사가 끝났다", "이미 모든 식사를 했다"처럼 하루 전체가 완료됐다고 표현하지 마.
+- 기록된 끼니를 언급해야 한다면 "아침 기록이 있다", "아침과 점심을 먹었다"처럼 records에 있는 끼니만 구체적으로 말해.
+- recorded_meal_slots에 없는 끼니는 기록이 없다는 뜻일 뿐, 사용자가 아직 먹지 않았거나 앞으로 먹을 예정이라는 뜻이 아니므로 현재 질문에 그런 정보가 없으면 추측하지 마.
 - 오늘 식사를 언급하기 전에 오늘 식사 기록 상태의 records를 먼저 확인해. 오늘 기록된 아침·점심·저녁을 누락하거나 어제 기록과 혼동하지 마.
 - 식사 기록은 답변의 참고 근거이지 사용자의 현재 질문을 거절하는 조건이 아니야. 이미 기록된 끼니와 관련된 메뉴 비교나 선택을 요청해도 질문의 결론부터 직접 답하고, 기록은 필요한 이유를 설명할 때만 활용해.
 - 사용자가 직접 다음 식사나 다른 날짜의 식사를 묻지 않았다면, 기록되지 않은 끼니가 남아 있다고 추측하지 마.
@@ -11641,6 +11644,11 @@ ${JSON.stringify(candidates)}
 - 체중 변화나 추세를 말할 때는 기록 날짜와 수치를 기준으로 하고, 기록이 부족하면 장기 추세를 단정하지 마.
 
 ${CHAT_USER_FACT_PROVENANCE_RULES}
+
+[답변 길이 규칙]
+- 사용자가 자세하거나 긴 설명을 명시적으로 요청하지 않으면 결론과 핵심 이유 또는 실행 팁만 남겨 최대 3문장으로 답해.
+- 단순한 가능 여부나 선택 질문은 결론부터 말하고, 같은 의미의 설명이나 일반적인 주의사항을 반복하지 마.
+- 여러 메뉴나 방법을 요청해도 기본적으로 가장 적합한 3개까지만 제시하고 각 항목은 한 문장 이내로 써.
 
 [답변 말투 규칙]
 - 모든 답변은 친구에게 말하듯 자연스럽고 친근한 반말 해체로 작성해.
@@ -11669,6 +11677,7 @@ ${storedContext}`,
               generationConfig: {
                 temperature: 0.7,
                 responseMimeType: 'text/plain',
+                maxOutputTokens: this.getGeminiTextMaxOutputTokens(),
               },
             },
             {
@@ -11827,6 +11836,16 @@ ${storedContext}`,
     }
 
     return Math.min(Math.max(parsed, 5000), 120000);
+  }
+
+  private getGeminiTextMaxOutputTokens(): number {
+    const parsed = Number(process.env.GEMINI_TEXT_MAX_OUTPUT_TOKENS ?? 600);
+
+    if (!Number.isFinite(parsed)) {
+      return 600;
+    }
+
+    return Math.min(Math.max(Math.trunc(parsed), 128), 2048);
   }
 
   private async callGeminiJsonWithImage(
