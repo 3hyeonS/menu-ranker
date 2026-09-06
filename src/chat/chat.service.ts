@@ -11646,9 +11646,9 @@ ${JSON.stringify(candidates)}
 ${CHAT_USER_FACT_PROVENANCE_RULES}
 
 [답변 길이 규칙]
-- 사용자가 자세하거나 긴 설명을 명시적으로 요청하지 않으면 결론과 핵심 이유 또는 실행 팁만 남겨 최대 3문장으로 답해.
+- 사용자가 자세하거나 긴 설명을 명시적으로 요청하지 않으면 결론과 핵심 이유, 필요한 실행 팁을 포함해 최대 5문장으로 답해.
 - 단순한 가능 여부나 선택 질문은 결론부터 말하고, 같은 의미의 설명이나 일반적인 주의사항을 반복하지 마.
-- 여러 메뉴나 방법을 요청해도 기본적으로 가장 적합한 3개까지만 제시하고 각 항목은 한 문장 이내로 써.
+- 여러 메뉴나 방법을 요청하면 기본적으로 가장 적합한 5개까지만 제시하고 각 항목은 한두 문장 이내로 써.
 
 [답변 말투 규칙]
 - 모든 답변은 친구에게 말하듯 자연스럽고 친근한 반말 해체로 작성해.
@@ -11839,10 +11839,10 @@ ${storedContext}`,
   }
 
   private getGeminiTextMaxOutputTokens(): number {
-    const parsed = Number(process.env.GEMINI_TEXT_MAX_OUTPUT_TOKENS ?? 600);
+    const parsed = Number(process.env.GEMINI_TEXT_MAX_OUTPUT_TOKENS ?? 900);
 
     if (!Number.isFinite(parsed)) {
-      return 600;
+      return 900;
     }
 
     return Math.min(Math.max(Math.trunc(parsed), 128), 2048);

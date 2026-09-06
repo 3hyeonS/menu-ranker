@@ -165,7 +165,7 @@ describe('ChatService conversation memory', () => {
 
       expect(answer).toBe('이어진 답변');
       const requestBody = post.mock.calls[0][1];
-      expect(requestBody.generationConfig.maxOutputTokens).toBe(600);
+      expect(requestBody.generationConfig.maxOutputTokens).toBe(900);
       expect(requestBody.contents).toEqual([
         {
           role: 'user',
@@ -246,8 +246,8 @@ describe('ChatService conversation memory', () => {
       expect(systemInstruction).toContain(
         '일반 호칭도 쓰지 말고 별도의 호칭 없이 바로 답해',
       );
-      expect(systemInstruction).toContain('최대 3문장으로 답해');
-      expect(systemInstruction).toContain('가장 적합한 3개까지만 제시');
+      expect(systemInstruction).toContain('최대 5문장으로 답해');
+      expect(systemInstruction).toContain('가장 적합한 5개까지만 제시');
       expect(systemInstruction).toContain('건더기 위주로 먹어');
       expect(systemInstruction).toContain('사용자 습관이나 목표로 표현하지 마');
       expect(systemInstruction).toContain('최근 3일 일별 영양 합계');
