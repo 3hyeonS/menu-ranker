@@ -9,206 +9,143 @@ describe('MenstrualService', () => {
   const user = { id: 7 } as UserEntity;
 
   function createFixture() {
+    let nextCycleId = 1;
     const cycleRepository = {
       create: jest.fn((value) => value),
-      save: jest.fn(async (value) => value),
-      find: jest.fn(),
-      findOne: jest.fn(),
+      save: jest.fn(async (value) => ({ ...value, id: nextCycleId++ })),
+      delete: jest.fn(),
     };
     const recordRepository = {
       create: jest.fn((value) => value),
       save: jest.fn(async (value) => value),
       find: jest.fn(),
-      findOne: jest.fn(),
       delete: jest.fn(),
     };
+    const userRepository = {
+      findOne: jest.fn(async () => ({ id: user.id })),
+    };
     const manager = {
-      getRepository: jest.fn((entity) =>
-        entity === MenstrualCycleEntity ? cycleRepository : recordRepository,
-      ),
+      getRepository: jest.fn((entity) => {
+        if (entity === MenstrualCycleEntity) return cycleRepository;
+        if (entity === MenstrualRecordEntity) return recordRepository;
+        return userRepository;
+      }),
     };
     const transaction = jest.fn(async (work) => work(manager));
     Object.assign(cycleRepository, { manager: { transaction } });
-    Object.assign(recordRepository, { manager: { transaction } });
-
     const service = new MenstrualService(
       cycleRepository as unknown as Repository<MenstrualCycleEntity>,
       recordRepository as unknown as Repository<MenstrualRecordEntity>,
     );
-
-    return { service, cycleRepository, recordRepository, manager };
+    return { service, cycleRepository, recordRepository, transaction };
   }
 
-  it('creates a new cycle and its first present record', async () => {
-    const { service, cycleRepository, recordRepository } = createFixture();
-    recordRepository.findOne.mockResolvedValue(null);
-    cycleRepository.save.mockImplementation(async (cycle) => ({
-      ...cycle,
-      id: 31,
-    }));
-
-    const result = await service.createCycle(user, {
-      date: '2026-08-17',
-      flow: '보통',
-      symptoms: ['복통', '복통', ' 두통 '],
-    });
-
-    expect(result.cycle).toEqual({
-      cycle_id: 31,
-      start_date: '2026-08-17',
-      end_date: '2026-08-17',
-      is_end: false,
-    });
-    expect(recordRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        date: '2026-08-17',
-        menstruationStatus: '있음',
-        symptoms: ['복통', '두통'],
-      }),
+  it('returns full recorded ranges crossing the requested month boundary', async () => {
+    const { service, recordRepository } = createFixture();
+    recordRepository.find.mockResolvedValue(
+      [
+        '2026-06-01',
+        '2026-06-02',
+        '2026-07-29',
+        '2026-07-30',
+        '2026-07-31',
+        '2026-08-01',
+        '2026-08-02',
+        '2026-08-20',
+        '2026-08-30',
+        '2026-08-31',
+        '2026-09-01',
+        '2026-09-02',
+      ].map((date) => ({ date })),
     );
+
+    const result = await service.getRecords(user, {
+      from_date: '2026-08-01',
+      to_date: '2026-08-31',
+    });
+
+    expect(result).toEqual({
+      recorded_ranges: [
+        { start_date: '2026-07-29', end_date: '2026-08-02' },
+        { start_date: '2026-08-20', end_date: '2026-08-20' },
+        { start_date: '2026-08-30', end_date: '2026-09-02' },
+      ],
+      has_older: true,
+    });
   });
 
-  it('ends a cycle on the prior day when an absent record is created', async () => {
-    const { service, cycleRepository, recordRepository } = createFixture();
-    const cycle = {
-      id: 31,
-      startDate: '2026-08-17',
-      endDate: '2026-08-20',
-      isEnd: false,
-      user,
-    } as MenstrualCycleEntity;
-    cycleRepository.findOne.mockResolvedValue(cycle);
-    recordRepository.findOne.mockResolvedValue(null);
+  it('returns an empty range list without inventing records', async () => {
+    const { service, recordRepository } = createFixture();
+    recordRepository.find.mockResolvedValue([]);
 
-    const result = await service.createRecord(user, {
-      cycle_id: 31,
-      date: '2026-08-21',
-      menstruation_status: '없음',
-      flow: '많음',
-      symptoms: ['복통'],
+    await expect(
+      service.getRecords(user, {
+        from_date: '2026-08-01',
+        to_date: '2026-08-31',
+      }),
+    ).resolves.toEqual({ recorded_ranges: [], has_older: false });
+  });
+
+  it('applies removals and additions, then rebuilds consecutive ranges', async () => {
+    const { service, cycleRepository, recordRepository, transaction } =
+      createFixture();
+    recordRepository.find.mockResolvedValue(
+      ['2026-08-01', '2026-08-02', '2026-08-03'].map((date) => ({ date })),
+    );
+
+    await service.saveRecords(user, {
+      add_ranges: [{ start_date: '2026-08-05', end_date: '2026-08-06' }],
+      remove_ranges: [{ start_date: '2026-08-02', end_date: '2026-08-02' }],
     });
 
-    expect(cycle.endDate).toBe('2026-08-20');
-    expect(cycle.isEnd).toBe(true);
+    expect(transaction).toHaveBeenCalledTimes(1);
     expect(recordRepository.delete).toHaveBeenCalledWith({
-      cycle: { id: 31 },
-      date: expect.anything(),
+      user: { id: user.id },
     });
-    expect(result.record).toEqual(
+    expect(cycleRepository.delete).toHaveBeenCalledWith({
+      user: { id: user.id },
+    });
+    expect(cycleRepository.create).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
-        date: '2026-08-21',
-        menstruation_status: '없음',
-        flow: null,
-        symptoms: null,
-        cycle_id: 31,
+        startDate: '2026-08-01',
+        endDate: '2026-08-01',
+        isEnd: true,
       }),
     );
+    expect(cycleRepository.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        startDate: '2026-08-03',
+        endDate: '2026-08-03',
+        isEnd: true,
+      }),
+    );
+    expect(cycleRepository.create).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        startDate: '2026-08-05',
+        endDate: '2026-08-06',
+        isEnd: true,
+      }),
+    );
+    expect(recordRepository.create).toHaveBeenCalledTimes(4);
   });
 
-  it('rejects a non-existent calendar date', async () => {
+  it('rejects an invalid or reversed date range', async () => {
     const { service } = createFixture();
 
     await expect(
-      service.createCycle(user, { date: '2026-02-30' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('does not allow an absent record on the cycle start date', async () => {
-    const { service, cycleRepository, recordRepository } = createFixture();
-    cycleRepository.findOne.mockResolvedValue({
-      id: 31,
-      startDate: '2026-08-17',
-      endDate: '2026-08-17',
-      isEnd: false,
-      user,
-    });
-    recordRepository.findOne.mockResolvedValue(null);
-
-    await expect(
-      service.createRecord(user, {
-        cycle_id: 31,
-        date: '2026-08-17',
-        menstruation_status: '없음',
+      service.getRecords(user, {
+        from_date: '2026-08-31',
+        to_date: '2026-08-01',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
-  });
-
-  it('finalizes a due cycle with the default five-day duration', async () => {
-    const { service, cycleRepository, recordRepository } = createFixture();
-    const cycle = {
-      id: 31,
-      startDate: '2026-08-21',
-      endDate: '2026-08-21',
-      isEnd: false,
-      user,
-    } as MenstrualCycleEntity;
-    cycleRepository.find.mockResolvedValue([{ id: 31 }]);
-    cycleRepository.findOne
-      .mockResolvedValueOnce(cycle)
-      .mockResolvedValueOnce(null);
-    recordRepository.find.mockResolvedValue([{ date: '2026-08-21' }]);
-
-    await expect(service.finalizeDueCycles('2026-08-26')).resolves.toBe(1);
-
-    expect(recordRepository.save).toHaveBeenCalledWith(
-      ['2026-08-22', '2026-08-23', '2026-08-24', '2026-08-25'].map((date) =>
-        expect.objectContaining({
-          date,
-          menstruationStatus: '있음',
-          flow: null,
-          symptoms: null,
-        }),
-      ),
-    );
-    expect(cycle.endDate).toBe('2026-08-25');
-    expect(cycle.isEnd).toBe(true);
-  });
-
-  it('does not finalize a cycle before start date plus M', async () => {
-    const { service, cycleRepository, recordRepository } = createFixture();
-    const cycle = {
-      id: 31,
-      startDate: '2026-08-21',
-      endDate: '2026-08-21',
-      isEnd: false,
-      user,
-    } as MenstrualCycleEntity;
-    cycleRepository.find.mockResolvedValue([{ id: 31 }]);
-    cycleRepository.findOne
-      .mockResolvedValueOnce(cycle)
-      .mockResolvedValueOnce(null);
-
-    await expect(service.finalizeDueCycles('2026-08-25')).resolves.toBe(0);
-
-    expect(recordRepository.find).not.toHaveBeenCalled();
-    expect(cycle.isEnd).toBe(false);
-  });
-
-  it('uses the most recent completed duration as M', async () => {
-    const { service, cycleRepository, recordRepository } = createFixture();
-    const cycle = {
-      id: 31,
-      startDate: '2026-08-21',
-      endDate: '2026-08-21',
-      isEnd: false,
-      user,
-    } as MenstrualCycleEntity;
-    const previousCycle = {
-      id: 20,
-      startDate: '2026-07-20',
-      endDate: '2026-07-22',
-      isEnd: true,
-      user,
-    } as MenstrualCycleEntity;
-    cycleRepository.find.mockResolvedValue([{ id: 31 }]);
-    cycleRepository.findOne
-      .mockResolvedValueOnce(cycle)
-      .mockResolvedValueOnce(previousCycle);
-    recordRepository.find.mockResolvedValue([{ date: '2026-08-21' }]);
-
-    await expect(service.finalizeDueCycles('2026-08-24')).resolves.toBe(1);
-
-    expect(cycle.endDate).toBe('2026-08-23');
-    expect(cycle.isEnd).toBe(true);
+    await expect(
+      service.saveRecords(user, {
+        add_ranges: [{ start_date: '2026-02-30', end_date: '2026-03-01' }],
+        remove_ranges: [],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

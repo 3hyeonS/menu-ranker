@@ -7,7 +7,6 @@ import { UserEntity } from '../auth/entity/user/user.entity';
 import { MenstrualCycleEntity } from './entity/menstrual-cycle.entity';
 import { MenstrualRecordEntity } from './entity/menstrual-record.entity';
 import { MenstrualController } from './menstrual.controller';
-import { MenstrualSchedulerService } from './menstrual-scheduler.service';
 import { MenstrualService } from './menstrual.service';
 
 @Module({
@@ -21,7 +20,7 @@ import { MenstrualService } from './menstrual.service';
     JwtModule,
   ],
   controllers: [MenstrualController],
-  providers: [MenstrualService, MenstrualSchedulerService, JwtStrategy],
+  providers: [MenstrualService, JwtStrategy],
   exports: [MenstrualService],
 })
 export class MenstrualModule {}
