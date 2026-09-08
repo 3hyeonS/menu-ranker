@@ -71,6 +71,35 @@ describe('ChatService conversation memory', () => {
     expect(legacyPipeline).not.toHaveBeenCalled();
   });
 
+  it('handles app feature questions without restoring the legacy pipeline', async () => {
+    const service = createService() as any;
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    const userInfo = jest.spyOn(service, 'getRequiredUserInfo');
+    const chatContext = jest.spyOn(service, 'getRecentChatContext');
+    const gemini = jest.spyOn(service, 'callGeminiText');
+    const legacyPipeline = jest.spyOn(service, 'recommendWithLegacyPipeline');
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.recommend(
+      { id: 9 },
+      { input: '식사 기록은 앱에서 어떻게 해?' },
+    );
+
+    expect(response.chat_category).toBe('general');
+    expect(response.intro_message).toContain(
+      '[설정 - 문의하기/아이디어 보내기]',
+    );
+    expect(response).not.toHaveProperty('general_answer');
+    expect(response).not.toHaveProperty('recommendations');
+    expect(response).not.toHaveProperty('feedback');
+    expect(userInfo).not.toHaveBeenCalled();
+    expect(chatContext).not.toHaveBeenCalled();
+    expect(gemini).not.toHaveBeenCalled();
+    expect(legacyPipeline).not.toHaveBeenCalled();
+  });
+
   it('sends user info, records, and past chat to pure Gemini chat', async () => {
     const post = jest.fn((_url: string, _body: Record<string, any>) =>
       of({
@@ -382,6 +411,45 @@ describe('ChatService conversation memory', () => {
     expect(callGeminiText.mock.calls[0][3]).toContain(
       '아직 사용자가 먹었다거나 식사 기록을 완료했다는 뜻은 아니다',
     );
+  });
+
+  it('replaces a processed fried-egg chat image match with the generic food menu', () => {
+    const service = createService() as any;
+    const result = service.normalizeRematchedFoodImageMenu(
+      { food_index: 0, menu_id: 3, confidence: 0.9 },
+      [
+        {
+          foodName: '계란 후라이',
+          brand: null,
+          confidence: 0.9,
+          position: { x: 0.5, y: 0.5 },
+        },
+      ],
+      new Map([
+        [
+          1,
+          {
+            id: 1,
+            name: '(식약처_음식) 달걀후라이',
+            brand: null,
+            category: null,
+          },
+        ],
+        [
+          3,
+          {
+            id: 3,
+            name: '(식약처_가공) 계란후라이(패티용)',
+            brand: null,
+            category: null,
+          },
+        ],
+      ]),
+      new Map([[0, new Set([1, 3])]]),
+    );
+
+    expect(result.id).toBe(1);
+    expect(result.name).toBe('(식약처_음식) 달걀후라이');
   });
 
   it('allows meal record metadata for image chat history', async () => {

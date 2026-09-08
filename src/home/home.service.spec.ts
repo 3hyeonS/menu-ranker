@@ -49,6 +49,64 @@ describe('HomeService menu search priority', () => {
     );
   });
 
+  it('replaces a processed fried-egg image match with the generic food menu', () => {
+    const candidates = new Map([
+      [
+        1,
+        {
+          id: 1,
+          name: '(식약처_음식) 달걀후라이',
+          brand: null,
+          category: null,
+          weight: 50,
+        },
+      ],
+      [
+        3,
+        {
+          id: 3,
+          name: '(식약처_가공) 계란후라이(패티용)',
+          brand: null,
+          category: null,
+          weight: 100,
+        },
+      ],
+    ]);
+
+    expect(
+      service.normalizeHomeFoodImageRematchResult(
+        [{ food_index: 0, menu_id: 3, quantity: 1 }],
+        candidates,
+        new Map([[0, new Set([1, 3])]]),
+        new Map([[0, '계란 후라이']]),
+      ),
+    ).toEqual({ menu_ids: [1], menu_quantities: [50] });
+  });
+
+  it('keeps an explicitly recognized processed fried egg', () => {
+    const candidates = new Map([
+      [
+        2,
+        {
+          id: 2,
+          name: '(식약처_가공) 냉동 계란 후라이',
+          brand: null,
+          category: null,
+          weight: 100,
+        },
+      ],
+    ]);
+
+    expect(
+      service.normalizeHomeFoodImageRematchResult(
+        [{ food_index: 0, menu_id: 2, quantity: 1 }],
+        candidates,
+        new Map([[0, new Set([2])]]),
+        new Map([[0, '냉동 계란 후라이']]),
+      ),
+    ).toEqual({ menu_ids: [2], menu_quantities: [100] });
+  });
+
   it('calculates recorded calories from weight regardless of input tab', () => {
     const menu = { weight: 100, calories: 80 };
 

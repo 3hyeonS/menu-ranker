@@ -56,7 +56,9 @@ import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu
 import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
+  isPreferredGenericFriedEggMenu,
   normalizeMenuSearchName,
+  prioritizeGenericFriedEggCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
@@ -703,6 +705,28 @@ export class ChatService {
 
     if (!input) {
       throw new BadRequestException('input must not be empty');
+    }
+
+    const guardedAnswer = this.getGuardedGeneralAnswer(input);
+    if (guardedAnswer) {
+      const response = new ChatRecommendResponseDto();
+      response.chat_category = 'general';
+      response.intro_message = [
+        guardedAnswer.intro_message,
+        guardedAnswer.general_answer,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      await this.saveNewChatHistory(
+        this.chatHistoryRepository.create({
+          input_text: input,
+          response_payload: response as unknown as Record<string, any>,
+          user,
+        }),
+      );
+
+      return response;
     }
 
     const [userInfo, chatContext] = await Promise.all([
@@ -4470,13 +4494,18 @@ ${JSON.stringify(
     prediction: FoodImagePrediction,
     menus: MenuRecognitionCandidate[],
   ): RecognizedFoodImageMenu | null {
-    const matchedMenu = this.findBestRecognitionCandidate(
-      prediction.foodName,
-      menus,
-      prediction.brand,
-      null,
-      55,
+    const preferredMenu = menus.find((menu) =>
+      isPreferredGenericFriedEggMenu(prediction.foodName, menu.name),
     );
+    const matchedMenu =
+      preferredMenu ??
+      this.findBestRecognitionCandidate(
+        prediction.foodName,
+        menus,
+        prediction.brand,
+        null,
+        55,
+      );
 
     return matchedMenu &&
       this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)
@@ -4636,14 +4665,27 @@ ${JSON.stringify(
     }
 
     return predictions
-      .map(
-        (prediction, index) =>
-          groupMap.get(index) ?? {
-            foodIndex: index,
-            foodName: prediction.foodName,
-            candidates: [],
-          },
-      )
+      .map((prediction, index) => {
+        const group = groupMap.get(index) ?? {
+          foodIndex: index,
+          foodName: prediction.foodName,
+          candidates: [],
+        };
+        const preferredMenus = menus.filter((menu) =>
+          isPreferredGenericFriedEggMenu(prediction.foodName, menu.name),
+        );
+
+        return {
+          ...group,
+          candidates: prioritizeGenericFriedEggCandidate(
+            prediction.foodName,
+            this.mergeRecognitionCandidatesById([
+              ...preferredMenus,
+              ...group.candidates,
+            ]),
+          ).slice(0, this.getFoodImagePerFoodVectorCandidateLimit()),
+        };
+      })
       .filter((group) => group.candidates.length > 0);
   }
 
@@ -5280,6 +5322,8 @@ ${JSON.stringify(candidates)}
 - 음식 사진의 시각 정보, 1차 food_name, 해당 food_index의 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - detected_foods.brand가 null이 아니면 이미지에서 읽힌 브랜드/라벨이므로 후보 메뉴의 브랜드/메뉴명과 강하게 비교해 같은 브랜드 제품을 우선해
 - detected_foods.food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥 -> 김치볶음은 불일치, 참치김밥 -> 참치샐러드는 불일치, 된장찌개 -> 된장국은 불일치
+- food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
+- "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 음식에 보이면 가장 대표적인 food_index 하나만 같은 menu_id에 매칭해
 
@@ -5398,7 +5442,16 @@ ${JSON.stringify(
     }
 
     const prediction = predictions[foodIndex];
-    const matchedMenu = candidateMap.get(menuId)!;
+    const preferredMenu = Array.from(
+      candidateIdsByFoodIndex.get(foodIndex) ?? [],
+    )
+      .map((candidateId) => candidateMap.get(candidateId))
+      .find(
+        (candidate) =>
+          candidate &&
+          isPreferredGenericFriedEggMenu(prediction.foodName, candidate.name),
+      );
+    const matchedMenu = preferredMenu ?? candidateMap.get(menuId)!;
     if (!this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)) {
       return null;
     }

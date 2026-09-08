@@ -17,13 +17,7 @@ const MENU_SEARCH_ALIAS_GROUPS: Array<{
   },
   {
     canonical: '구운달걀',
-    aliases: [
-      '구운계란',
-      '맥반석계란',
-      '훈제계란',
-      '훈제달걀',
-      '구운달걀',
-    ],
+    aliases: ['구운계란', '맥반석계란', '훈제계란', '훈제달걀', '구운달걀'],
   },
   { canonical: '밥', aliases: ['쌀밥', '흰밥', '백미밥', '이밥', '밥'] },
   {
@@ -208,14 +202,7 @@ const MENU_SEARCH_ALIAS_GROUPS: Array<{
   { canonical: '홍차', aliases: ['홍차', '블랙티', '밀크티'] },
   {
     canonical: '탄산음료',
-    aliases: [
-      '콜라',
-      '사이다',
-      '웰치스',
-      '펩시',
-      '스프라이트',
-      '탄산음료',
-    ],
+    aliases: ['콜라', '사이다', '웰치스', '펩시', '스프라이트', '탄산음료'],
   },
   {
     canonical: '제로탄산',
@@ -327,5 +314,35 @@ export const canonicalizeMenuSearchName = (menuName: string): string => {
   return normalized.replace(
     MENU_SEARCH_ALIAS_PATTERN,
     (matched) => MENU_SEARCH_ALIAS_MAP.get(matched) ?? matched,
+  );
+};
+
+const GENERIC_FRIED_EGG_CANONICAL_NAME =
+  canonicalizeMenuSearchName('달걀후라이');
+
+export const isGenericFriedEggName = (menuName: string): boolean =>
+  canonicalizeMenuSearchName(menuName) === GENERIC_FRIED_EGG_CANONICAL_NAME;
+
+export const isPreferredGenericFriedEggMenu = (
+  recognizedFoodName: string,
+  candidateMenuName: string,
+): boolean =>
+  isGenericFriedEggName(recognizedFoodName) &&
+  /^\s*\(식약처_음식\)\s*/.test(candidateMenuName) &&
+  canonicalizeMenuSearchName(candidateMenuName) ===
+    GENERIC_FRIED_EGG_CANONICAL_NAME;
+
+export const prioritizeGenericFriedEggCandidate = <T extends { name: string }>(
+  recognizedFoodName: string,
+  candidates: T[],
+): T[] => {
+  if (!isGenericFriedEggName(recognizedFoodName)) {
+    return candidates;
+  }
+
+  return [...candidates].sort(
+    (left, right) =>
+      Number(isPreferredGenericFriedEggMenu(recognizedFoodName, right.name)) -
+      Number(isPreferredGenericFriedEggMenu(recognizedFoodName, left.name)),
   );
 };

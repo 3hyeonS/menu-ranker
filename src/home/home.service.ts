@@ -60,7 +60,9 @@ import { WorkoutCsvImportResponseDto } from './dto/response-dto/workout-csv-impo
 import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
+  isPreferredGenericFriedEggMenu,
   normalizeMenuSearchName,
+  prioritizeGenericFriedEggCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import {
@@ -462,7 +464,9 @@ export class HomeService {
       const exactComparableName = this.normalizeCompactSearchText(
         this.normalizeMenuNameForExactSearch(menu.name),
       );
-      const lengthGap = Math.abs(exactComparableName.length - compactInput.length);
+      const lengthGap = Math.abs(
+        exactComparableName.length - compactInput.length,
+      );
       score -= Math.min(lengthGap, 20) * 0.8;
     }
 
@@ -1738,10 +1742,13 @@ failure_reason enum:
           vectorResults.map((result) => result.menuId),
         );
 
-        return this.mergeFoodImageRecognitionCandidates([
-          ...keywordMenus,
-          ...vectorMenus,
-        ]).slice(0, limit);
+        return prioritizeGenericFriedEggCandidate(
+          foodName,
+          this.mergeFoodImageRecognitionCandidates([
+            ...keywordMenus,
+            ...vectorMenus,
+          ]),
+        ).slice(0, limit);
       } catch (error) {
         console.warn('[HOME] per-food vector image search failed', {
           foodName,
@@ -1750,7 +1757,7 @@ failure_reason enum:
       }
     }
 
-    return keywordMenus;
+    return prioritizeGenericFriedEggCandidate(foodName, keywordMenus);
   }
 
   private mergeFoodImageRecognitionCandidates(
@@ -1774,8 +1781,7 @@ failure_reason enum:
     contextText: string | null = null,
   ): Promise<HomeFoodImageRecognitionCandidate[]> {
     const normalizedFoodName = stripPublicMenuSourcePrefix(foodName).trim();
-    const compactFoodName =
-      this.normalizeCompactSearchText(normalizedFoodName);
+    const compactFoodName = this.normalizeCompactSearchText(normalizedFoodName);
     const compactContext = this.normalizeCompactSearchText(
       `${foodName} ${contextText ?? ''}`,
     );
@@ -1785,8 +1791,10 @@ failure_reason enum:
     }
 
     const displayNameExpression =
-      "REPLACE(REPLACE(menu.name, '(식약처_음식) ', ''), '(식약처_가공) ', '')";
+      "TRIM(REPLACE(REPLACE(menu.name, '(식약처_음식)', ''), '(식약처_가공)', ''))";
     const compactNameExpression = `REPLACE(${displayNameExpression}, ' ', '')`;
+    const canonicalNameExpression = `REPLACE(REPLACE(LOWER(${compactNameExpression}), '계란', '달걀'), '후라이', '프라이')`;
+    const canonicalFoodName = canonicalizeMenuSearchName(normalizedFoodName);
 
     const rows = await this.menuRepository
       .createQueryBuilder('menu')
@@ -1806,12 +1814,14 @@ failure_reason enum:
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .andWhere(
         new Brackets((qb) => {
-          qb.where(
-            `${displayNameExpression} = :exactName`,
-            { exactName: normalizedFoodName },
-          )
+          qb.where(`${displayNameExpression} = :exactName`, {
+            exactName: normalizedFoodName,
+          })
             .orWhere(`${compactNameExpression} = :compactName`, {
               compactName: compactFoodName,
+            })
+            .orWhere(`${canonicalNameExpression} = :canonicalFoodName`, {
+              canonicalFoodName,
             })
             .orWhere('menu.name LIKE :likeName', {
               likeName: `%${normalizedFoodName}%`,
@@ -1831,6 +1841,7 @@ failure_reason enum:
       .addOrderBy('menu.id', 'ASC')
       .setParameter('exactName', normalizedFoodName)
       .setParameter('compactName', compactFoodName)
+      .setParameter('canonicalFoodName', canonicalFoodName)
       .setParameter('compactContext', compactContext)
       .limit(limit)
       .getRawMany<{
@@ -1859,9 +1870,11 @@ failure_reason enum:
   }> {
     const candidateMap = new Map<number, HomeFoodImageRecognitionCandidate>();
     const candidateIdsByFoodIndex = new Map<number, Set<number>>();
+    const foodNamesByIndex = new Map<number, string>();
 
     candidateGroups.forEach((group) => {
       const ids = new Set<number>();
+      foodNamesByIndex.set(group.foodIndex, group.foodName);
 
       group.candidates.forEach((candidate) => {
         candidateMap.set(candidate.id, candidate);
@@ -1880,6 +1893,8 @@ failure_reason enum:
 - 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
 - 후보 목록에 없는 menu_id는 절대 반환하지 마
 - 사진의 시각 정보, food_name, 후보 메뉴명/브랜드/카테고리를 함께 비교해
+- food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
+- "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 위치에 보여도 같은 menu_id는 한 번만 반환해
 - quantity는 사진 속 해당 음식의 대략적인 인분/개수야. 모르겠으면 1로 반환해
@@ -1924,6 +1939,7 @@ ${JSON.stringify(
         detectedFoods,
         candidateMap,
         candidateIdsByFoodIndex,
+        foodNamesByIndex,
       );
     } catch (error) {
       console.warn('[HOME] food image Gemini rematch failed', {
@@ -1938,6 +1954,7 @@ ${JSON.stringify(
     values: unknown[],
     candidateMap: Map<number, HomeFoodImageRecognitionCandidate>,
     candidateIdsByFoodIndex: Map<number, Set<number>>,
+    foodNamesByIndex: Map<number, string>,
   ): {
     menu_ids: number[];
     menu_quantities: number[];
@@ -1965,7 +1982,17 @@ ${JSON.stringify(
         return;
       }
 
-      const candidate = candidateMap.get(menuId);
+      const recognizedFoodName = foodNamesByIndex.get(foodIndex) ?? '';
+      const preferredCandidate = Array.from(
+        candidateIdsByFoodIndex.get(foodIndex) ?? [],
+      )
+        .map((candidateId) => candidateMap.get(candidateId))
+        .find(
+          (candidate) =>
+            candidate &&
+            isPreferredGenericFriedEggMenu(recognizedFoodName, candidate.name),
+        );
+      const candidate = preferredCandidate ?? candidateMap.get(menuId);
 
       if (!candidate) {
         return;
@@ -1973,8 +2000,11 @@ ${JSON.stringify(
 
       const weight = this.asNullableNumber(candidate.weight) ?? 0;
       const weightQuantity = weight > 0 ? weight * quantity : quantity;
-      const previousQuantity = merged.get(menuId) ?? 0;
-      merged.set(menuId, roundToOneDecimal(previousQuantity + weightQuantity));
+      const previousQuantity = merged.get(candidate.id) ?? 0;
+      merged.set(
+        candidate.id,
+        roundToOneDecimal(previousQuantity + weightQuantity),
+      );
     });
 
     return {
@@ -3010,7 +3040,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       rawBodyParts,
       workoutType,
     );
-    const derivedEquipmentClassification = this.classifyWorkoutEquipment(rawEquipment);
+    const derivedEquipmentClassification =
+      this.classifyWorkoutEquipment(rawEquipment);
     const csvBodyPartMajor = this.asNullableString(
       valueByField.body_part_major,
     );
@@ -3113,7 +3144,13 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       },
       {
         field: 'workout_type',
-        aliases: ['workout_type', 'workoutType', 'type', '운동유형', '운동 유형'],
+        aliases: [
+          'workout_type',
+          'workoutType',
+          'type',
+          '운동유형',
+          '운동 유형',
+        ],
       },
       {
         field: 'equipments',
@@ -3167,8 +3204,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       const normalizedHeader = this.normalizeWorkoutCsvHeader(header);
       const matched = mappings.find((mapping) =>
         mapping.aliases.some(
-          (alias) =>
-            normalizedHeader === this.normalizeWorkoutCsvHeader(alias),
+          (alias) => normalizedHeader === this.normalizeWorkoutCsvHeader(alias),
         ),
       );
 
@@ -3293,9 +3329,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       normalizedEquipment,
       category,
       // 머신은 대분류만으로 실제 장비를 구별할 수 없어 상세명을 함께 보관한다.
-      detail: ['머신', '기타'].includes(category)
-        ? normalizedEquipment
-        : null,
+      detail: ['머신', '기타'].includes(category) ? normalizedEquipment : null,
     };
   }
 
@@ -3910,18 +3944,14 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
   private calculateSetTotalCalories(setMenus: MenuSetMenuEntity[]): number {
     return roundToOneDecimal(
-      this.sortSetMenus(setMenus).reduce(
-        (sum, setMenu) => {
-          const calories = Number(setMenu.menu.calories ?? 0);
-          const quantity = Number(setMenu.quantity);
-          const calculatedCalories =
-            calories *
-            getRecordedWeightMultiplier(quantity, setMenu.menu.weight);
+      this.sortSetMenus(setMenus).reduce((sum, setMenu) => {
+        const calories = Number(setMenu.menu.calories ?? 0);
+        const quantity = Number(setMenu.quantity);
+        const calculatedCalories =
+          calories * getRecordedWeightMultiplier(quantity, setMenu.menu.weight);
 
-          return sum + calculatedCalories;
-        },
-        0,
-      ),
+        return sum + calculatedCalories;
+      }, 0),
     );
   }
 
@@ -4183,8 +4213,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const setId = await this.menuSetRepository.manager.transaction(
       async (manager) => {
         const menuSetRepository = manager.getRepository(MenuSetEntity);
-        const menuSetMenuRepository =
-          manager.getRepository(MenuSetMenuEntity);
+        const menuSetMenuRepository = manager.getRepository(MenuSetMenuEntity);
 
         let menuSet: MenuSetEntity;
 
@@ -4436,8 +4465,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const resolvedInput = this.resolveWorkoutSearchNameAlias(input);
     const normalizedExactInput =
       this.normalizeWorkoutExactSearchName(resolvedInput);
-    const exactWorkoutNameExpression =
-      "LOWER(REPLACE(workout.name, ' ', ''))";
+    const exactWorkoutNameExpression = "LOWER(REPLACE(workout.name, ' ', ''))";
 
     const query = this.workoutRepository
       .createQueryBuilder('workout')
@@ -4485,10 +4513,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       isFirstPage && normalizedExactInput
         ? await query
             .clone()
-            .andWhere(
-              `${exactWorkoutNameExpression} = :normalizedExactInput`,
-              { normalizedExactInput },
-            )
+            .andWhere(`${exactWorkoutNameExpression} = :normalizedExactInput`, {
+              normalizedExactInput,
+            })
             .orderBy('workout.id', 'ASC')
             .take(limit)
             .getMany()
@@ -4496,10 +4523,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const remainingLimit = Math.max(limit - exactWorkouts.length, 0);
 
     if (normalizedExactInput) {
-      query.andWhere(
-        `${exactWorkoutNameExpression} <> :normalizedExactInput`,
-        { normalizedExactInput },
-      );
+      query.andWhere(`${exactWorkoutNameExpression} <> :normalizedExactInput`, {
+        normalizedExactInput,
+      });
     }
 
     if (!isFirstPage) {
@@ -4516,7 +4542,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       : nonExactWorkouts;
     const page = [...exactWorkouts, ...nonExactPage];
     const nextCursor = hasNext
-      ? nonExactPage[nonExactPage.length - 1]?.id ?? 0
+      ? (nonExactPage[nonExactPage.length - 1]?.id ?? 0)
       : null;
 
     return new WorkoutSearchResponseDto(
@@ -4651,7 +4677,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   ): void {
     if (dto.workout_type === 'weight') {
       if (!dto.set_list || dto.set_list.length === 0) {
-        throw new BadRequestException('set_list is required for weight workout');
+        throw new BadRequestException(
+          'set_list is required for weight workout',
+        );
       }
 
       return;
