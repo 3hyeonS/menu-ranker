@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   Optional,
@@ -18,6 +19,7 @@ import { MealMenuEntity } from '../home/entity/meal-menu.entity';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
 import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
+import { MenstrualCycleEntity } from '../menstrual/entity/menstrual-cycle.entity';
 import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
@@ -90,6 +92,17 @@ const CHAT_LONG_TERM_COMPACTION_BATCH_SIZE = 10;
 const CHAT_RECORD_CONTEXT_DAYS = 3;
 const CHAT_WEIGHT_CONTEXT_DAYS = 7;
 const CHAT_STEPS_CONTEXT_DAYS = 7;
+const PERSONALIZED_MANAGEMENT_MEAL_CONTEXT_DAYS = 7;
+const PERSONALIZED_MANAGEMENT_WORKOUT_CONTEXT_DAYS = 7;
+const PERSONALIZED_MANAGEMENT_WEIGHT_CONTEXT_DAYS = 30;
+const PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS = new Set([
+  36, 42, 50, 52, 53, 74, 80, 101, 106, 107,
+]);
+const DEFAULT_MENSTRUAL_CYCLE_DAYS = 28;
+const MIN_NORMAL_MENSTRUAL_CYCLE_DAYS = 14;
+const MAX_NORMAL_MENSTRUAL_CYCLE_DAYS = 45;
+const MIN_PERSONALIZED_CYCLE_INTERVAL_COUNT = 2;
+const MAX_PERSONALIZED_CYCLE_INTERVAL_COUNT = 6;
 const CHAT_CONSUMPTION_INTERPRETATION =
   '추천 카드, 피드백 카드, AI 제안, 단순 메뉴 언급은 실제 섭취가 아니다. meal_record가 있거나 사용자가 명시적으로 먹었다고 말한 경우만 섭취 사실로 본다.';
 const CHAT_USER_FACT_PROVENANCE_RULES = `
@@ -236,6 +249,7 @@ type ChatContextSummary = {
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
   recent_weight_records_7_days: RecentWeightRecordContextItem[];
   recent_step_records_7_days: RecentStepRecordContextItem[];
+  record_context_days?: ChatRecordContextDays;
   previous_user_input: string | null;
   previous_category: ChatCategory | null;
   previous_recommended_menu_names: string[];
@@ -300,6 +314,42 @@ type RecentStepRecordContextItem = {
   steps: number;
 };
 
+type ChatRecordContextDays = {
+  meals: number;
+  workouts: number;
+  weights: number;
+  steps: number;
+};
+
+type MenstrualPhaseDateRange = {
+  start_date: string;
+  end_date: string;
+};
+
+type MenstrualCycleManagementContextItem = {
+  cycle_number: number;
+  recorded_menstrual_period: MenstrualPhaseDateRange;
+  menstrual_phase: MenstrualPhaseDateRange;
+  follicular_phase: MenstrualPhaseDateRange | null;
+  ovulation_phase: MenstrualPhaseDateRange | null;
+  luteal_phase: MenstrualPhaseDateRange | null;
+};
+
+type MenstrualManagementContext = {
+  data_available: boolean;
+  recorded_cycle_count: number;
+  cycle_length_days: number | null;
+  cycle_length_source: 'recent_average' | 'default_28_days' | null;
+  normal_cycle_intervals_used: number[];
+  cycles: MenstrualCycleManagementContextItem[];
+  current_phase: {
+    phase: '월경기' | '난포기' | '배란기' | '황체기';
+    start_date: string;
+    end_date: string;
+  } | null;
+  next_expected_menstrual_date: string | null;
+};
+
 type ChatUserMenuSearchRawRow = {
   menu_id: number | string;
   menu_name: string;
@@ -348,6 +398,7 @@ type LightweightChatContext = {
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
   recent_weight_records_7_days: RecentWeightRecordContextItem[];
   recent_step_records_7_days: RecentStepRecordContextItem[];
+  record_context_days?: ChatRecordContextDays;
 };
 
 type ParsedChatIntent = {
@@ -570,6 +621,8 @@ export class ChatService {
     private readonly workoutRecordRepository: Repository<WorkoutRecordEntity>,
     @InjectRepository(WeightStepsEntity)
     private readonly weightStepsRepository: Repository<WeightStepsEntity>,
+    @InjectRepository(MenstrualCycleEntity)
+    private readonly menstrualCycleRepository: Repository<MenstrualCycleEntity>,
     @InjectRepository(ChatHistoryEntity)
     private readonly chatHistoryRepository: Repository<ChatHistoryEntity>,
     @InjectRepository(ChatConversationSessionEntity)
@@ -742,6 +795,56 @@ export class ChatService {
       this.getRecentChatContext(user.id),
     ]);
     const answer = await this.callGeminiText(input, chatContext, userInfo);
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'general';
+    response.intro_message = answer;
+
+    await this.saveNewChatHistory(
+      this.chatHistoryRepository.create({
+        input_text: input,
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
+
+    return response;
+  }
+
+  async personalizedManagement(
+    user: UserEntity,
+  ): Promise<ChatRecommendResponseDto> {
+    if (!PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS.has(user.id)) {
+      throw new ForbiddenException(
+        'Personalized management is available only to trial participants',
+      );
+    }
+
+    const recordContextDays: ChatRecordContextDays = {
+      meals: PERSONALIZED_MANAGEMENT_MEAL_CONTEXT_DAYS,
+      workouts: PERSONALIZED_MANAGEMENT_WORKOUT_CONTEXT_DAYS,
+      weights: PERSONALIZED_MANAGEMENT_WEIGHT_CONTEXT_DAYS,
+      steps: CHAT_STEPS_CONTEXT_DAYS,
+    };
+    const [userInfo, chatContext, menstrualContext] = await Promise.all([
+      this.getRequiredUserInfo(user.id),
+      this.getRecentChatContext(
+        user.id,
+        CHAT_RECENT_TURN_LIMIT,
+        recordContextDays,
+      ),
+      this.getMenstrualManagementContext(user.id),
+    ]);
+    const input = '나에게 맞는 관리법을 알려줘';
+    const requestContext = this.buildPersonalizedManagementRequestContext(
+      chatContext,
+      menstrualContext,
+    );
+    const answer = await this.callGeminiText(
+      input,
+      chatContext,
+      userInfo,
+      requestContext,
+    );
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'general';
     response.intro_message = answer;
@@ -2155,6 +2258,12 @@ export class ChatService {
   private async getRecentChatContext(
     userId: number,
     limit = CHAT_RECENT_TURN_LIMIT,
+    recordContextDays: ChatRecordContextDays = {
+      meals: CHAT_RECORD_CONTEXT_DAYS,
+      workouts: CHAT_RECORD_CONTEXT_DAYS,
+      weights: CHAT_WEIGHT_CONTEXT_DAYS,
+      steps: CHAT_STEPS_CONTEXT_DAYS,
+    },
   ): Promise<ChatContextSummary> {
     await this.reconcileConversationSessions(userId);
 
@@ -2211,10 +2320,10 @@ export class ChatService {
       recentWeightRecords,
       recentStepRecords,
     ] = await Promise.all([
-      this.getRecentMealRecordContext(userId),
-      this.getRecentWorkoutRecordContext(userId),
-      this.getRecentWeightRecordContext(userId),
-      this.getRecentStepRecordContext(userId),
+      this.getRecentMealRecordContext(userId, recordContextDays.meals),
+      this.getRecentWorkoutRecordContext(userId, recordContextDays.workouts),
+      this.getRecentWeightRecordContext(userId, recordContextDays.weights),
+      this.getRecentStepRecordContext(userId, recordContextDays.steps),
     ]);
 
     this.queueConversationMemoryMaintenance(userId);
@@ -2235,6 +2344,7 @@ export class ChatService {
       recent_workout_records_3_days: recentWorkoutRecords,
       recent_weight_records_7_days: recentWeightRecords,
       recent_step_records_7_days: recentStepRecords,
+      record_context_days: recordContextDays,
       previous_user_input: previousMessage?.user_input ?? null,
       previous_category: previousMessage?.chat_category ?? null,
       previous_recommended_menu_names:
@@ -2743,6 +2853,7 @@ ${JSON.stringify(
       recent_workout_records_3_days: chatContext.recent_workout_records_3_days,
       recent_weight_records_7_days: chatContext.recent_weight_records_7_days,
       recent_step_records_7_days: chatContext.recent_step_records_7_days,
+      record_context_days: chatContext.record_context_days,
     };
   }
 
@@ -3875,8 +3986,9 @@ ${JSON.stringify(
 
   private async getRecentMealRecordContext(
     userId: number,
+    days = CHAT_RECORD_CONTEXT_DAYS,
   ): Promise<RecentMealRecordContextItem[]> {
-    const { start, end } = this.getRecentRecordDateRange();
+    const { start, end } = this.getRecentRecordDateRange(new Date(), days);
     const meals = await this.mealRepository.find({
       where: {
         user: { id: userId },
@@ -3973,8 +4085,9 @@ ${JSON.stringify(
 
   private async getRecentWorkoutRecordContext(
     userId: number,
+    days = CHAT_RECORD_CONTEXT_DAYS,
   ): Promise<RecentWorkoutRecordContextItem[]> {
-    const { start, end } = this.getRecentRecordDateRange();
+    const { start, end } = this.getRecentRecordDateRange(new Date(), days);
     const records = await this.workoutRecordRepository.find({
       where: {
         user: { id: userId },
@@ -4009,11 +4122,9 @@ ${JSON.stringify(
 
   private async getRecentWeightRecordContext(
     userId: number,
+    days = CHAT_WEIGHT_CONTEXT_DAYS,
   ): Promise<RecentWeightRecordContextItem[]> {
-    const { start, end } = this.getRecentRecordDateRange(
-      new Date(),
-      CHAT_WEIGHT_CONTEXT_DAYS,
-    );
+    const { start, end } = this.getRecentRecordDateRange(new Date(), days);
     const records = await this.weightStepsRepository.find({
       where: {
         user: { id: userId },
@@ -4034,11 +4145,9 @@ ${JSON.stringify(
 
   private async getRecentStepRecordContext(
     userId: number,
+    days = CHAT_STEPS_CONTEXT_DAYS,
   ): Promise<RecentStepRecordContextItem[]> {
-    const { start, end } = this.getRecentRecordDateRange(
-      new Date(),
-      CHAT_STEPS_CONTEXT_DAYS,
-    );
+    const { start, end } = this.getRecentRecordDateRange(new Date(), days);
     const records = await this.weightStepsRepository.find({
       where: {
         user: { id: userId },
@@ -4055,6 +4164,212 @@ ${JSON.stringify(
       date: this.formatLocalDate(new Date(record.date)),
       steps: roundToOneDecimal(record.steps),
     }));
+  }
+
+  private async getMenstrualManagementContext(
+    userId: number,
+    referenceDate = this.formatKoreaDate(new Date()),
+  ): Promise<MenstrualManagementContext> {
+    const recordedCycles = await this.menstrualCycleRepository.find({
+      where: { user: { id: userId } },
+      order: { startDate: 'ASC', id: 'ASC' },
+    });
+
+    if (recordedCycles.length === 0) {
+      return {
+        data_available: false,
+        recorded_cycle_count: 0,
+        cycle_length_days: null,
+        cycle_length_source: null,
+        normal_cycle_intervals_used: [],
+        cycles: [],
+        current_phase: null,
+        next_expected_menstrual_date: null,
+      };
+    }
+
+    const normalIntervals = recordedCycles
+      .slice(1)
+      .map((cycle, index) =>
+        this.getDateOnlyDifferenceInDays(
+          cycle.startDate,
+          recordedCycles[index].startDate,
+        ),
+      )
+      .filter(
+        (days) =>
+          days >= MIN_NORMAL_MENSTRUAL_CYCLE_DAYS &&
+          days <= MAX_NORMAL_MENSTRUAL_CYCLE_DAYS,
+      )
+      .slice(-MAX_PERSONALIZED_CYCLE_INTERVAL_COUNT);
+    const hasPersonalizedCycleLength =
+      normalIntervals.length >= MIN_PERSONALIZED_CYCLE_INTERVAL_COUNT;
+    const cycleLengthDays = hasPersonalizedCycleLength
+      ? Math.round(
+          normalIntervals.reduce((sum, days) => sum + days, 0) /
+            normalIntervals.length,
+        )
+      : DEFAULT_MENSTRUAL_CYCLE_DAYS;
+    const cycles = recordedCycles.map((cycle, index) =>
+      this.buildMenstrualCycleManagementContextItem(
+        cycle.startDate,
+        cycle.endDate,
+        cycleLengthDays,
+        index + 1,
+      ),
+    );
+    const latestCycle = cycles[cycles.length - 1];
+
+    return {
+      data_available: true,
+      recorded_cycle_count: cycles.length,
+      cycle_length_days: cycleLengthDays,
+      cycle_length_source: hasPersonalizedCycleLength
+        ? 'recent_average'
+        : 'default_28_days',
+      normal_cycle_intervals_used: normalIntervals,
+      cycles,
+      current_phase: this.findCurrentMenstrualPhase(latestCycle, referenceDate),
+      next_expected_menstrual_date: this.addDateOnlyDays(
+        latestCycle.recorded_menstrual_period.start_date,
+        cycleLengthDays,
+      ),
+    };
+  }
+
+  private buildMenstrualCycleManagementContextItem(
+    startDate: string,
+    endDate: string,
+    cycleLengthDays: number,
+    cycleNumber: number,
+  ): MenstrualCycleManagementContextItem {
+    const menstrualDays =
+      this.getDateOnlyDifferenceInDays(endDate, startDate) + 1;
+    const remainingDays = cycleLengthDays - menstrualDays;
+    let follicularPhase: MenstrualPhaseDateRange | null = null;
+    let ovulationPhase: MenstrualPhaseDateRange | null = null;
+    let lutealPhase: MenstrualPhaseDateRange | null = null;
+
+    if (remainingDays >= 16) {
+      const follicularDays = remainingDays - 16;
+      follicularPhase = this.buildPhaseDateRange(
+        startDate,
+        menstrualDays,
+        follicularDays,
+      );
+      ovulationPhase = this.buildPhaseDateRange(
+        startDate,
+        menstrualDays + follicularDays,
+        3,
+      );
+      lutealPhase = this.buildPhaseDateRange(
+        startDate,
+        cycleLengthDays - 13,
+        13,
+      );
+    } else if (remainingDays > 0) {
+      lutealPhase = this.buildPhaseDateRange(
+        startDate,
+        menstrualDays,
+        remainingDays,
+      );
+    }
+
+    const recordedMenstrualPeriod = {
+      start_date: startDate,
+      end_date: endDate,
+    };
+
+    return {
+      cycle_number: cycleNumber,
+      recorded_menstrual_period: recordedMenstrualPeriod,
+      menstrual_phase: recordedMenstrualPeriod,
+      follicular_phase: follicularPhase,
+      ovulation_phase: ovulationPhase,
+      luteal_phase: lutealPhase,
+    };
+  }
+
+  private buildPhaseDateRange(
+    cycleStartDate: string,
+    startOffsetDays: number,
+    durationDays: number,
+  ): MenstrualPhaseDateRange | null {
+    if (durationDays <= 0) {
+      return null;
+    }
+
+    return {
+      start_date: this.addDateOnlyDays(cycleStartDate, startOffsetDays),
+      end_date: this.addDateOnlyDays(
+        cycleStartDate,
+        startOffsetDays + durationDays - 1,
+      ),
+    };
+  }
+
+  private findCurrentMenstrualPhase(
+    cycle: MenstrualCycleManagementContextItem,
+    referenceDate: string,
+  ): MenstrualManagementContext['current_phase'] {
+    const phases: Array<{
+      phase: NonNullable<MenstrualManagementContext['current_phase']>['phase'];
+      range: MenstrualPhaseDateRange | null;
+    }> = [
+      { phase: '월경기', range: cycle.menstrual_phase },
+      { phase: '난포기', range: cycle.follicular_phase },
+      { phase: '배란기', range: cycle.ovulation_phase },
+      { phase: '황체기', range: cycle.luteal_phase },
+    ];
+    const current = phases.find(
+      ({ range }) =>
+        range &&
+        range.start_date <= referenceDate &&
+        referenceDate <= range.end_date,
+    );
+
+    return current?.range
+      ? {
+          phase: current.phase,
+          start_date: current.range.start_date,
+          end_date: current.range.end_date,
+        }
+      : null;
+  }
+
+  private getDateOnlyDifferenceInDays(laterDate: string, earlierDate: string) {
+    const later = new Date(`${laterDate}T00:00:00.000Z`).getTime();
+    const earlier = new Date(`${earlierDate}T00:00:00.000Z`).getTime();
+
+    return Math.round((later - earlier) / (24 * 60 * 60 * 1000));
+  }
+
+  private buildPersonalizedManagementRequestContext(
+    chatContext: ChatContextSummary,
+    menstrualContext: MenstrualManagementContext,
+  ): string {
+    return `나에게 맞는 관리법 기능 전용 요청이야.
+
+데이터 존재 여부:
+${JSON.stringify({
+  menstrual_cycles: menstrualContext.data_available,
+  meals: chatContext.recent_meal_records_3_days.length > 0,
+  workouts: chatContext.recent_workout_records_3_days.length > 0,
+  weights: chatContext.recent_weight_records_7_days.length > 0,
+})}
+
+서버가 서비스 정책에 따라 계산한 월경 주기 정보:
+${JSON.stringify(menstrualContext)}
+
+[개인화 관리법 생성 규칙]
+- 제공된 데이터가 없는 경우 절대 추측하거나 만들어내지 마.
+- 각 데이터의 존재 여부를 먼저 확인하되, 내부 필드명이나 데이터 점검 과정을 답변에 나열하지 마.
+- 데이터가 충분하면 월경 주기, 체중, 식단, 운동 정보를 종합해 현재 시점에 실천할 수 있는 개인화된 피드백을 제공해.
+- 일부 데이터만 있으면 존재하는 데이터만 연결해서 피드백해.
+- 월경 주기만 있으면 현재 단계에 일반적으로 도움이 될 수 있는 식단과 운동 관리법을 먼저 제공해.
+- 데이터가 부족하다는 말로 끝내지 말고, 현재 확인되는 기록을 기준으로 실천할 관리법을 먼저 제시한 뒤 식단·운동·체중을 더 기록하면 개인화 수준이 높아진다는 점을 자연스럽게 안내해.
+- current_phase가 null이면 현재 월경 단계를 임의로 정하지 말고, 다음 월경 예상일이 과거라면 날짜가 지났다는 사실만 바탕으로 새 월경 기록이 필요한지 안내해.
+- 월경 단계와 다음 월경 예상일은 서버가 계산한 값을 그대로 사용하고 직접 다시 계산하거나 다른 날짜로 바꾸지 마.`;
   }
 
   private async getAvailableMenuRecognitionCandidates(
@@ -11612,6 +11927,12 @@ ${JSON.stringify(candidates)}
       weekday: this.getKoreanWeekday(date),
       nutrition_totals: this.sumRecentMealNutrition(totals),
     }));
+    const recordContextDays = chatContext.record_context_days ?? {
+      meals: CHAT_RECORD_CONTEXT_DAYS,
+      workouts: CHAT_RECORD_CONTEXT_DAYS,
+      weights: CHAT_WEIGHT_CONTEXT_DAYS,
+      steps: CHAT_STEPS_CONTEXT_DAYS,
+    };
     const storedContext = [
       `날짜 기준표:\n${JSON.stringify({
         timezone: 'Asia/Seoul',
@@ -11653,26 +11974,26 @@ ${JSON.stringify(candidates)}
       currentRequestContext
         ? `현재 요청 추가 맥락:\n${currentRequestContext}`
         : null,
-      `최근 3일 식단 기록:\n${JSON.stringify(
+      `최근 ${recordContextDays.meals}일 식단 기록:\n${JSON.stringify(
         chatContext.recent_meal_records_3_days.map((record) => ({
           ...record,
           weekday: this.getKoreanWeekday(record.date),
         })),
       )}`,
-      `최근 3일 일별 영양 합계:\n${JSON.stringify(dailyNutritionTotals)}`,
-      `최근 3일 운동 기록:\n${JSON.stringify(
+      `최근 ${recordContextDays.meals}일 일별 영양 합계:\n${JSON.stringify(dailyNutritionTotals)}`,
+      `최근 ${recordContextDays.workouts}일 운동 기록:\n${JSON.stringify(
         chatContext.recent_workout_records_3_days.map((record) => ({
           ...record,
           weekday: this.getKoreanWeekday(record.date),
         })),
       )}`,
-      `최근 7일 체중 기록:\n${JSON.stringify(
+      `최근 ${recordContextDays.weights}일 체중 기록:\n${JSON.stringify(
         chatContext.recent_weight_records_7_days.map((record) => ({
           ...record,
           weekday: this.getKoreanWeekday(record.date),
         })),
       )}`,
-      `최근 7일 걸음 수 기록:\n${JSON.stringify(
+      `최근 ${recordContextDays.steps}일 걸음 수 기록:\n${JSON.stringify(
         chatContext.recent_step_records_7_days.map((record) => ({
           ...record,
           weekday: this.getKoreanWeekday(record.date),
@@ -11711,10 +12032,10 @@ ${JSON.stringify(candidates)}
 - 사용자가 이전 답변에 이의를 제기하거나 다시 물으면 가장 최근 요청을 새로 판단해. 이전 assistant 답변의 결론이나 거절 논리를 반복하지 말고, 빠졌던 답을 직접 보완해.
 
 [식사 기록 반영 규칙]
-- 최근 3일 식단 기록은 사용자가 실제로 먹은 음식이야. 단순 대화나 이전 추천보다 우선해서 판단해.
+- 최근 ${recordContextDays.meals}일 식단 기록은 사용자가 실제로 먹은 음식이야. 단순 대화나 이전 추천보다 우선해서 판단해.
 - 각 메뉴의 quantity는 input_mode와 관계없이 DB에 저장된 실제 중량(g 또는 ml)이야. input_mode는 사용자가 사용한 UI 탭 정보일 뿐 영양 계산 방식이 아니야.
-- 각 메뉴의 consumed_nutrition, 각 끼니의 nutrition_totals, 최근 3일 일별 영양 합계는 서버가 DB 메뉴 영양정보에 저장 중량/메뉴 기준 중량 비율을 적용해 계산한 값이야.
-- 기록된 날짜의 총 섭취량을 말할 때는 최근 3일 일별 영양 합계의 수치를 그대로 사용해. 이미 합계가 있으면 "예상", "추정", "~로 보임"이라고 표현하지 마.
+- 각 메뉴의 consumed_nutrition, 각 끼니의 nutrition_totals, 최근 ${recordContextDays.meals}일 일별 영양 합계는 서버가 DB 메뉴 영양정보에 저장 중량/메뉴 기준 중량 비율을 적용해 계산한 값이야.
+- 기록된 날짜의 총 섭취량을 말할 때는 최근 ${recordContextDays.meals}일 일별 영양 합계의 수치를 그대로 사용해. 이미 합계가 있으면 "예상", "추정", "~로 보임"이라고 표현하지 마.
 - DB 기록 기준임을 밝혀야 할 때는 "기록 기준"이라고 표현하고, 합계를 다시 암산하거나 음식명만 보고 추측하지 마.
 - 오늘 식사 기록 상태의 recorded_meal_slots는 해당 끼니의 기록이 존재한다는 뜻일 뿐, 하루 식사 기록 전체가 완료됐다는 뜻이 아니야.
 - 일부 끼니만 기록된 경우 "오늘 식사 기록을 마쳤다", "오늘 식사가 끝났다", "이미 모든 식사를 했다"처럼 하루 전체가 완료됐다고 표현하지 마.
@@ -11725,7 +12046,7 @@ ${JSON.stringify(candidates)}
 - 사용자가 직접 다음 식사나 다른 날짜의 식사를 묻지 않았다면, 기록되지 않은 끼니가 남아 있다고 추측하지 마.
 - 사용자가 식사를 추천해 달라고 하면 기준 날짜와 같은 날에 이미 먹은 메뉴를 먼저 확인해.
 - 같은 날 먹은 메뉴와 동일한 메뉴뿐 아니라 같은 음식 문화권이나 매우 비슷한 종류도 반복 추천하지 마. 예를 들어 팟타이, 똠얌처럼 태국 음식을 먹었다면 다음 끼니에는 다른 음식 문화권을 우선해.
-- 최근 3일의 다른 날짜에 먹은 메뉴도 가능한 한 그대로 반복하지 말고 다양성을 우선해.
+- 최근 ${recordContextDays.meals}일의 다른 날짜에 먹은 메뉴도 가능한 한 그대로 반복하지 말고 다양성을 우선해.
 - 단, 사용자가 특정 메뉴나 음식 문화권을 명시적으로 요청하면 그 요청을 우선해.
 - 운동 질문에는 사용자가 식사 조언도 함께 요청했거나 식사가 답변에 꼭 필요한 경우가 아니면 메뉴 선택 이야기를 덧붙이지 마.
 
@@ -11740,11 +12061,11 @@ ${JSON.stringify(candidates)}
 - 답변에 현재 시각이나 날짜, 요일이 꼭 필요하지 않으면 불필요하게 덧붙이지 마.
 
 [체중 기록 반영 규칙]
-- 최근 7일 체중 기록은 DB에 실제 저장된 날짜별 체중이야. 기록된 수치를 그대로 사용하고 없는 날짜의 체중은 추측하지 마.
+- 최근 ${recordContextDays.weights}일 체중 기록은 DB에 실제 저장된 날짜별 체중이야. 기록된 수치를 그대로 사용하고 없는 날짜의 체중은 추측하지 마.
 - 체중 변화나 추세를 말할 때는 기록 날짜와 수치를 기준으로 하고, 기록이 부족하면 장기 추세를 단정하지 마.
 
 [걸음 수 기록 반영 규칙]
-- 최근 7일 걸음 수 기록은 DB에 실제 저장된 날짜별 걸음 수야. 기록된 수치를 그대로 사용하고 없는 날짜의 걸음 수는 추측하지 마.
+- 최근 ${recordContextDays.steps}일 걸음 수 기록은 DB에 실제 저장된 날짜별 걸음 수야. 기록된 수치를 그대로 사용하고 없는 날짜의 걸음 수는 추측하지 마.
 - 걸음 수 변화나 활동량을 말할 때는 기록 날짜와 수치를 기준으로 하고, 기록이 부족하면 장기 추세를 단정하지 마.
 
 ${CHAT_USER_FACT_PROVENANCE_RULES}

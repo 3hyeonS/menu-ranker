@@ -139,6 +139,50 @@ export class ChatController {
 
   @ApiBearerAuth('accessToken')
   @ApiOperation({
+    summary: '나에게 맞는 관리법',
+    description:
+      '체험 대상 사용자의 전체 월경 주기와 최근 7일 식단·운동, 최근 30일 체중 기록을 종합해 개인화된 관리 피드백을 생성합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '개인화 관리 피드백 생성 성공',
+    message: 'Personalized management feedback generated successfully',
+    model: ChatRecommendResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 403,
+    description: '체험 대상 사용자가 아님',
+    message: 'Personalized management is available only to trial participants',
+    error: 'ForbiddenException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패',
+    message: 'Gemini recommendation pipeline is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ResponseMsg('Personalized management feedback generated successfully')
+  @UseGuards(AuthGuard())
+  @Post('/personalized-management')
+  async personalizedManagement(
+    @GetUser() user: UserEntity,
+  ): Promise<ChatRecommendResponseDto> {
+    try {
+      return await this.chatService.personalizedManagement(user);
+    } catch (error) {
+      this.logChatApiError('POST /chat/personalized-management', user, error);
+      throw error;
+    }
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
     summary: '메뉴판 사진 기반 메뉴 추천',
   })
   @GenericApiResponse({

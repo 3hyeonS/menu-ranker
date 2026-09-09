@@ -16,6 +16,7 @@ describe('ChatService conversation memory', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
       httpService as never,
     );
 
@@ -101,6 +102,129 @@ describe('ChatService conversation memory', () => {
     expect(legacyPipeline).not.toHaveBeenCalled();
   });
 
+  it('rejects personalized management for users outside the trial group', async () => {
+    const service = createService() as any;
+
+    await expect(service.personalizedManagement({ id: 41 })).rejects.toThrow(
+      'Personalized management is available only to trial participants',
+    );
+  });
+
+  it('uses expanded record periods only for personalized management', async () => {
+    const service = createService() as any;
+    const chatContext = {
+      messages: [],
+      session_summaries: [],
+      long_term_profile_traits: null,
+      recent_meal_records_3_days: [],
+      recent_workout_records_3_days: [],
+      recent_weight_records_7_days: [],
+      recent_step_records_7_days: [],
+      record_context_days: { meals: 7, workouts: 7, weights: 30, steps: 7 },
+      previous_user_input: null,
+      previous_category: null,
+      previous_recommended_menu_names: [],
+      previous_feedback_menu_names: [],
+      previous_brand: null,
+      previous_category_name: null,
+      previous_meal_time: null,
+    };
+    const menstrualContext = {
+      data_available: false,
+      recorded_cycle_count: 0,
+      cycle_length_days: null,
+      cycle_length_source: null,
+      normal_cycle_intervals_used: [],
+      cycles: [],
+      current_phase: null,
+      next_expected_menstrual_date: null,
+    };
+    const userInfo = { goal: 0, target_ratio: [40, 30, 30] };
+    const getChatContext = jest
+      .spyOn(service, 'getRecentChatContext')
+      .mockResolvedValue(chatContext);
+    jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue(userInfo);
+    jest
+      .spyOn(service, 'getMenstrualManagementContext')
+      .mockResolvedValue(menstrualContext);
+    const callGemini = jest
+      .spyOn(service, 'callGeminiText')
+      .mockResolvedValue('개인화된 관리법');
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.personalizedManagement({ id: 42 });
+
+    expect(getChatContext).toHaveBeenCalledWith(42, 8, {
+      meals: 7,
+      workouts: 7,
+      weights: 30,
+      steps: 7,
+    });
+    expect(callGemini).toHaveBeenCalledWith(
+      '나에게 맞는 관리법을 알려줘',
+      chatContext,
+      userInfo,
+      expect.stringContaining('개인화 관리법 생성 규칙'),
+    );
+    expect(response).toEqual({
+      chat_category: 'general',
+      intro_message: '개인화된 관리법',
+    });
+  });
+
+  it('calculates all menstrual phases and the next expected date', async () => {
+    const service = createService() as any;
+    service.menstrualCycleRepository = {
+      find: jest.fn().mockResolvedValue([
+        { id: 1, startDate: '2026-01-01', endDate: '2026-01-05' },
+        { id: 2, startDate: '2026-01-29', endDate: '2026-02-02' },
+        { id: 3, startDate: '2026-02-27', endDate: '2026-03-03' },
+      ]),
+    };
+
+    const context = await service.getMenstrualManagementContext(
+      42,
+      '2026-03-13',
+    );
+
+    expect(context.cycle_length_days).toBe(29);
+    expect(context.cycle_length_source).toBe('recent_average');
+    expect(context.normal_cycle_intervals_used).toEqual([28, 29]);
+    expect(context.cycles).toHaveLength(3);
+    expect(context.cycles[2]).toEqual({
+      cycle_number: 3,
+      recorded_menstrual_period: {
+        start_date: '2026-02-27',
+        end_date: '2026-03-03',
+      },
+      menstrual_phase: {
+        start_date: '2026-02-27',
+        end_date: '2026-03-03',
+      },
+      follicular_phase: {
+        start_date: '2026-03-04',
+        end_date: '2026-03-11',
+      },
+      ovulation_phase: {
+        start_date: '2026-03-12',
+        end_date: '2026-03-14',
+      },
+      luteal_phase: {
+        start_date: '2026-03-15',
+        end_date: '2026-03-27',
+      },
+    });
+    expect(context.current_phase).toEqual({
+      phase: '배란기',
+      start_date: '2026-03-12',
+      end_date: '2026-03-14',
+    });
+    expect(context.next_expected_menstrual_date).toBe('2026-03-28');
+  });
+
   it('sends user info, records, and past chat to pure Gemini chat', async () => {
     const post = jest.fn((_url: string, _body: Record<string, any>) =>
       of({
@@ -177,9 +301,7 @@ describe('ChatService conversation memory', () => {
           recent_weight_records_7_days: [
             { date: '2026-08-28', weight_kg: 64.3 },
           ],
-          recent_step_records_7_days: [
-            { date: '2026-08-28', steps: 8765 },
-          ],
+          recent_step_records_7_days: [{ date: '2026-08-28', steps: 8765 }],
         },
         {
           user: { nickname: '튼튼이' },
@@ -287,9 +409,7 @@ describe('ChatService conversation memory', () => {
       expect(systemInstruction).toContain('최근 3일 일별 영양 합계');
       expect(systemInstruction).toContain('최근 7일 체중 기록');
       expect(systemInstruction).toContain('최근 7일 걸음 수 기록');
-      expect(systemInstruction).toContain(
-        '없는 날짜의 걸음 수는 추측하지 마',
-      );
+      expect(systemInstruction).toContain('없는 날짜의 걸음 수는 추측하지 마');
       expect(systemInstruction).toContain(
         '현재 요청 추가 맥락:\n현재 업로드된 음식 사진 분석 결과: 닭가슴살과 샐러드',
       );

@@ -19,6 +19,7 @@ import { VectorModule } from '../vector/vector.module';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
 import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
+import { MenstrualCycleEntity } from '../menstrual/entity/menstrual-cycle.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -37,6 +38,7 @@ dotenv.config();
       ChatUserMemoryEntity,
       WorkoutRecordEntity,
       WeightStepsEntity,
+      MenstrualCycleEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
