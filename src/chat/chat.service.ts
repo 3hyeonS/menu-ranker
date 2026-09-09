@@ -89,6 +89,7 @@ const CHAT_SESSION_MAINTENANCE_BATCH_SIZE = 2;
 const CHAT_LONG_TERM_COMPACTION_BATCH_SIZE = 10;
 const CHAT_RECORD_CONTEXT_DAYS = 3;
 const CHAT_WEIGHT_CONTEXT_DAYS = 7;
+const CHAT_STEPS_CONTEXT_DAYS = 7;
 const CHAT_CONSUMPTION_INTERPRETATION =
   '추천 카드, 피드백 카드, AI 제안, 단순 메뉴 언급은 실제 섭취가 아니다. meal_record가 있거나 사용자가 명시적으로 먹었다고 말한 경우만 섭취 사실로 본다.';
 const CHAT_USER_FACT_PROVENANCE_RULES = `
@@ -234,6 +235,7 @@ type ChatContextSummary = {
   recent_meal_records_3_days: RecentMealRecordContextItem[];
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
   recent_weight_records_7_days: RecentWeightRecordContextItem[];
+  recent_step_records_7_days: RecentStepRecordContextItem[];
   previous_user_input: string | null;
   previous_category: ChatCategory | null;
   previous_recommended_menu_names: string[];
@@ -293,6 +295,11 @@ type RecentWeightRecordContextItem = {
   weight_kg: number;
 };
 
+type RecentStepRecordContextItem = {
+  date: string;
+  steps: number;
+};
+
 type ChatUserMenuSearchRawRow = {
   menu_id: number | string;
   menu_name: string;
@@ -340,6 +347,7 @@ type LightweightChatContext = {
   recent_meal_records_3_days: RecentMealRecordContextItem[];
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
   recent_weight_records_7_days: RecentWeightRecordContextItem[];
+  recent_step_records_7_days: RecentStepRecordContextItem[];
 };
 
 type ParsedChatIntent = {
@@ -2197,12 +2205,17 @@ export class ChatService {
       .take(CHAT_SESSION_SUMMARY_LIMIT)
       .getMany();
     const memory = await this.chatUserMemoryRepository.findOneBy({ userId });
-    const [recentMealRecords, recentWorkoutRecords, recentWeightRecords] =
-      await Promise.all([
-        this.getRecentMealRecordContext(userId),
-        this.getRecentWorkoutRecordContext(userId),
-        this.getRecentWeightRecordContext(userId),
-      ]);
+    const [
+      recentMealRecords,
+      recentWorkoutRecords,
+      recentWeightRecords,
+      recentStepRecords,
+    ] = await Promise.all([
+      this.getRecentMealRecordContext(userId),
+      this.getRecentWorkoutRecordContext(userId),
+      this.getRecentWeightRecordContext(userId),
+      this.getRecentStepRecordContext(userId),
+    ]);
 
     this.queueConversationMemoryMaintenance(userId);
 
@@ -2221,6 +2234,7 @@ export class ChatService {
       recent_meal_records_3_days: recentMealRecords,
       recent_workout_records_3_days: recentWorkoutRecords,
       recent_weight_records_7_days: recentWeightRecords,
+      recent_step_records_7_days: recentStepRecords,
       previous_user_input: previousMessage?.user_input ?? null,
       previous_category: previousMessage?.chat_category ?? null,
       previous_recommended_menu_names:
@@ -2728,6 +2742,7 @@ ${JSON.stringify(
       recent_meal_records_3_days: chatContext.recent_meal_records_3_days,
       recent_workout_records_3_days: chatContext.recent_workout_records_3_days,
       recent_weight_records_7_days: chatContext.recent_weight_records_7_days,
+      recent_step_records_7_days: chatContext.recent_step_records_7_days,
     };
   }
 
@@ -4014,6 +4029,31 @@ ${JSON.stringify(
     return records.map((record) => ({
       date: this.formatLocalDate(new Date(record.date)),
       weight_kg: roundToOneDecimal(record.weight),
+    }));
+  }
+
+  private async getRecentStepRecordContext(
+    userId: number,
+  ): Promise<RecentStepRecordContextItem[]> {
+    const { start, end } = this.getRecentRecordDateRange(
+      new Date(),
+      CHAT_STEPS_CONTEXT_DAYS,
+    );
+    const records = await this.weightStepsRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(start, end),
+        steps: Not(IsNull()),
+      },
+      order: {
+        date: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return records.map((record) => ({
+      date: this.formatLocalDate(new Date(record.date)),
+      steps: roundToOneDecimal(record.steps),
     }));
   }
 
@@ -10808,6 +10848,7 @@ JSON shape:
 - 단, DB 영양정보를 받은 상황이 아니면 특정 칼로리 수치를 단정하지 말고 "제품마다 다르다"처럼 범위를 조심스럽게 안내해
 - 최근 대화 맥락의 recommendation_card_menu_names_not_consumed, feedback_card_menu_names_not_consumed는 이전 답변 카드/후보일 뿐이며 사용자가 먹은 음식으로 간주하지 마
 - 최근 대화 맥락의 recent_meal_records_3_days와 recent_workout_records_3_days는 DB에 실제 저장된 최근 3일 기록이야
+- recent_weight_records_7_days와 recent_step_records_7_days는 DB에 실제 저장된 최근 7일 체중과 걸음 수 기록이야
 - 운동 질문에는 recent_workout_records_3_days를 참고하되, 기록에 없는 운동을 했다고 추측하지 마
 - 단, recent_messages의 discussed_food_names_not_consumed와 previous_discussed_food_names_not_consumed는 실제 섭취 기록은 아니지만 사용자가 "그거", "이거", "거기에", "같이", "반찬 없이", "밥이랑만"처럼 주어를 생략한 후속 질문을 할 때 현재 대화 주제 음식으로 참고해
 - 이 대화 주제 음식은 답변 맥락 해석에만 사용하고, 사용자가 먹었다고 단정하지 마
@@ -11631,6 +11672,12 @@ ${JSON.stringify(candidates)}
           weekday: this.getKoreanWeekday(record.date),
         })),
       )}`,
+      `최근 7일 걸음 수 기록:\n${JSON.stringify(
+        chatContext.recent_step_records_7_days.map((record) => ({
+          ...record,
+          weekday: this.getKoreanWeekday(record.date),
+        })),
+      )}`,
       chatContext.long_term_profile_traits
         ? `장기 대화 기억:\n${chatContext.long_term_profile_traits}`
         : null,
@@ -11695,6 +11742,10 @@ ${JSON.stringify(candidates)}
 [체중 기록 반영 규칙]
 - 최근 7일 체중 기록은 DB에 실제 저장된 날짜별 체중이야. 기록된 수치를 그대로 사용하고 없는 날짜의 체중은 추측하지 마.
 - 체중 변화나 추세를 말할 때는 기록 날짜와 수치를 기준으로 하고, 기록이 부족하면 장기 추세를 단정하지 마.
+
+[걸음 수 기록 반영 규칙]
+- 최근 7일 걸음 수 기록은 DB에 실제 저장된 날짜별 걸음 수야. 기록된 수치를 그대로 사용하고 없는 날짜의 걸음 수는 추측하지 마.
+- 걸음 수 변화나 활동량을 말할 때는 기록 날짜와 수치를 기준으로 하고, 기록이 부족하면 장기 추세를 단정하지 마.
 
 ${CHAT_USER_FACT_PROVENANCE_RULES}
 

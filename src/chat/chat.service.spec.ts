@@ -28,6 +28,7 @@ describe('ChatService conversation memory', () => {
       recent_meal_records_3_days: [],
       recent_workout_records_3_days: [],
       recent_weight_records_7_days: [],
+      recent_step_records_7_days: [],
       previous_user_input: null,
       previous_category: null,
       previous_recommended_menu_names: [],
@@ -176,6 +177,9 @@ describe('ChatService conversation memory', () => {
           recent_weight_records_7_days: [
             { date: '2026-08-28', weight_kg: 64.3 },
           ],
+          recent_step_records_7_days: [
+            { date: '2026-08-28', steps: 8765 },
+          ],
         },
         {
           user: { nickname: '튼튼이' },
@@ -217,6 +221,7 @@ describe('ChatService conversation memory', () => {
       expect(JSON.stringify(requestBody)).toContain('닭가슴살');
       expect(JSON.stringify(requestBody)).toContain('스쿼트');
       expect(JSON.stringify(requestBody)).toContain('64.3');
+      expect(JSON.stringify(requestBody)).toContain('8765');
       expect(JSON.stringify(requestBody)).toContain('target_calories');
       expect(JSON.stringify(requestBody)).toContain('같은 음식 문화권');
       expect(JSON.stringify(requestBody)).toContain('태국 음식을 먹었다면');
@@ -281,6 +286,10 @@ describe('ChatService conversation memory', () => {
       expect(systemInstruction).toContain('사용자 습관이나 목표로 표현하지 마');
       expect(systemInstruction).toContain('최근 3일 일별 영양 합계');
       expect(systemInstruction).toContain('최근 7일 체중 기록');
+      expect(systemInstruction).toContain('최근 7일 걸음 수 기록');
+      expect(systemInstruction).toContain(
+        '없는 날짜의 걸음 수는 추측하지 마',
+      );
       expect(systemInstruction).toContain(
         '현재 요청 추가 맥락:\n현재 업로드된 음식 사진 분석 결과: 닭가슴살과 샐러드',
       );
@@ -620,6 +629,7 @@ describe('ChatService conversation memory', () => {
       recent_meal_records_3_days: [],
       recent_workout_records_3_days: [],
       recent_weight_records_7_days: [],
+      recent_step_records_7_days: [],
       previous_user_input: null,
       previous_category: null,
       previous_recommended_menu_names: [],
@@ -634,6 +644,7 @@ describe('ChatService conversation memory', () => {
     expect(lightweightContext.recent_meal_records_3_days).toEqual([]);
     expect(lightweightContext.recent_workout_records_3_days).toEqual([]);
     expect(lightweightContext.recent_weight_records_7_days).toEqual([]);
+    expect(lightweightContext.recent_step_records_7_days).toEqual([]);
     expect(lightweightContext.consumption_interpretation).toContain(
       '실제 섭취가 아니다',
     );
