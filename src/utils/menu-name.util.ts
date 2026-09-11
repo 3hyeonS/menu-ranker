@@ -346,3 +346,67 @@ export const prioritizeGenericFriedEggCandidate = <T extends { name: string }>(
       Number(isPreferredGenericFriedEggMenu(recognizedFoodName, left.name)),
   );
 };
+
+const GENERIC_PLAIN_RICE_CANONICAL_NAME = canonicalizeMenuSearchName('밥');
+
+export const isGenericPlainRiceName = (menuName: string): boolean =>
+  canonicalizeMenuSearchName(menuName) === GENERIC_PLAIN_RICE_CANONICAL_NAME;
+
+export const isPreferredGenericPlainRiceMenu = (
+  recognizedFoodName: string,
+  candidateMenuName: string,
+): boolean =>
+  isGenericPlainRiceName(recognizedFoodName) &&
+  /^\s*\(식약처_음식\)\s*/.test(candidateMenuName) &&
+  canonicalizeMenuSearchName(candidateMenuName) ===
+    GENERIC_PLAIN_RICE_CANONICAL_NAME;
+
+const getGenericPlainRicePreferenceScore = (
+  recognizedFoodName: string,
+  candidateMenuName: string,
+): number => {
+  if (!isPreferredGenericPlainRiceMenu(recognizedFoodName, candidateMenuName)) {
+    return 0;
+  }
+
+  return normalizeMenuSearchName(candidateMenuName) ===
+    normalizeMenuSearchName('밥')
+    ? 2
+    : 1;
+};
+
+export const prioritizeGenericPlainRiceCandidate = <T extends { name: string }>(
+  recognizedFoodName: string,
+  candidates: T[],
+): T[] => {
+  if (!isGenericPlainRiceName(recognizedFoodName)) {
+    return candidates;
+  }
+
+  return [...candidates].sort(
+    (left, right) =>
+      getGenericPlainRicePreferenceScore(recognizedFoodName, right.name) -
+      getGenericPlainRicePreferenceScore(recognizedFoodName, left.name),
+  );
+};
+
+export const prioritizeGenericFoodImageCandidate = <T extends { name: string }>(
+  recognizedFoodName: string,
+  candidates: T[],
+): T[] =>
+  prioritizeGenericPlainRiceCandidate(
+    recognizedFoodName,
+    prioritizeGenericFriedEggCandidate(recognizedFoodName, candidates),
+  );
+
+export const findPreferredGenericFoodImageCandidate = <
+  T extends { name: string },
+>(
+  recognizedFoodName: string,
+  candidates: T[],
+): T | undefined =>
+  prioritizeGenericFoodImageCandidate(recognizedFoodName, candidates).find(
+    (candidate) =>
+      isPreferredGenericFriedEggMenu(recognizedFoodName, candidate.name) ||
+      isPreferredGenericPlainRiceMenu(recognizedFoodName, candidate.name),
+  );

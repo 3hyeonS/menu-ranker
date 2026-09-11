@@ -581,6 +581,45 @@ describe('ChatService conversation memory', () => {
     expect(result.name).toBe('(식약처_음식) 달걀후라이');
   });
 
+  it('replaces a product rice chat image match with the generic plain rice menu', () => {
+    const service = createService() as any;
+    const result = service.normalizeRematchedFoodImageMenu(
+      { food_index: 0, menu_id: 11, confidence: 0.9 },
+      [
+        {
+          foodName: '흰밥',
+          brand: null,
+          confidence: 0.9,
+          position: { x: 0.5, y: 0.5 },
+        },
+      ],
+      new Map([
+        [
+          10,
+          {
+            id: 10,
+            name: '(식약처_음식) 밥',
+            brand: null,
+            category: null,
+          },
+        ],
+        [
+          11,
+          {
+            id: 11,
+            name: '따끈한 흰쌀밥 득템',
+            brand: '득템',
+            category: null,
+          },
+        ],
+      ]),
+      new Map([[0, new Set([10, 11])]]),
+    );
+
+    expect(result.id).toBe(10);
+    expect(result.name).toBe('(식약처_음식) 밥');
+  });
+
   it('allows meal record metadata for image chat history', async () => {
     const service = createService() as any;
     const imageHistory = {

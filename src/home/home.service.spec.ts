@@ -107,6 +107,40 @@ describe('HomeService menu search priority', () => {
     ).toEqual({ menu_ids: [2], menu_quantities: [100] });
   });
 
+  it('replaces a product rice image match with the generic plain rice menu', () => {
+    const candidates = new Map([
+      [
+        10,
+        {
+          id: 10,
+          name: '(식약처_음식) 밥',
+          brand: null,
+          category: null,
+          weight: 200,
+        },
+      ],
+      [
+        11,
+        {
+          id: 11,
+          name: '따끈한 흰쌀밥 득템',
+          brand: '득템',
+          category: null,
+          weight: 210,
+        },
+      ],
+    ]);
+
+    expect(
+      service.normalizeHomeFoodImageRematchResult(
+        [{ food_index: 0, menu_id: 11, quantity: 1 }],
+        candidates,
+        new Map([[0, new Set([10, 11])]]),
+        new Map([[0, '흰밥']]),
+      ),
+    ).toEqual({ menu_ids: [10], menu_quantities: [200] });
+  });
+
   it('calculates recorded calories from weight regardless of input tab', () => {
     const menu = { weight: 100, calories: 80 };
 

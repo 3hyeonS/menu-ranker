@@ -58,9 +58,11 @@ import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu
 import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
+  findPreferredGenericFoodImageCandidate,
   isPreferredGenericFriedEggMenu,
+  isPreferredGenericPlainRiceMenu,
   normalizeMenuSearchName,
-  prioritizeGenericFriedEggCandidate,
+  prioritizeGenericFoodImageCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
@@ -4849,9 +4851,9 @@ ${JSON.stringify(
     prediction: FoodImagePrediction,
     menus: MenuRecognitionCandidate[],
   ): RecognizedFoodImageMenu | null {
-    const preferredMenu = menus.find((menu) =>
-      isPreferredGenericFriedEggMenu(prediction.foodName, menu.name),
-    );
+    const preferredMenu = prediction.brand
+      ? undefined
+      : findPreferredGenericFoodImageCandidate(prediction.foodName, menus);
     const matchedMenu =
       preferredMenu ??
       this.findBestRecognitionCandidate(
@@ -5026,13 +5028,20 @@ ${JSON.stringify(
           foodName: prediction.foodName,
           candidates: [],
         };
-        const preferredMenus = menus.filter((menu) =>
-          isPreferredGenericFriedEggMenu(prediction.foodName, menu.name),
-        );
+        const preferredMenus = prediction.brand
+          ? []
+          : menus.filter(
+              (menu) =>
+                isPreferredGenericFriedEggMenu(
+                  prediction.foodName,
+                  menu.name,
+                ) ||
+                isPreferredGenericPlainRiceMenu(prediction.foodName, menu.name),
+            );
 
         return {
           ...group,
-          candidates: prioritizeGenericFriedEggCandidate(
+          candidates: prioritizeGenericFoodImageCandidate(
             prediction.foodName,
             this.mergeRecognitionCandidatesById([
               ...preferredMenus,
@@ -5679,6 +5688,8 @@ ${JSON.stringify(candidates)}
 - detected_foods.food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥 -> 김치볶음은 불일치, 참치김밥 -> 참치샐러드는 불일치, 된장찌개 -> 된장국은 불일치
 - food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
 - "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
+- food_name이 일반적인 "밥", "흰밥", "쌀밥", "백미밥"이고 포장이나 브랜드 단서가 없으면 "(식약처_음식) 밥"을 우선해
+- "따끈한 흰쌀밥 득템" 같은 상품 메뉴는 해당 포장이나 브랜드가 사진에서 명확할 때만 선택해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 음식에 보이면 가장 대표적인 food_index 하나만 같은 menu_id에 매칭해
 
@@ -5797,15 +5808,16 @@ ${JSON.stringify(
     }
 
     const prediction = predictions[foodIndex];
-    const preferredMenu = Array.from(
-      candidateIdsByFoodIndex.get(foodIndex) ?? [],
-    )
-      .map((candidateId) => candidateMap.get(candidateId))
-      .find(
-        (candidate) =>
-          candidate &&
-          isPreferredGenericFriedEggMenu(prediction.foodName, candidate.name),
-      );
+    const preferredMenu = prediction.brand
+      ? undefined
+      : findPreferredGenericFoodImageCandidate(
+          prediction.foodName,
+          Array.from(candidateIdsByFoodIndex.get(foodIndex) ?? [])
+            .map((candidateId) => candidateMap.get(candidateId))
+            .filter(
+              (candidate): candidate is MenuRecognitionCandidate => !!candidate,
+            ),
+        );
     const matchedMenu = preferredMenu ?? candidateMap.get(menuId)!;
     if (!this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)) {
       return null;

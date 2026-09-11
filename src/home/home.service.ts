@@ -60,9 +60,10 @@ import { WorkoutCsvImportResponseDto } from './dto/response-dto/workout-csv-impo
 import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
-  isPreferredGenericFriedEggMenu,
+  findPreferredGenericFoodImageCandidate,
+  isGenericPlainRiceName,
   normalizeMenuSearchName,
-  prioritizeGenericFriedEggCandidate,
+  prioritizeGenericFoodImageCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import {
@@ -1742,7 +1743,7 @@ failure_reason enum:
           vectorResults.map((result) => result.menuId),
         );
 
-        return prioritizeGenericFriedEggCandidate(
+        return prioritizeGenericFoodImageCandidate(
           foodName,
           this.mergeFoodImageRecognitionCandidates([
             ...keywordMenus,
@@ -1757,7 +1758,7 @@ failure_reason enum:
       }
     }
 
-    return prioritizeGenericFriedEggCandidate(foodName, keywordMenus);
+    return prioritizeGenericFoodImageCandidate(foodName, keywordMenus);
   }
 
   private mergeFoodImageRecognitionCandidates(
@@ -1795,6 +1796,9 @@ failure_reason enum:
     const compactNameExpression = `REPLACE(${displayNameExpression}, ' ', '')`;
     const canonicalNameExpression = `REPLACE(REPLACE(LOWER(${compactNameExpression}), '계란', '달걀'), '후라이', '프라이')`;
     const canonicalFoodName = canonicalizeMenuSearchName(normalizedFoodName);
+    const preferredGenericFoodName = isGenericPlainRiceName(normalizedFoodName)
+      ? '밥'
+      : null;
 
     const rows = await this.menuRepository
       .createQueryBuilder('menu')
@@ -1823,6 +1827,10 @@ failure_reason enum:
             .orWhere(`${canonicalNameExpression} = :canonicalFoodName`, {
               canonicalFoodName,
             })
+            .orWhere(
+              `:preferredGenericFoodName IS NOT NULL AND ${displayNameExpression} = :preferredGenericFoodName`,
+              { preferredGenericFoodName },
+            )
             .orWhere('menu.name LIKE :likeName', {
               likeName: `%${normalizedFoodName}%`,
             });
@@ -1842,6 +1850,7 @@ failure_reason enum:
       .setParameter('exactName', normalizedFoodName)
       .setParameter('compactName', compactFoodName)
       .setParameter('canonicalFoodName', canonicalFoodName)
+      .setParameter('preferredGenericFoodName', preferredGenericFoodName)
       .setParameter('compactContext', compactContext)
       .limit(limit)
       .getRawMany<{
@@ -1895,6 +1904,8 @@ failure_reason enum:
 - 사진의 시각 정보, food_name, 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
 - "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
+- food_name이 일반적인 "밥", "흰밥", "쌀밥", "백미밥"이고 포장이나 브랜드 단서가 없으면 "(식약처_음식) 밥"을 우선해
+- "따끈한 흰쌀밥 득템" 같은 상품 메뉴는 해당 포장이나 브랜드가 사진에서 명확할 때만 선택해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 위치에 보여도 같은 menu_id는 한 번만 반환해
 - quantity는 사진 속 해당 음식의 대략적인 인분/개수야. 모르겠으면 1로 반환해
@@ -1983,15 +1994,15 @@ ${JSON.stringify(
       }
 
       const recognizedFoodName = foodNamesByIndex.get(foodIndex) ?? '';
-      const preferredCandidate = Array.from(
-        candidateIdsByFoodIndex.get(foodIndex) ?? [],
-      )
-        .map((candidateId) => candidateMap.get(candidateId))
-        .find(
-          (candidate) =>
-            candidate &&
-            isPreferredGenericFriedEggMenu(recognizedFoodName, candidate.name),
-        );
+      const preferredCandidate = findPreferredGenericFoodImageCandidate(
+        recognizedFoodName,
+        Array.from(candidateIdsByFoodIndex.get(foodIndex) ?? [])
+          .map((candidateId) => candidateMap.get(candidateId))
+          .filter(
+            (candidate): candidate is HomeFoodImageRecognitionCandidate =>
+              !!candidate,
+          ),
+      );
       const candidate = preferredCandidate ?? candidateMap.get(menuId);
 
       if (!candidate) {
