@@ -130,6 +130,7 @@ describe('ChatService conversation memory', () => {
       previous_meal_time: null,
     };
     const menstrualContext = {
+      reference_date: '2026-09-10',
       data_available: false,
       recorded_cycle_count: 0,
       cycle_length_days: null,
@@ -137,6 +138,9 @@ describe('ChatService conversation memory', () => {
       normal_cycle_intervals_used: [],
       cycles: [],
       current_phase: null,
+      current_phase_starts_today: false,
+      next_phase: null,
+      next_phase_starts_today: false,
       next_expected_menstrual_date: null,
     };
     const userInfo = { goal: 0, target_ratio: [40, 30, 30] };
@@ -191,6 +195,7 @@ describe('ChatService conversation memory', () => {
     );
 
     expect(context.cycle_length_days).toBe(29);
+    expect(context.reference_date).toBe('2026-03-13');
     expect(context.cycle_length_source).toBe('recent_average');
     expect(context.normal_cycle_intervals_used).toEqual([28, 29]);
     expect(context.cycles).toHaveLength(3);
@@ -222,7 +227,73 @@ describe('ChatService conversation memory', () => {
       start_date: '2026-03-12',
       end_date: '2026-03-14',
     });
+    expect(context.current_phase_starts_today).toBe(false);
+    expect(context.next_phase).toEqual({
+      phase: '황체기',
+      start_date: '2026-03-15',
+      end_date: '2026-03-27',
+    });
+    expect(context.next_phase_starts_today).toBe(false);
     expect(context.next_expected_menstrual_date).toBe('2026-03-28');
+  });
+
+  it('keeps the last recorded menstrual day as the current phase', async () => {
+    const service = createService() as any;
+    service.menstrualCycleRepository = {
+      find: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 1, startDate: '2026-09-05', endDate: '2026-09-10' },
+        ]),
+    };
+
+    const context = await service.getMenstrualManagementContext(
+      42,
+      '2026-09-10',
+    );
+
+    expect(context.reference_date).toBe('2026-09-10');
+    expect(context.current_phase).toEqual({
+      phase: '월경기',
+      start_date: '2026-09-05',
+      end_date: '2026-09-10',
+    });
+    expect(context.current_phase_starts_today).toBe(false);
+    expect(context.next_phase).toEqual({
+      phase: '난포기',
+      start_date: '2026-09-11',
+      end_date: '2026-09-16',
+    });
+    expect(context.next_phase_starts_today).toBe(false);
+  });
+
+  it('marks a phase as starting today only on its exact start date', async () => {
+    const service = createService() as any;
+    service.menstrualCycleRepository = {
+      find: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 1, startDate: '2026-09-05', endDate: '2026-09-09' },
+        ]),
+    };
+
+    const context = await service.getMenstrualManagementContext(
+      42,
+      '2026-09-10',
+    );
+
+    expect(context.current_phase).toEqual({
+      phase: '난포기',
+      start_date: '2026-09-10',
+      end_date: '2026-09-16',
+    });
+    expect(context.current_phase_starts_today).toBe(true);
+    expect(context.next_phase).toEqual({
+      phase: '배란기',
+      start_date: '2026-09-17',
+      end_date: '2026-09-19',
+    });
+    expect(context.next_phase_starts_today).toBe(false);
   });
 
   it('sends user info, records, and past chat to pure Gemini chat', async () => {

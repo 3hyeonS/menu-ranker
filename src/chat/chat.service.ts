@@ -328,6 +328,12 @@ type MenstrualPhaseDateRange = {
   end_date: string;
 };
 
+type MenstrualPhaseName = '월경기' | '난포기' | '배란기' | '황체기';
+
+type MenstrualPhaseContext = MenstrualPhaseDateRange & {
+  phase: MenstrualPhaseName;
+};
+
 type MenstrualCycleManagementContextItem = {
   cycle_number: number;
   recorded_menstrual_period: MenstrualPhaseDateRange;
@@ -338,17 +344,17 @@ type MenstrualCycleManagementContextItem = {
 };
 
 type MenstrualManagementContext = {
+  reference_date: string;
   data_available: boolean;
   recorded_cycle_count: number;
   cycle_length_days: number | null;
   cycle_length_source: 'recent_average' | 'default_28_days' | null;
   normal_cycle_intervals_used: number[];
   cycles: MenstrualCycleManagementContextItem[];
-  current_phase: {
-    phase: '월경기' | '난포기' | '배란기' | '황체기';
-    start_date: string;
-    end_date: string;
-  } | null;
+  current_phase: MenstrualPhaseContext | null;
+  current_phase_starts_today: boolean;
+  next_phase: MenstrualPhaseContext | null;
+  next_phase_starts_today: boolean;
   next_expected_menstrual_date: string | null;
 };
 
@@ -4179,6 +4185,7 @@ ${JSON.stringify(
 
     if (recordedCycles.length === 0) {
       return {
+        reference_date: referenceDate,
         data_available: false,
         recorded_cycle_count: 0,
         cycle_length_days: null,
@@ -4186,6 +4193,9 @@ ${JSON.stringify(
         normal_cycle_intervals_used: [],
         cycles: [],
         current_phase: null,
+        current_phase_starts_today: false,
+        next_phase: null,
+        next_phase_starts_today: false,
         next_expected_menstrual_date: null,
       };
     }
@@ -4221,8 +4231,14 @@ ${JSON.stringify(
       ),
     );
     const latestCycle = cycles[cycles.length - 1];
+    const currentPhase = this.findCurrentMenstrualPhase(
+      latestCycle,
+      referenceDate,
+    );
+    const nextPhase = this.findNextMenstrualPhase(latestCycle, referenceDate);
 
     return {
+      reference_date: referenceDate,
       data_available: true,
       recorded_cycle_count: cycles.length,
       cycle_length_days: cycleLengthDays,
@@ -4231,7 +4247,10 @@ ${JSON.stringify(
         : 'default_28_days',
       normal_cycle_intervals_used: normalIntervals,
       cycles,
-      current_phase: this.findCurrentMenstrualPhase(latestCycle, referenceDate),
+      current_phase: currentPhase,
+      current_phase_starts_today: currentPhase?.start_date === referenceDate,
+      next_phase: nextPhase,
+      next_phase_starts_today: nextPhase?.start_date === referenceDate,
       next_expected_menstrual_date: this.addDateOnlyDays(
         latestCycle.recorded_menstrual_period.start_date,
         cycleLengthDays,
@@ -4339,6 +4358,32 @@ ${JSON.stringify(
       : null;
   }
 
+  private findNextMenstrualPhase(
+    cycle: MenstrualCycleManagementContextItem,
+    referenceDate: string,
+  ): MenstrualManagementContext['next_phase'] {
+    const phases: Array<{
+      phase: MenstrualPhaseName;
+      range: MenstrualPhaseDateRange | null;
+    }> = [
+      { phase: '월경기', range: cycle.menstrual_phase },
+      { phase: '난포기', range: cycle.follicular_phase },
+      { phase: '배란기', range: cycle.ovulation_phase },
+      { phase: '황체기', range: cycle.luteal_phase },
+    ];
+    const next = phases.find(
+      ({ range }) => range && range.start_date > referenceDate,
+    );
+
+    return next?.range
+      ? {
+          phase: next.phase,
+          start_date: next.range.start_date,
+          end_date: next.range.end_date,
+        }
+      : null;
+  }
+
   private getDateOnlyDifferenceInDays(laterDate: string, earlierDate: string) {
     const later = new Date(`${laterDate}T00:00:00.000Z`).getTime();
     const earlier = new Date(`${earlierDate}T00:00:00.000Z`).getTime();
@@ -4371,6 +4416,10 @@ ${JSON.stringify(menstrualContext)}
 - 월경 주기만 있으면 현재 단계에 일반적으로 도움이 될 수 있는 식단과 운동 관리법을 먼저 제공해.
 - 데이터가 부족하다는 말로 끝내지 말고, 현재 확인되는 기록을 기준으로 실천할 관리법을 먼저 제시한 뒤 식단·운동·체중을 더 기록하면 개인화 수준이 높아진다는 점을 자연스럽게 안내해.
 - current_phase가 null이면 현재 월경 단계를 임의로 정하지 말고, 다음 월경 예상일이 과거라면 날짜가 지났다는 사실만 바탕으로 새 월경 기록이 필요한지 안내해.
+- reference_date는 이 요청에서 사용하는 확정된 오늘 날짜야.
+- current_phase는 reference_date 당일의 현재 단계이고, next_phase는 그 이후에 시작하는 다음 단계야. next_phase를 현재 단계처럼 표현하지 마.
+- "오늘부터"라는 표현은 current_phase_starts_today가 true일 때만 사용해. false이면 현재 단계가 오늘 시작했다고 말하지 마.
+- next_phase_starts_today가 false이면 next_phase가 오늘 시작한다고 말하지 말고, 반드시 start_date를 기준으로 미래 시점이라고 표현해.
 - 월경 단계와 다음 월경 예상일은 서버가 계산한 값을 그대로 사용하고 직접 다시 계산하거나 다른 날짜로 바꾸지 마.`;
   }
 
