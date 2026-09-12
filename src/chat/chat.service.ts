@@ -52,6 +52,7 @@ import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-req
 import { ChatMealRecordParseRequestDto } from './dto/request-dto/chat-meal-record-parse-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
 import { ChatUserMenuSearchRequestDto } from './dto/request-dto/chat-user-menu-search-request-dto';
+import { ChatMealFeedbackRequestDto } from './dto/request-dto/chat-meal-feedback-request-dto';
 import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
 import { ChatMealRecordParseResponseDto } from './dto/response-dto/chat-meal-record-parse-response-dto';
 import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu-search-response-dto';
@@ -290,6 +291,44 @@ type RecentMealNutritionContext = {
   sugars: number;
   dietary_fiber: number;
   sodium: number;
+};
+
+type MealFeedbackScoreContext = {
+  selected_date: string;
+  score: number;
+  score_formula: string;
+  calorie_score: {
+    consumed_calories: number;
+    base_target_calories: number;
+    exercise_burned_calories: number;
+    adjusted_target_calories: number;
+    difference_rate_percent: number;
+    score: number;
+    max_score: 50;
+  };
+  consumed_nutrition: RecentMealNutritionContext;
+  macro_balance_score: {
+    total_macro_calories: number;
+    items: {
+      carbs: MealFeedbackMacroScoreItem;
+      protein: MealFeedbackMacroScoreItem;
+      fat: MealFeedbackMacroScoreItem;
+    };
+    score: number;
+    max_score: 50;
+  };
+  recorded_meal_slots: string[];
+  meal_records: RecentMealRecordContextItem[];
+};
+
+type MealFeedbackMacroScoreItem = {
+  consumed_grams: number;
+  actual_ratio_percent: number;
+  target_ratio_percent: number;
+  difference_percent_points: number;
+  grade: '적절' | '약간 불균형' | '불균형' | '심한 불균형';
+  score: number;
+  max_score: number;
 };
 
 type RecentWorkoutRecordContextItem = {
@@ -847,6 +886,52 @@ export class ChatService {
       chatContext,
       menstrualContext,
     );
+    const answer = await this.callGeminiText(
+      input,
+      chatContext,
+      userInfo,
+      requestContext,
+    );
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'general';
+    response.intro_message = answer;
+
+    await this.saveNewChatHistory(
+      this.chatHistoryRepository.create({
+        input_text: input,
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
+
+    return response;
+  }
+
+  async mealFeedback(
+    user: UserEntity,
+    dto: ChatMealFeedbackRequestDto,
+  ): Promise<ChatRecommendResponseDto> {
+    const selectedDate = dto.date.trim();
+    const [userInfo, chatContext, mealRecords, exerciseBurnedCalories] =
+      await Promise.all([
+        this.getRequiredUserInfo(user.id),
+        this.getRecentChatContext(user.id),
+        this.getMealRecordContextForDate(user.id, selectedDate),
+        this.getBurnedCaloriesForDate(user.id, selectedDate),
+      ]);
+
+    if (mealRecords.length === 0) {
+      throw new NotFoundException('Meal record not found for selected date');
+    }
+
+    const scoreContext = this.buildMealFeedbackScoreContext(
+      selectedDate,
+      mealRecords,
+      userInfo,
+      exerciseBurnedCalories,
+    );
+    const input = `${selectedDate} 식사 피드백을 알려줘`;
+    const requestContext = this.buildMealFeedbackRequestContext(scoreContext);
     const answer = await this.callGeminiText(
       input,
       chatContext,
@@ -3992,6 +4077,75 @@ ${JSON.stringify(
     return weekdayNames[parsed.getUTCDay()];
   }
 
+  private getDateOnlyRange(date: string): { start: Date; end: Date } {
+    const [year, month, day] = date.split('-').map(Number);
+    const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(month) ||
+      !Number.isInteger(day) ||
+      start.getFullYear() !== year ||
+      start.getMonth() !== month - 1 ||
+      start.getDate() !== day
+    ) {
+      throw new BadRequestException('date must be a valid YYYY-MM-DD date');
+    }
+
+    const end = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    return { start, end };
+  }
+
+  private async getMealRecordContextForDate(
+    userId: number,
+    date: string,
+  ): Promise<RecentMealRecordContextItem[]> {
+    const { start, end } = this.getDateOnlyRange(date);
+    const meals = await this.mealRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(start, end),
+      },
+      relations: {
+        mealMenus: {
+          menu: true,
+        },
+      },
+      order: {
+        time: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return meals
+      .filter((meal) => meal.mealMenus.length > 0)
+      .map((meal) => {
+        const menus = meal.mealMenus.map((mealMenu) => ({
+          name: stripPublicMenuSourcePrefix(mealMenu.menu.name),
+          quantity: roundToOneDecimal(mealMenu.quantity ?? 0),
+          quantity_unit: mealMenu.menu.unit === 1 ? 'ml' : 'g',
+          input_mode: mealMenu.menu_input_mode,
+          input_mode_label:
+            mealMenu.menu_input_mode === 1 ? '중량 탭' : '단위 탭',
+          consumed_nutrition: this.calculateRecordedMenuNutrition(
+            mealMenu.menu,
+            mealMenu.quantity ?? 0,
+          ),
+        }));
+
+        return {
+          date,
+          meal_time: meal.time,
+          meal_time_label: this.mealTimeLabelMap[meal.time] ?? '기타',
+          menus,
+          nutrition_totals: this.sumRecentMealNutrition(
+            menus.map((menu) => menu.consumed_nutrition),
+          ),
+        };
+      });
+  }
+
   private async getRecentMealRecordContext(
     userId: number,
     days = CHAT_RECORD_CONTEXT_DAYS,
@@ -4126,6 +4280,26 @@ ${JSON.stringify(
           reps: set.reps,
         })),
     }));
+  }
+
+  private async getBurnedCaloriesForDate(
+    userId: number,
+    date: string,
+  ): Promise<number> {
+    this.getDateOnlyRange(date);
+    const records = await this.workoutRecordRepository.find({
+      where: {
+        user: { id: userId },
+        date,
+      },
+    });
+
+    return roundToOneDecimal(
+      records.reduce(
+        (total, record) => total + Number(record.burned_calories ?? 0),
+        0,
+      ),
+    );
   }
 
   private async getRecentWeightRecordContext(
@@ -4421,6 +4595,168 @@ ${JSON.stringify(menstrualContext)}
 - "오늘부터"라는 표현은 current_phase_starts_today가 true일 때만 사용해. false이면 현재 단계가 오늘 시작했다고 말하지 마.
 - next_phase_starts_today가 false이면 next_phase가 오늘 시작한다고 말하지 말고, 반드시 start_date를 기준으로 미래 시점이라고 표현해.
 - 월경 단계와 다음 월경 예상일은 서버가 계산한 값을 그대로 사용하고 직접 다시 계산하거나 다른 날짜로 바꾸지 마.`;
+  }
+
+  private buildMealFeedbackScoreContext(
+    selectedDate: string,
+    mealRecords: RecentMealRecordContextItem[],
+    userInfo: UserInfoEntity,
+    exerciseBurnedCalories: number,
+  ): MealFeedbackScoreContext {
+    const targetRatio = this.normalizeTargetRatio(userInfo.target_ratio);
+    const consumedNutrition = this.sumRecentMealNutrition(
+      mealRecords.map((record) => record.nutrition_totals),
+    );
+    const baseTargetCalories = Number(userInfo.target_calories);
+    const adjustedTargetCalories = Math.max(
+      baseTargetCalories + exerciseBurnedCalories,
+      1,
+    );
+    const calorieDifferenceRate =
+      (Math.abs(consumedNutrition.calories - adjustedTargetCalories) /
+        adjustedTargetCalories) *
+      100;
+    const calorieScore = this.getMealFeedbackCalorieScore(
+      calorieDifferenceRate,
+    );
+    const macroCalories = {
+      carbs: consumedNutrition.carbs * 4,
+      protein: consumedNutrition.protein * 4,
+      fat: consumedNutrition.fat * 9,
+    };
+    const totalMacroCalories =
+      macroCalories.carbs + macroCalories.protein + macroCalories.fat;
+    const actualMacroRatios = {
+      carbs:
+        totalMacroCalories > 0
+          ? (macroCalories.carbs / totalMacroCalories) * 100
+          : 0,
+      protein:
+        totalMacroCalories > 0
+          ? (macroCalories.protein / totalMacroCalories) * 100
+          : 0,
+      fat:
+        totalMacroCalories > 0
+          ? (macroCalories.fat / totalMacroCalories) * 100
+          : 0,
+    };
+    const macroScoreItems = {
+      carbs: this.buildMealFeedbackMacroScoreItem(
+        consumedNutrition.carbs,
+        actualMacroRatios.carbs,
+        targetRatio[0],
+        17,
+      ),
+      protein: this.buildMealFeedbackMacroScoreItem(
+        consumedNutrition.protein,
+        actualMacroRatios.protein,
+        targetRatio[1],
+        17,
+      ),
+      fat: this.buildMealFeedbackMacroScoreItem(
+        consumedNutrition.fat,
+        actualMacroRatios.fat,
+        targetRatio[2],
+        16,
+      ),
+    };
+    const macroBalanceScore =
+      macroScoreItems.carbs.score +
+      macroScoreItems.protein.score +
+      macroScoreItems.fat.score;
+
+    return {
+      selected_date: selectedDate,
+      score: calorieScore + macroBalanceScore,
+      score_formula:
+        '총점 100점 = 총 섭취 열량 점수 50점 + 탄수화물·단백질·지방의 실제 열량 비율과 목표 비율 간 오차 점수 50점. 열량 목표에는 해당 날짜 운동 소모 칼로리를 더함',
+      calorie_score: {
+        consumed_calories: consumedNutrition.calories,
+        base_target_calories: roundToOneDecimal(baseTargetCalories),
+        exercise_burned_calories: exerciseBurnedCalories,
+        adjusted_target_calories: roundToOneDecimal(adjustedTargetCalories),
+        difference_rate_percent: roundToOneDecimal(calorieDifferenceRate),
+        score: calorieScore,
+        max_score: 50,
+      },
+      consumed_nutrition: consumedNutrition,
+      macro_balance_score: {
+        total_macro_calories: roundToOneDecimal(totalMacroCalories),
+        items: macroScoreItems,
+        score: macroBalanceScore,
+        max_score: 50,
+      },
+      recorded_meal_slots: Array.from(
+        new Set(mealRecords.map((record) => record.meal_time_label)),
+      ),
+      meal_records: mealRecords,
+    };
+  }
+
+  private getMealFeedbackCalorieScore(differenceRate: number): number {
+    if (differenceRate <= 5) return 50;
+    if (differenceRate <= 10) return 40;
+    if (differenceRate <= 15) return 30;
+    if (differenceRate <= 20) return 20;
+    return 10;
+  }
+
+  private buildMealFeedbackMacroScoreItem(
+    consumedGrams: number,
+    actualRatio: number,
+    targetRatio: number,
+    maxScore: 17 | 16,
+  ): MealFeedbackMacroScoreItem {
+    const difference = Math.abs(actualRatio - targetRatio);
+    let grade: MealFeedbackMacroScoreItem['grade'];
+    let score: number;
+
+    if (difference <= 5) {
+      grade = '적절';
+      score = maxScore;
+    } else if (difference <= 10) {
+      grade = '약간 불균형';
+      score = maxScore === 17 ? 14 : 13;
+    } else if (difference <= 15) {
+      grade = '불균형';
+      score = maxScore === 17 ? 10 : 9;
+    } else {
+      grade = '심한 불균형';
+      score = maxScore === 17 ? 5 : 4;
+    }
+
+    return {
+      consumed_grams: roundToOneDecimal(consumedGrams),
+      actual_ratio_percent: roundToOneDecimal(actualRatio),
+      target_ratio_percent: roundToOneDecimal(targetRatio),
+      difference_percent_points: roundToOneDecimal(difference),
+      grade,
+      score,
+      max_score: maxScore,
+    };
+  }
+
+  private buildMealFeedbackRequestContext(
+    scoreContext: MealFeedbackScoreContext,
+  ): string {
+    return `선택 날짜 식사 피드백 기능 전용 요청이야.
+
+서버가 DB 식사 기록과 사용자 목표로 확정한 분석 데이터:
+${JSON.stringify(scoreContext)}
+
+[식사 피드백 생성 규칙]
+- selected_date의 식사만 분석해. 최근 다른 날짜의 식사 기록이나 과거 대화를 이 날짜의 섭취 내역에 섞지 마.
+- score, calorie_score, macro_balance_score는 서비스 정책에 따라 서버가 계산한 확정값이야. 다시 계산하거나 다른 점수로 바꾸지 마.
+- 총점은 calorie_score 50점과 macro_balance_score 50점의 합이야. calorie_score의 adjusted_target_calories에는 선택 날짜의 exercise_burned_calories가 더해져 있어.
+- 매크로 실제 비율은 탄수화물과 단백질은 1g당 4kcal, 지방은 1g당 9kcal로 환산한 뒤 세 매크로 열량 합계에서 차지하는 비율이야.
+- 당류·식이섬유·나트륨은 종합 점수에 직접 포함되지 않으므로 별도의 영양 조언 근거로만 사용해.
+- 어떤 음식이 각 탄수화물·단백질·지방 섭취와 점수에 크게 기여했는지 meal_records의 메뉴별 consumed_nutrition을 근거로 구체적으로 설명해.
+- 점수를 제한하는 영양소와 그 원인이 된 기록을 먼저 짚고, 기록된 식사의 구성이나 양을 어떻게 바꾸면 점수를 높일 수 있는지 실행 가능한 방법을 제시해.
+- 특정 음식 하나가 점수 전체를 만들었다고 단정하지 말고, 각 음식이 영양소 합계에 기여한 방식으로 설명해.
+- 기록에 없는 음식이나 섭취량은 만들지 말고, 앞으로 추가할 음식은 제안이라는 점이 분명하게 드러나게 써.
+- 기록된 끼니만 말해. 일부 끼니만 기록됐다면 하루 식사가 끝났거나 기록이 완료됐다고 표현하지 마.
+- 정확히 몇 점이 오를지는 추가 섭취량과 최종 기록에 따라 달라지므로 임의의 상승 점수를 약속하지 마.
+- 첫 문장에 선택 날짜와 현재 점수를 알려주고, 이어서 점수에 영향을 준 음식과 개선 방법을 4~5개의 짧은 문장이나 불렛으로 정리해.`;
   }
 
   private async getAvailableMenuRecognitionCandidates(

@@ -179,6 +179,154 @@ describe('ChatService conversation memory', () => {
     });
   });
 
+  it('creates selected-date meal feedback with the server-calculated score', async () => {
+    const service = createService() as any;
+    const chatContext = {
+      messages: [],
+      session_summaries: [],
+      long_term_profile_traits: null,
+      recent_meal_records_3_days: [],
+      recent_workout_records_3_days: [],
+      recent_weight_records_7_days: [],
+      recent_step_records_7_days: [],
+      previous_user_input: null,
+      previous_category: null,
+      previous_recommended_menu_names: [],
+      previous_feedback_menu_names: [],
+      previous_brand: null,
+      previous_category_name: null,
+      previous_meal_time: null,
+    };
+    const mealRecords = [
+      {
+        date: '2026-09-12',
+        meal_time: 0,
+        meal_time_label: '아침',
+        menus: [
+          {
+            name: '밥',
+            quantity: 100,
+            quantity_unit: 'g',
+            input_mode: 1,
+            input_mode_label: '중량 탭',
+            consumed_nutrition: {
+              calories: 500,
+              carbs: 96,
+              protein: 21,
+              fat: 4,
+              sugars: 2,
+              dietary_fiber: 1,
+              sodium: 20,
+            },
+          },
+        ],
+        nutrition_totals: {
+          calories: 500,
+          carbs: 96,
+          protein: 21,
+          fat: 4,
+          sugars: 2,
+          dietary_fiber: 1,
+          sodium: 20,
+        },
+      },
+    ];
+    const userInfo = {
+      target_calories: 1200,
+      target_ratio: [50, 20, 30],
+    };
+    jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue(userInfo);
+    jest.spyOn(service, 'getRecentChatContext').mockResolvedValue(chatContext);
+    jest
+      .spyOn(service, 'getMealRecordContextForDate')
+      .mockResolvedValue(mealRecords);
+    jest.spyOn(service, 'getBurnedCaloriesForDate').mockResolvedValue(100);
+    const callGemini = jest
+      .spyOn(service, 'callGeminiText')
+      .mockResolvedValue('선택 날짜 식사 피드백');
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.mealFeedback(
+      { id: 9 },
+      { date: '2026-09-12' },
+    );
+
+    expect(callGemini).toHaveBeenCalledWith(
+      '2026-09-12 식사 피드백을 알려줘',
+      chatContext,
+      userInfo,
+      expect.stringContaining('"score":36'),
+    );
+    expect(callGemini.mock.calls[0][3]).toContain('"name":"밥"');
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '"exercise_burned_calories":100',
+    );
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '"adjusted_target_calories":1300',
+    );
+    expect(callGemini.mock.calls[0][3]).toContain(
+      'selected_date의 식사만 분석해',
+    );
+    expect(response).toEqual({
+      chat_category: 'general',
+      intro_message: '선택 날짜 식사 피드백',
+    });
+  });
+
+  it('does not generate meal feedback when the selected date has no meals', async () => {
+    const service = createService() as any;
+    jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue({});
+    jest.spyOn(service, 'getRecentChatContext').mockResolvedValue({});
+    jest.spyOn(service, 'getMealRecordContextForDate').mockResolvedValue([]);
+    jest.spyOn(service, 'getBurnedCaloriesForDate').mockResolvedValue(0);
+
+    await expect(
+      service.mealFeedback({ id: 9 }, { date: '2026-09-12' }),
+    ).rejects.toThrow('Meal record not found for selected date');
+  });
+
+  it('applies every calorie-difference score band from the service policy', () => {
+    const service = createService() as any;
+
+    expect(service.getMealFeedbackCalorieScore(5)).toBe(50);
+    expect(service.getMealFeedbackCalorieScore(5.1)).toBe(40);
+    expect(service.getMealFeedbackCalorieScore(10.1)).toBe(30);
+    expect(service.getMealFeedbackCalorieScore(15.1)).toBe(20);
+    expect(service.getMealFeedbackCalorieScore(20.1)).toBe(10);
+  });
+
+  it('applies the policy-specific macro scores for carbs, protein, and fat', () => {
+    const service = createService() as any;
+
+    expect(service.buildMealFeedbackMacroScoreItem(100, 50, 50, 17).score).toBe(
+      17,
+    );
+    expect(service.buildMealFeedbackMacroScoreItem(100, 56, 50, 17).score).toBe(
+      14,
+    );
+    expect(service.buildMealFeedbackMacroScoreItem(100, 61, 50, 17).score).toBe(
+      10,
+    );
+    expect(service.buildMealFeedbackMacroScoreItem(100, 66, 50, 17).score).toBe(
+      5,
+    );
+    expect(service.buildMealFeedbackMacroScoreItem(100, 50, 50, 16).score).toBe(
+      16,
+    );
+    expect(service.buildMealFeedbackMacroScoreItem(100, 56, 50, 16).score).toBe(
+      13,
+    );
+    expect(service.buildMealFeedbackMacroScoreItem(100, 61, 50, 16).score).toBe(
+      9,
+    );
+    expect(service.buildMealFeedbackMacroScoreItem(100, 66, 50, 16).score).toBe(
+      4,
+    );
+  });
+
   it('calculates all menstrual phases and the next expected date', async () => {
     const service = createService() as any;
     service.menstrualCycleRepository = {

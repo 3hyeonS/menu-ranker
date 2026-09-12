@@ -32,6 +32,7 @@ import { ChatMealRecordRequestDto } from './dto/request-dto/chat-meal-record-req
 import { ChatMealRecordParseRequestDto } from './dto/request-dto/chat-meal-record-parse-request-dto';
 import { ChatMealRecordDeleteRequestDto } from './dto/request-dto/chat-meal-record-delete-request-dto';
 import { ChatUserMenuSearchRequestDto } from './dto/request-dto/chat-user-menu-search-request-dto';
+import { ChatMealFeedbackRequestDto } from './dto/request-dto/chat-meal-feedback-request-dto';
 import { ChatNutritionLabelMenuRegisterRequestDto } from './dto/request-dto/chat-nutrition-label-menu-register-request-dto';
 import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-response-dto';
 import { ChatHistoryResponseDto } from './dto/response-dto/chat-history-response-dto';
@@ -177,6 +178,59 @@ export class ChatController {
       return await this.chatService.personalizedManagement(user);
     } catch (error) {
       this.logChatApiError('POST /chat/personalized-management', user, error);
+      throw error;
+    }
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '선택 날짜 식사 피드백',
+    description:
+      '캘린더에서 선택한 날짜의 식사 기록과 메뉴별 영양성분을 분석하여 영양 밸런스 점수의 근거와 점수를 높일 방법을 채팅 형식으로 제공합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '식사 피드백 생성 성공',
+    message: 'Meal feedback generated successfully',
+    model: ChatRecommendResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '날짜 형식 오류',
+    message: 'date must be a valid YYYY-MM-DD date',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '선택 날짜에 식사 기록이 없음',
+    message: 'Meal record not found for selected date',
+    error: 'NotFoundException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패',
+    message: 'Gemini recommendation pipeline is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ResponseMsg('Meal feedback generated successfully')
+  @UseGuards(AuthGuard())
+  @Post('/meal-feedback')
+  async mealFeedback(
+    @GetUser() user: UserEntity,
+    @Body() dto: ChatMealFeedbackRequestDto,
+  ): Promise<ChatRecommendResponseDto> {
+    try {
+      return await this.chatService.mealFeedback(user, dto);
+    } catch (error) {
+      this.logChatApiError('POST /chat/meal-feedback', user, error, {
+        selectedDate: dto?.date ?? null,
+      });
       throw error;
     }
   }
