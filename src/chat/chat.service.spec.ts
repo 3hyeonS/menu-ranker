@@ -761,6 +761,60 @@ describe('ChatService conversation memory', () => {
     );
   });
 
+  it('normalizes Gemini food-image quantity estimates', () => {
+    const service = createService() as any;
+
+    const result = service.normalizeFoodImagePrediction({
+      food_name: '밥',
+      brand: null,
+      confidence: 0.9,
+      estimated_quantity: 180.04,
+      quantity_unit: 'g',
+      quantity_confidence: 0.67,
+      position: { x: 0.5, y: 0.4 },
+    });
+
+    expect(result).toEqual({
+      foodName: '밥',
+      brand: null,
+      confidence: 0.9,
+      position: { x: 0.5, y: 0.4 },
+      estimatedQuantity: 180,
+      estimatedQuantityUnit: 'g',
+      quantityConfidence: 0.67,
+    });
+  });
+
+  it('adds estimated quantity calories without changing the DB serving fields', () => {
+    const service = createService() as any;
+    const menu = {
+      id: 10,
+      name: '(식약처_음식) 밥',
+      brand: null,
+      unit: 0,
+      weight: 200,
+      unit_quantity: '1인분',
+      calories: 300,
+      data_source: 0,
+    };
+    const score = { finalScore: 80 };
+
+    const result = service.toFeedbackMenuResponse('밥', menu, score, {
+      inputMenuName: '밥',
+      menu,
+      estimatedQuantity: 100,
+      estimatedQuantityUnit: 'g',
+      quantityConfidence: 0.7,
+    });
+
+    expect(result.weight).toBe(200);
+    expect(result.calories).toBe(300);
+    expect(result.estimated_quantity).toBe(100);
+    expect(result.estimated_quantity_unit).toBe('g');
+    expect(result.quantity_confidence).toBe(0.7);
+    expect(result.estimated_calories).toBe(150);
+  });
+
   it('replaces a processed fried-egg chat image match with the generic food menu', () => {
     const service = createService() as any;
     const result = service.normalizeRematchedFoodImageMenu(
@@ -771,6 +825,9 @@ describe('ChatService conversation memory', () => {
           brand: null,
           confidence: 0.9,
           position: { x: 0.5, y: 0.5 },
+          estimatedQuantity: 120,
+          estimatedQuantityUnit: 'g',
+          quantityConfidence: 0.6,
         },
       ],
       new Map([
@@ -798,6 +855,9 @@ describe('ChatService conversation memory', () => {
 
     expect(result.id).toBe(1);
     expect(result.name).toBe('(식약처_음식) 달걀후라이');
+    expect(result.estimatedQuantity).toBe(120);
+    expect(result.estimatedQuantityUnit).toBe('g');
+    expect(result.quantityConfidence).toBe(0.6);
   });
 
   it('replaces a product rice chat image match with the generic plain rice menu', () => {

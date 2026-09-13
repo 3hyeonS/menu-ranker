@@ -41,6 +41,29 @@ export class ChatFoodImageRecognizedMenuResponseDto {
   confidence: number | null;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: '사진에서 추정한 음식의 전체 양',
+    example: 180,
+  })
+  estimated_quantity: number | null;
+
+  @ApiProperty({
+    type: String,
+    description: '추정 음식 양 단위. g 또는 ml',
+    example: 'g',
+  })
+  estimated_quantity_unit: 'g' | 'ml';
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Gemini의 음식 양 추정 신뢰도. 0~1 값',
+    example: 0.65,
+  })
+  quantity_confidence: number | null;
+
+  @ApiProperty({
     type: ChatFoodImagePositionResponseDto,
     description: '사진 내 음식 중심 좌표',
   })

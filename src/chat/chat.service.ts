@@ -531,6 +531,7 @@ type MenuRecognitionCandidate = {
   name: string;
   brand: string | null;
   category: string | null;
+  unit?: number;
 };
 
 type RecognitionTextMenuMatch = {
@@ -541,6 +542,9 @@ type RecognitionTextMenuMatch = {
 type ComparisonMenuMatch = {
   inputMenuName: string;
   menu: MenuEntity;
+  estimatedQuantity?: number | null;
+  estimatedQuantityUnit?: 'g' | 'ml' | null;
+  quantityConfidence?: number | null;
 };
 
 type FoodImageCandidateGroup = {
@@ -575,11 +579,17 @@ type FoodImagePrediction = {
   brand: string | null;
   confidence: number | null;
   position: FoodImagePosition;
+  estimatedQuantity: number | null;
+  estimatedQuantityUnit: 'g' | 'ml' | null;
+  quantityConfidence: number | null;
 };
 
 type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
   confidence: number | null;
   position: FoodImagePosition;
+  estimatedQuantity: number | null;
+  estimatedQuantityUnit: 'g' | 'ml';
+  quantityConfidence: number | null;
 };
 
 type GenericMenuCandidate = {
@@ -1264,24 +1274,20 @@ export class ChatService {
       });
       const menuMap = new Map(candidateMenus.map((menu) => [menu.id, menu]));
       const matchedMenus = recognizedFoods
-        .map((food) => {
+        .map((food): ComparisonMenuMatch | null => {
           const menu = menuMap.get(food.id);
 
           return menu
             ? {
                 inputMenuName: food.name,
                 menu,
+                estimatedQuantity: food.estimatedQuantity,
+                estimatedQuantityUnit: food.estimatedQuantityUnit,
+                quantityConfidence: food.quantityConfidence,
               }
             : null;
         })
-        .filter(
-          (
-            item,
-          ): item is {
-            inputMenuName: string;
-            menu: MenuEntity;
-          } => !!item,
-        );
+        .filter((item): item is ComparisonMenuMatch => !!item);
 
       if (matchedMenus.length === 0) {
         throw new BadRequestException(
@@ -1306,6 +1312,9 @@ export class ChatService {
           category: food.category,
           confidence: food.confidence,
           position: food.position,
+          estimated_quantity: food.estimatedQuantity,
+          estimated_quantity_unit: food.estimatedQuantityUnit,
+          quantity_confidence: food.quantityConfidence,
         })),
         skipHistorySave: true,
         timing,
@@ -1375,6 +1384,9 @@ export class ChatService {
         menu_name: food.name,
         category: food.category,
         confidence: food.confidence,
+        estimated_quantity: food.estimatedQuantity,
+        estimated_quantity_unit: food.estimatedQuantityUnit,
+        quantity_confidence: food.quantityConfidence,
       })),
       calculated_feedback: params.feedback,
       interpretation:
@@ -2002,7 +2014,7 @@ export class ChatService {
     user: UserEntity;
     userInfo: UserInfoEntity;
     input: string;
-    matchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>;
+    matchedMenus: ComparisonMenuMatch[];
     introMessage: string;
     preparedIntroMessage?: string | null;
     introSource?: ChatIntroMessageSource;
@@ -2034,7 +2046,7 @@ export class ChatService {
     const feedbackIntent = this.buildFeedbackIntent('개별 메뉴 피드백');
 
     const buildFeedbackPayload = (
-      targetMatchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>,
+      targetMatchedMenus: ComparisonMenuMatch[],
     ) => {
       const combinationNutrition = this.sumFeedbackNutrition(
         targetMatchedMenus.map(({ menu }) => menu),
@@ -2046,11 +2058,12 @@ export class ChatService {
       );
       const feedback = new ChatFeedbackResponseDto();
 
-      feedback.menus = targetMatchedMenus.map(({ inputMenuName, menu }) =>
+      feedback.menus = targetMatchedMenus.map((match) =>
         this.toFeedbackMenuResponse(
-          inputMenuName,
-          menu,
-          this.scoreMenu(menu, feedbackIntent, userInfo, rankingBasis),
+          match.inputMenuName,
+          match.menu,
+          this.scoreMenu(match.menu, feedbackIntent, userInfo, rankingBasis),
+          match,
         ),
       );
       feedback.total_calories = roundToOneDecimal(
@@ -4770,6 +4783,7 @@ ${JSON.stringify(scoreContext)}
         'menu.name AS name',
         'menu.brand AS brand',
         'menu.category AS category',
+        'menu.unit AS unit',
       ])
       .where(
         new Brackets((qb) => {
@@ -4950,6 +4964,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 - food_name에는 사진 속 음식의 가장 구체적인 이름을 넣되, 브랜드명은 제외해. 예: 펩시 콜라 -> food_name은 "콜라", brand는 "펩시"
 - 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣어. 불확실하면 null로 반환해
 - 브랜드가 확실히 보이는 포장식품/음료는 food_name과 brand를 함께 반환해야 DB 매칭이 정확해져
+- 각 음식이 사진에 보이는 전체 양을 estimated_quantity로 추정해. 고형 음식은 g, 음료·국물처럼 액체는 ml 단위를 사용해
+- 같은 음식이 여러 조각 보이면 한 조각이 아니라 사진에 보이는 전체 양을 합산해서 추정해
+- 접시, 수저, 포장 용량처럼 크기를 판단할 단서가 있으면 적극 활용하고, 단서가 부족하면 일반적인 1인분 크기를 기준으로 보수적으로 추정해
+- quantity_confidence는 음식 양 추정의 신뢰도를 0~1로 반환해. 음식명 인식 confidence와 별도로 판단해
 - 각 음식의 position은 이미지 전체 기준 0~1 정규화 중심 좌표로 반환해
 - position.x는 음식 중심의 가로 좌표야. 왼쪽 끝이 0, 오른쪽 끝이 1이야
 - position.y는 음식 중심의 세로 좌표야. 위쪽 끝이 0, 아래쪽 끝이 1이야
@@ -4970,6 +4988,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
       "food_name": "싸이버거",
       "brand": null,
       "confidence": 0.86,
+      "estimated_quantity": 230,
+      "quantity_unit": "g",
+      "quantity_confidence": 0.65,
       "position": {
         "x": 0.29,
         "y": 0.45
@@ -5020,6 +5041,9 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         brand: prediction.brand,
         confidence: prediction.confidence,
         position: prediction.position,
+        estimatedQuantity: prediction.estimatedQuantity,
+        estimatedQuantityUnit: prediction.estimatedQuantityUnit,
+        quantityConfidence: prediction.quantityConfidence,
       })),
     });
 
@@ -5104,6 +5128,19 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     const item = value as Record<string, unknown>;
     const foodName = this.asNonEmptyString(item.food_name);
     const brand = this.asNonEmptyString(item.brand)?.slice(0, 80) ?? null;
+    const rawEstimatedQuantity = this.asNullableNumber(
+      item.estimated_quantity ?? item.quantity,
+    );
+    const rawQuantityUnit = this.asNonEmptyString(
+      item.quantity_unit ?? item.estimated_quantity_unit,
+    )?.toLowerCase();
+    const estimatedQuantityUnit =
+      rawQuantityUnit === 'g' || rawQuantityUnit === 'ml'
+        ? rawQuantityUnit
+        : null;
+    const rawQuantityConfidence = this.asNullableNumber(
+      item.quantity_confidence,
+    );
     const position =
       this.normalizeFoodImagePosition(item.position, imageDimensions) ??
       this.normalizeFoodImagePosition(item.bounding_box, imageDimensions) ??
@@ -5121,6 +5158,15 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       confidence:
         confidence === null ? null : this.roundNormalizedCoordinate(confidence),
       position,
+      estimatedQuantity:
+        rawEstimatedQuantity !== null && rawEstimatedQuantity > 0
+          ? roundToOneDecimal(Math.min(rawEstimatedQuantity, 5000))
+          : null,
+      estimatedQuantityUnit,
+      quantityConfidence:
+        rawQuantityConfidence === null
+          ? null
+          : this.roundNormalizedCoordinate(rawQuantityConfidence),
     };
   }
 
@@ -5255,6 +5301,9 @@ ${JSON.stringify(
           ...matchedMenu,
           confidence: prediction.confidence,
           position: prediction.position,
+          estimatedQuantity: prediction.estimatedQuantity,
+          estimatedQuantityUnit: Number(matchedMenu.unit) === 1 ? 'ml' : 'g',
+          quantityConfidence: prediction.quantityConfidence,
         }
       : null;
   }
@@ -6216,6 +6265,9 @@ ${JSON.stringify(
           ? prediction.confidence
           : this.roundNormalizedCoordinate(confidence),
       position: prediction.position,
+      estimatedQuantity: prediction.estimatedQuantity,
+      estimatedQuantityUnit: Number(matchedMenu.unit) === 1 ? 'ml' : 'g',
+      quantityConfidence: prediction.quantityConfidence,
     };
   }
 
@@ -9950,6 +10002,7 @@ ${JSON.stringify(
     inputMenuName: string,
     menu: MenuEntity,
     score: ScoreBreakdown,
+    match?: ComparisonMenuMatch,
   ): ChatFeedbackMenuResponseDto {
     const response = new ChatFeedbackMenuResponseDto();
 
@@ -9961,6 +10014,21 @@ ${JSON.stringify(
     response.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
     response.unit_quantity = menu.unit_quantity;
     response.calories = roundNullableToOneDecimal(menu.calories) ?? 0;
+    response.estimated_quantity = match?.estimatedQuantity ?? null;
+    response.estimated_quantity_unit = match?.estimatedQuantityUnit ?? null;
+    response.quantity_confidence = match?.quantityConfidence ?? null;
+    response.estimated_calories =
+      match?.estimatedQuantity !== null &&
+      match?.estimatedQuantity !== undefined &&
+      Number(menu.weight) > 0
+        ? roundToOneDecimal(
+            Number(menu.calories ?? 0) *
+              getRecordedWeightMultiplier(
+                match.estimatedQuantity,
+                Number(menu.weight),
+              ),
+          )
+        : null;
     response.score = roundToOneDecimal(score.finalScore);
     response.is_appropriate = score.finalScore >= 65;
     response.data_source = menu.data_source;
@@ -10386,6 +10454,9 @@ ${JSON.stringify(
     response.brand = food.brand;
     response.category = food.category;
     response.confidence = food.confidence;
+    response.estimated_quantity = food.estimatedQuantity;
+    response.estimated_quantity_unit = food.estimatedQuantityUnit;
+    response.quantity_confidence = food.quantityConfidence;
     response.position = position;
     return response;
   }

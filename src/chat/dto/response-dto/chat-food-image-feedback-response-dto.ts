@@ -51,7 +51,7 @@ export class ChatFoodImageFeedbackResponseDto {
   @ApiProperty({
     type: [ChatFoodImageRecognizedMenuResponseDto],
     description:
-      '사진에서 인식한 메뉴와 좌표. 같은 메뉴가 여러 개 보이면 각각 별도 항목으로 반환',
+      '사진에서 인식한 메뉴, 좌표, 추정 음식 양. 같은 메뉴가 여러 개 보이면 사진에 보이는 전체 양으로 반환',
   })
   recognized_foods: ChatFoodImageRecognizedMenuResponseDto[];
 }

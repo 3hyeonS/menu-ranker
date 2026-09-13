@@ -60,6 +60,38 @@ export class ChatFeedbackMenuResponseDto {
 
   @ApiProperty({
     type: Number,
+    nullable: true,
+    description: '음식사진에서 추정한 실제 음식 양. 텍스트 채팅이면 null',
+    example: 180,
+  })
+  estimated_quantity: number | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '추정 음식 양 단위. g 또는 ml',
+    example: 'g',
+  })
+  estimated_quantity_unit: 'g' | 'ml' | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Gemini의 음식 양 추정 신뢰도. 0~1 값',
+    example: 0.65,
+  })
+  quantity_confidence: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: '추정 음식 양을 적용한 칼로리',
+    example: 265.7,
+  })
+  estimated_calories: number | null;
+
+  @ApiProperty({
+    type: Number,
     description: '현재 유저 상황 기준 개별 메뉴 적절성 점수',
     example: 72.5,
   })
