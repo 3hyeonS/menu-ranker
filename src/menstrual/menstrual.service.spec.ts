@@ -132,6 +132,27 @@ describe('MenstrualService', () => {
     expect(recordRepository.create).toHaveBeenCalledTimes(4);
   });
 
+  it('does not mark a menstrual range recorded through today as ended', async () => {
+    const { service, cycleRepository, recordRepository } = createFixture();
+    recordRepository.find.mockResolvedValue([]);
+    jest
+      .spyOn(service as any, 'getKoreanDateString')
+      .mockReturnValue('2026-09-15');
+
+    await service.saveRecords(user, {
+      add_ranges: [{ start_date: '2026-09-14', end_date: '2026-09-15' }],
+      remove_ranges: [],
+    });
+
+    expect(cycleRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startDate: '2026-09-14',
+        endDate: '2026-09-15',
+        isEnd: false,
+      }),
+    );
+  });
+
   it('rejects an invalid or reversed date range', async () => {
     const { service } = createFixture();
 

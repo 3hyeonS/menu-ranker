@@ -49,6 +49,15 @@ describe('HomeService menu search priority', () => {
     );
   });
 
+  it('resolves running and treadmill search aliases to 러닝', () => {
+    ['러닝', '러닝머신', '런닝', '런닝머신', '트레드밀'].forEach(
+      (searchName) => {
+        expect(service.resolveWorkoutSearchNameAlias(searchName)).toBe('러닝');
+      },
+    );
+    expect(service.resolveWorkoutSearchNameAlias('트레드 밀')).toBe('러닝');
+  });
+
   it('replaces a processed fried-egg image match with the generic food menu', () => {
     const candidates = new Map([
       [

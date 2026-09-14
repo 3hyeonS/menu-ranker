@@ -91,13 +91,14 @@ export class MenstrualService {
 
       await recordRepository.delete({ user: { id: user.id } });
       await cycleRepository.delete({ user: { id: user.id } });
+      const referenceDate = this.getKoreanDateString();
 
       for (const range of this.groupConsecutiveDates([...resultingDates])) {
         const cycle = await cycleRepository.save(
           cycleRepository.create({
             startDate: range.start_date,
             endDate: range.end_date,
-            isEnd: true,
+            isEnd: range.end_date < referenceDate,
             user,
           }),
         );
@@ -186,5 +187,21 @@ export class MenstrualService {
     const parsed = new Date(`${date}T00:00:00.000Z`);
     parsed.setUTCDate(parsed.getUTCDate() + amount);
     return parsed.toISOString().slice(0, 10);
+  }
+
+  private getKoreanDateString(date = new Date()): string {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const values = Object.fromEntries(
+      parts
+        .filter((part) => part.type !== 'literal')
+        .map((part) => [part.type, part.value]),
+    );
+
+    return `${values.year}-${values.month}-${values.day}`;
   }
 }

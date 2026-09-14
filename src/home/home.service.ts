@@ -4577,6 +4577,11 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const aliases: Record<string, string> = {
       아웃타이: '레버 시티드 힙 애덕션',
       이너타이: '레버 시티드 힙 어덕션',
+      러닝: '러닝',
+      러닝머신: '러닝',
+      런닝: '러닝',
+      런닝머신: '러닝',
+      트레드밀: '러닝',
     };
 
     return aliases[normalizedValue] ?? value;

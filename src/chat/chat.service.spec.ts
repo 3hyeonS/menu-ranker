@@ -137,6 +137,8 @@ describe('ChatService conversation memory', () => {
       cycle_length_source: null,
       normal_cycle_intervals_used: [],
       cycles: [],
+      latest_cycle_ongoing: false,
+      latest_cycle_end_date_confirmed: null,
       current_phase: null,
       current_phase_starts_today: false,
       next_phase: null,
@@ -151,6 +153,14 @@ describe('ChatService conversation memory', () => {
     jest
       .spyOn(service, 'getMenstrualManagementContext')
       .mockResolvedValue(menstrualContext);
+    jest
+      .spyOn(service, 'getRecentPersonalizedManagementFeedback')
+      .mockResolvedValue([
+        {
+          created_at: '2026-09-09T10:00:00+09:00',
+          intro_message: '이전에 제공한 관리법',
+        },
+      ]);
     const callGemini = jest
       .spyOn(service, 'callGeminiText')
       .mockResolvedValue('개인화된 관리법');
@@ -173,6 +183,14 @@ describe('ChatService conversation memory', () => {
       userInfo,
       expect.stringContaining('개인화 관리법 생성 규칙'),
     );
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '최근에 이 기능으로 제공한 관리 피드백',
+    );
+    expect(callGemini.mock.calls[0][3]).toContain('이전에 제공한 관리법');
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '실제 기록된 음식명을 최소 하나 이상 언급',
+    );
+    expect(callGemini.mock.calls[0][3]).toContain('총 6~8문장까지');
     expect(response).toEqual({
       chat_category: 'general',
       intro_message: '개인화된 관리법',
@@ -349,6 +367,8 @@ describe('ChatService conversation memory', () => {
     expect(context.cycles).toHaveLength(3);
     expect(context.cycles[2]).toEqual({
       cycle_number: 3,
+      recording_status: 'completed',
+      end_date_confirmed: true,
       recorded_menstrual_period: {
         start_date: '2026-02-27',
         end_date: '2026-03-03',
@@ -383,16 +403,21 @@ describe('ChatService conversation memory', () => {
     });
     expect(context.next_phase_starts_today).toBe(false);
     expect(context.next_expected_menstrual_date).toBe('2026-03-28');
+    expect(context.latest_cycle_ongoing).toBe(false);
+    expect(context.latest_cycle_end_date_confirmed).toBe(true);
   });
 
-  it('keeps the last recorded menstrual day as the current phase', async () => {
+  it('treats a cycle recorded through today as ongoing, not ending today', async () => {
     const service = createService() as any;
     service.menstrualCycleRepository = {
-      find: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 1, startDate: '2026-09-05', endDate: '2026-09-10' },
-        ]),
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          startDate: '2026-09-05',
+          endDate: '2026-09-10',
+          isEnd: true,
+        },
+      ]),
     };
 
     const context = await service.getMenstrualManagementContext(
@@ -407,12 +432,40 @@ describe('ChatService conversation memory', () => {
       end_date: '2026-09-10',
     });
     expect(context.current_phase_starts_today).toBe(false);
-    expect(context.next_phase).toEqual({
-      phase: '난포기',
-      start_date: '2026-09-11',
-      end_date: '2026-09-16',
-    });
+    expect(context.cycles[0].recording_status).toBe('ongoing');
+    expect(context.cycles[0].end_date_confirmed).toBe(false);
+    expect(context.cycles[0].follicular_phase).toBeNull();
+    expect(context.next_phase).toBeNull();
     expect(context.next_phase_starts_today).toBe(false);
+    expect(context.latest_cycle_ongoing).toBe(true);
+    expect(context.latest_cycle_end_date_confirmed).toBe(false);
+  });
+
+  it('keeps an explicitly ongoing cycle unconfirmed after its last recorded day', async () => {
+    const service = createService() as any;
+    service.menstrualCycleRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          startDate: '2026-09-14',
+          endDate: '2026-09-14',
+          isEnd: false,
+        },
+      ]),
+    };
+
+    const context = await service.getMenstrualManagementContext(
+      42,
+      '2026-09-15',
+    );
+
+    expect(context.current_phase).toBeNull();
+    expect(context.cycles[0].recording_status).toBe('ongoing');
+    expect(context.cycles[0].end_date_confirmed).toBe(false);
+    expect(context.cycles[0].follicular_phase).toBeNull();
+    expect(context.next_phase).toBeNull();
+    expect(context.latest_cycle_ongoing).toBe(true);
+    expect(context.latest_cycle_end_date_confirmed).toBe(false);
   });
 
   it('marks a phase as starting today only on its exact start date', async () => {
@@ -442,6 +495,8 @@ describe('ChatService conversation memory', () => {
       end_date: '2026-09-19',
     });
     expect(context.next_phase_starts_today).toBe(false);
+    expect(context.latest_cycle_ongoing).toBe(false);
+    expect(context.latest_cycle_end_date_confirmed).toBe(true);
   });
 
   it('sends user info, records, and past chat to pure Gemini chat', async () => {
@@ -622,6 +677,9 @@ describe('ChatService conversation memory', () => {
         '일반 호칭도 쓰지 말고 별도의 호칭 없이 바로 답해',
       );
       expect(systemInstruction).toContain('최대 5문장으로 답해');
+      expect(systemInstruction).toContain(
+        '"나에게 맞는 관리법 기능 전용 요청"과 별도 분량 규칙',
+      );
       expect(systemInstruction).toContain('가장 적합한 5개까지만 제시');
       expect(systemInstruction).toContain('건더기 위주로 먹어');
       expect(systemInstruction).toContain('사용자 습관이나 목표로 표현하지 마');

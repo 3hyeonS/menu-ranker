@@ -98,6 +98,8 @@ const CHAT_STEPS_CONTEXT_DAYS = 7;
 const PERSONALIZED_MANAGEMENT_MEAL_CONTEXT_DAYS = 7;
 const PERSONALIZED_MANAGEMENT_WORKOUT_CONTEXT_DAYS = 7;
 const PERSONALIZED_MANAGEMENT_WEIGHT_CONTEXT_DAYS = 30;
+const PERSONALIZED_MANAGEMENT_INPUT = '나에게 맞는 관리법을 알려줘';
+const PERSONALIZED_MANAGEMENT_PREVIOUS_FEEDBACK_LIMIT = 3;
 const PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS = new Set([
   36, 42, 50, 52, 53, 74, 80, 101, 106, 107,
 ]);
@@ -375,6 +377,8 @@ type MenstrualPhaseContext = MenstrualPhaseDateRange & {
 
 type MenstrualCycleManagementContextItem = {
   cycle_number: number;
+  recording_status: 'ongoing' | 'completed';
+  end_date_confirmed: boolean;
   recorded_menstrual_period: MenstrualPhaseDateRange;
   menstrual_phase: MenstrualPhaseDateRange;
   follicular_phase: MenstrualPhaseDateRange | null;
@@ -390,11 +394,18 @@ type MenstrualManagementContext = {
   cycle_length_source: 'recent_average' | 'default_28_days' | null;
   normal_cycle_intervals_used: number[];
   cycles: MenstrualCycleManagementContextItem[];
+  latest_cycle_ongoing: boolean;
+  latest_cycle_end_date_confirmed: boolean | null;
   current_phase: MenstrualPhaseContext | null;
   current_phase_starts_today: boolean;
   next_phase: MenstrualPhaseContext | null;
   next_phase_starts_today: boolean;
   next_expected_menstrual_date: string | null;
+};
+
+type PreviousPersonalizedManagementFeedback = {
+  created_at: string;
+  intro_message: string;
 };
 
 type ChatUserMenuSearchRawRow = {
@@ -882,7 +893,12 @@ export class ChatService {
       weights: PERSONALIZED_MANAGEMENT_WEIGHT_CONTEXT_DAYS,
       steps: CHAT_STEPS_CONTEXT_DAYS,
     };
-    const [userInfo, chatContext, menstrualContext] = await Promise.all([
+    const [
+      userInfo,
+      chatContext,
+      menstrualContext,
+      previousManagementFeedbacks,
+    ] = await Promise.all([
       this.getRequiredUserInfo(user.id),
       this.getRecentChatContext(
         user.id,
@@ -890,14 +906,15 @@ export class ChatService {
         recordContextDays,
       ),
       this.getMenstrualManagementContext(user.id),
+      this.getRecentPersonalizedManagementFeedback(user.id),
     ]);
-    const input = '나에게 맞는 관리법을 알려줘';
     const requestContext = this.buildPersonalizedManagementRequestContext(
       chatContext,
       menstrualContext,
+      previousManagementFeedbacks,
     );
     const answer = await this.callGeminiText(
-      input,
+      PERSONALIZED_MANAGEMENT_INPUT,
       chatContext,
       userInfo,
       requestContext,
@@ -908,7 +925,7 @@ export class ChatService {
 
     await this.saveNewChatHistory(
       this.chatHistoryRepository.create({
-        input_text: input,
+        input_text: PERSONALIZED_MANAGEMENT_INPUT,
         response_payload: response as unknown as Record<string, any>,
         user,
       }),
@@ -4361,6 +4378,37 @@ ${JSON.stringify(
     }));
   }
 
+  private async getRecentPersonalizedManagementFeedback(
+    userId: number,
+  ): Promise<PreviousPersonalizedManagementFeedback[]> {
+    const histories = await this.chatHistoryRepository.find({
+      where: {
+        user: { id: userId },
+        input_text: PERSONALIZED_MANAGEMENT_INPUT,
+      },
+      order: {
+        createdAt: 'DESC',
+        id: 'DESC',
+      },
+      take: PERSONALIZED_MANAGEMENT_PREVIOUS_FEEDBACK_LIMIT,
+    });
+
+    return histories.flatMap((history) => {
+      const introMessage = this.asNonEmptyString(
+        history.response_payload?.intro_message,
+      );
+
+      return introMessage
+        ? [
+            {
+              created_at: this.formatKoreaDateTime(history.createdAt),
+              intro_message: introMessage.slice(0, 2000),
+            },
+          ]
+        : [];
+    });
+  }
+
   private async getMenstrualManagementContext(
     userId: number,
     referenceDate = this.formatKoreaDate(new Date()),
@@ -4379,6 +4427,8 @@ ${JSON.stringify(
         cycle_length_source: null,
         normal_cycle_intervals_used: [],
         cycles: [],
+        latest_cycle_ongoing: false,
+        latest_cycle_end_date_confirmed: null,
         current_phase: null,
         current_phase_starts_today: false,
         next_phase: null,
@@ -4409,12 +4459,18 @@ ${JSON.stringify(
             normalIntervals.length,
         )
       : DEFAULT_MENSTRUAL_CYCLE_DAYS;
+    const latestRecordedCycleIndex = recordedCycles.length - 1;
+    const latestRecordedCycle = recordedCycles[latestRecordedCycleIndex];
+    const latestCycleOngoing =
+      latestRecordedCycle.isEnd === false ||
+      latestRecordedCycle.endDate === referenceDate;
     const cycles = recordedCycles.map((cycle, index) =>
       this.buildMenstrualCycleManagementContextItem(
         cycle.startDate,
         cycle.endDate,
         cycleLengthDays,
         index + 1,
+        index === latestRecordedCycleIndex && latestCycleOngoing,
       ),
     );
     const latestCycle = cycles[cycles.length - 1];
@@ -4434,6 +4490,8 @@ ${JSON.stringify(
         : 'default_28_days',
       normal_cycle_intervals_used: normalIntervals,
       cycles,
+      latest_cycle_ongoing: latestCycleOngoing,
+      latest_cycle_end_date_confirmed: !latestCycleOngoing,
       current_phase: currentPhase,
       current_phase_starts_today: currentPhase?.start_date === referenceDate,
       next_phase: nextPhase,
@@ -4450,6 +4508,7 @@ ${JSON.stringify(
     endDate: string,
     cycleLengthDays: number,
     cycleNumber: number,
+    isOngoing = false,
   ): MenstrualCycleManagementContextItem {
     const menstrualDays =
       this.getDateOnlyDifferenceInDays(endDate, startDate) + 1;
@@ -4458,7 +4517,7 @@ ${JSON.stringify(
     let ovulationPhase: MenstrualPhaseDateRange | null = null;
     let lutealPhase: MenstrualPhaseDateRange | null = null;
 
-    if (remainingDays >= 16) {
+    if (!isOngoing && remainingDays >= 16) {
       const follicularDays = remainingDays - 16;
       follicularPhase = this.buildPhaseDateRange(
         startDate,
@@ -4475,7 +4534,7 @@ ${JSON.stringify(
         cycleLengthDays - 13,
         13,
       );
-    } else if (remainingDays > 0) {
+    } else if (!isOngoing && remainingDays > 0) {
       lutealPhase = this.buildPhaseDateRange(
         startDate,
         menstrualDays,
@@ -4490,6 +4549,8 @@ ${JSON.stringify(
 
     return {
       cycle_number: cycleNumber,
+      recording_status: isOngoing ? 'ongoing' : 'completed',
+      end_date_confirmed: !isOngoing,
       recorded_menstrual_period: recordedMenstrualPeriod,
       menstrual_phase: recordedMenstrualPeriod,
       follicular_phase: follicularPhase,
@@ -4581,7 +4642,26 @@ ${JSON.stringify(
   private buildPersonalizedManagementRequestContext(
     chatContext: ChatContextSummary,
     menstrualContext: MenstrualManagementContext,
+    previousManagementFeedbacks: PreviousPersonalizedManagementFeedback[],
   ): string {
+    const referenceDate = menstrualContext.reference_date;
+    const previousDate = this.addDateOnlyDays(referenceDate, -1);
+    const buildDailyRecords = (date: string) => ({
+      date,
+      meals: chatContext.recent_meal_records_3_days.filter(
+        (record) => record.date === date,
+      ),
+      workouts: chatContext.recent_workout_records_3_days.filter(
+        (record) => record.date === date,
+      ),
+      weights: chatContext.recent_weight_records_7_days.filter(
+        (record) => record.date === date,
+      ),
+      steps: chatContext.recent_step_records_7_days.filter(
+        (record) => record.date === date,
+      ),
+    });
+
     return `나에게 맞는 관리법 기능 전용 요청이야.
 
 데이터 존재 여부:
@@ -4595,14 +4675,33 @@ ${JSON.stringify({
 서버가 서비스 정책에 따라 계산한 월경 주기 정보:
 ${JSON.stringify(menstrualContext)}
 
+오늘과 어제의 상세 기록 비교:
+${JSON.stringify({
+  today: buildDailyRecords(referenceDate),
+  yesterday: buildDailyRecords(previousDate),
+})}
+
+최근에 이 기능으로 제공한 관리 피드백:
+${JSON.stringify(previousManagementFeedbacks)}
+
 [개인화 관리법 생성 규칙]
 - 제공된 데이터가 없는 경우 절대 추측하거나 만들어내지 마.
 - 각 데이터의 존재 여부를 먼저 확인하되, 내부 필드명이나 데이터 점검 과정을 답변에 나열하지 마.
 - 데이터가 충분하면 월경 주기, 체중, 식단, 운동 정보를 종합해 현재 시점에 실천할 수 있는 개인화된 피드백을 제공해.
 - 일부 데이터만 있으면 존재하는 데이터만 연결해서 피드백해.
 - 월경 주기만 있으면 현재 단계에 일반적으로 도움이 될 수 있는 식단과 운동 관리법을 먼저 제공해.
+- 식단 기록이 있으면 총칼로리만 말하지 말고 실제 기록된 음식명을 최소 하나 이상 언급하면서 어떤 영양소 섭취에 영향을 줬는지 연결해. 메뉴별 consumed_nutrition은 서버 계산값이므로 그대로 근거로 사용해.
+- 운동 기록이 있으면 막연히 활동량만 말하지 말고 실제 운동명, 시간, 강도, 소모 칼로리 중 확인되는 구체 정보를 활용해.
+- 체중이나 걸음 수를 언급할 때도 실제 날짜와 수치를 바탕으로 말하고, 장기 추세를 단정하지 마.
 - 데이터가 부족하다는 말로 끝내지 말고, 현재 확인되는 기록을 기준으로 실천할 관리법을 먼저 제시한 뒤 식단·운동·체중을 더 기록하면 개인화 수준이 높아진다는 점을 자연스럽게 안내해.
+- 최근에 이 기능으로 제공한 관리 피드백이 있으면 같은 단계 설명, 같은 음식·운동 제안, 같은 문장 구성을 거의 그대로 반복하지 마.
+- 같은 월경 주기 단계가 이어지더라도 오늘과 어제의 상세 기록 차이를 먼저 찾아 오늘 기록에 맞는 새 초점을 선택해.
+- 오늘 기록이 어제와 같거나 새 기록이 부족하면 이전 피드백을 길게 반복하지 말고, 이전에 제시하지 않은 구체적인 실행 방법 하나를 더 깊게 설명해.
+- 건강상 꼭 필요한 주의사항을 다시 말해야 한다면 한 문장으로 짧게 상기시키고 나머지는 새로운 피드백으로 구성해.
+- 답변은 확인되는 데이터에 맞춰 3~4개 항목으로 구성하고, 각 항목에서 실제 기록과 실행 방법을 1~2문장으로 연결해. 이 기능의 답변은 구체성을 위해 총 6~8문장까지 작성해도 돼.
 - current_phase가 null이면 현재 월경 단계를 임의로 정하지 말고, 다음 월경 예상일이 과거라면 날짜가 지났다는 사실만 바탕으로 새 월경 기록이 필요한지 안내해.
+- latest_cycle_ongoing이 true이면 recorded_menstrual_period.end_date는 입력 가능한 범위에서 사용자가 마지막으로 기록한 날짜이지 실제 월경 종료일이 아니야.
+- latest_cycle_end_date_confirmed가 false이면 "월경 마지막 날", "월경이 끝났다", "내일부터 난포기"처럼 종료나 다음 단계 시작을 단정하지 마. 현재 월경 기록이 진행 중이고 종료일은 아직 확정되지 않았다고 해석해.
 - reference_date는 이 요청에서 사용하는 확정된 오늘 날짜야.
 - current_phase는 reference_date 당일의 현재 단계이고, next_phase는 그 이후에 시작하는 다음 단계야. next_phase를 현재 단계처럼 표현하지 마.
 - "오늘부터"라는 표현은 current_phase_starts_today가 true일 때만 사용해. false이면 현재 단계가 오늘 시작했다고 말하지 마.
@@ -12540,6 +12639,7 @@ ${CHAT_USER_FACT_PROVENANCE_RULES}
 
 [답변 길이 규칙]
 - 사용자가 자세하거나 긴 설명을 명시적으로 요청하지 않으면 결론과 핵심 이유, 필요한 실행 팁을 포함해 최대 5문장으로 답해.
+- 단, 현재 요청 추가 맥락에 "나에게 맞는 관리법 기능 전용 요청"과 별도 분량 규칙이 있으면 그 규칙을 우선해.
 - 단순한 가능 여부나 선택 질문은 결론부터 말하고, 같은 의미의 설명이나 일반적인 주의사항을 반복하지 마.
 - 여러 메뉴나 방법을 요청하면 기본적으로 가장 적합한 5개까지만 제시하고 각 항목은 한두 문장 이내로 써.
 
