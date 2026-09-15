@@ -975,6 +975,27 @@ describe('ChatService conversation memory', () => {
     expect(result.estimated_calories).toBe(150);
   });
 
+  it('sums estimated calories for the food-image feedback total', () => {
+    const service = createService() as any;
+
+    const result = service.sumFeedbackEstimatedCalories([
+      {
+        calories: 300,
+        estimated_calories: 150,
+      },
+      {
+        calories: 180,
+        estimated_calories: 90,
+      },
+      {
+        calories: 50,
+        estimated_calories: null,
+      },
+    ]);
+
+    expect(result).toBe(290);
+  });
+
   it('replaces a processed fried-egg chat image match with the generic food menu', () => {
     const service = createService() as any;
     const result = service.normalizeRematchedFoodImageMenu(

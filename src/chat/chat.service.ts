@@ -2095,8 +2095,8 @@ export class ChatService {
           match,
         ),
       );
-      feedback.total_calories = roundToOneDecimal(
-        combinationNutrition.calories,
+      feedback.total_calories = this.sumFeedbackEstimatedCalories(
+        feedback.menus,
       );
       feedback.score = roundToOneDecimal(combinationScore.finalScore);
       feedback.is_appropriate = combinationScore.finalScore >= 65;
@@ -10186,6 +10186,17 @@ ${JSON.stringify(
         caffeine: 0,
         weight: 0,
       },
+    );
+  }
+
+  private sumFeedbackEstimatedCalories(
+    menus: ChatFeedbackMenuResponseDto[],
+  ): number {
+    return roundToOneDecimal(
+      menus.reduce(
+        (sum, menu) => sum + (menu.estimated_calories ?? menu.calories),
+        0,
+      ),
     );
   }
 

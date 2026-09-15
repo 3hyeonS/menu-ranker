@@ -10,7 +10,8 @@ export class ChatFeedbackResponseDto {
 
   @ApiProperty({
     type: Number,
-    description: '조합 총 칼로리',
+    description:
+      '조합 총 칼로리. 음식사진 피드백에서는 각 메뉴의 추정 음식 양을 적용한 칼로리 합계',
     example: 880,
   })
   total_calories: number;
