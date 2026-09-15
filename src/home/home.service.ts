@@ -4473,20 +4473,16 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const equipmentCategory = dto.equipment_category?.trim();
     const equipmentDetail = dto.equipment_detail?.trim();
     const equipmentOriginalDetail = dto.equipment_original_detail?.trim();
-    const resolvedInput = this.resolveWorkoutSearchNameAlias(input);
-    const normalizedExactInput =
-      this.normalizeWorkoutExactSearchName(resolvedInput);
+    const workoutSearchPlan = this.getWorkoutSearchPlan(input);
+    const resolvedInput = workoutSearchPlan.containsInput;
+    const normalizedExactInput = this.normalizeWorkoutExactSearchName(
+      workoutSearchPlan.preferredExact,
+    );
     const exactWorkoutNameExpression = "LOWER(REPLACE(workout.name, ' ', ''))";
 
     const query = this.workoutRepository
       .createQueryBuilder('workout')
       .where('1 = 1');
-
-    if (input.length > 0) {
-      query.andWhere('workout.name LIKE :input', {
-        input: `%${resolvedInput}%`,
-      });
-    }
 
     if (bodyPartMajor) {
       query.andWhere('workout.body_part_major = :bodyPartMajor', {
@@ -4533,6 +4529,12 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
         : [];
     const remainingLimit = Math.max(limit - exactWorkouts.length, 0);
 
+    if (input.length > 0) {
+      query.andWhere('workout.name LIKE :input', {
+        input: `%${resolvedInput}%`,
+      });
+    }
+
     if (normalizedExactInput) {
       query.andWhere(`${exactWorkoutNameExpression} <> :normalizedExactInput`, {
         normalizedExactInput,
@@ -4577,14 +4579,36 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const aliases: Record<string, string> = {
       아웃타이: '레버 시티드 힙 애덕션',
       이너타이: '레버 시티드 힙 어덕션',
-      러닝: '러닝',
-      러닝머신: '러닝',
-      런닝: '러닝',
-      런닝머신: '러닝',
-      트레드밀: '러닝',
     };
 
     return aliases[normalizedValue] ?? value;
+  }
+
+  private getWorkoutSearchPlan(value: string): {
+    containsInput: string;
+    preferredExact: string;
+  } {
+    const normalizedValue = this.normalizeWorkoutExactSearchName(value);
+    const runningAliases = new Set([
+      '러닝',
+      '러닝머신',
+      '런닝',
+      '런닝머신',
+      '트레드밀',
+    ]);
+
+    if (runningAliases.has(normalizedValue)) {
+      return {
+        containsInput: value,
+        preferredExact: '러닝',
+      };
+    }
+
+    const resolvedValue = this.resolveWorkoutSearchNameAlias(value);
+    return {
+      containsInput: resolvedValue,
+      preferredExact: resolvedValue,
+    };
   }
 
   async getWorkoutDetail(
