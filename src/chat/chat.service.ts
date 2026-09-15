@@ -858,11 +858,23 @@ export class ChatService {
       return response;
     }
 
-    const [userInfo, chatContext] = await Promise.all([
+    const shouldIncludeMenstrualContext =
+      PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS.has(user.id);
+    const [userInfo, chatContext, menstrualContext] = await Promise.all([
       this.getRequiredUserInfo(user.id),
       this.getRecentChatContext(user.id),
+      shouldIncludeMenstrualContext
+        ? this.getMenstrualManagementContext(user.id)
+        : Promise.resolve(null),
     ]);
-    const answer = await this.callGeminiText(input, chatContext, userInfo);
+    const answer = menstrualContext
+      ? await this.callGeminiText(
+          input,
+          chatContext,
+          userInfo,
+          this.buildTrialMenstrualChatRequestContext(menstrualContext),
+        )
+      : await this.callGeminiText(input, chatContext, userInfo);
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'general';
     response.intro_message = answer;
@@ -4707,6 +4719,22 @@ ${JSON.stringify(previousManagementFeedbacks)}
 - "오늘부터"라는 표현은 current_phase_starts_today가 true일 때만 사용해. false이면 현재 단계가 오늘 시작했다고 말하지 마.
 - next_phase_starts_today가 false이면 next_phase가 오늘 시작한다고 말하지 말고, 반드시 start_date를 기준으로 미래 시점이라고 표현해.
 - 월경 단계와 다음 월경 예상일은 서버가 계산한 값을 그대로 사용하고 직접 다시 계산하거나 다른 날짜로 바꾸지 마.`;
+  }
+
+  private buildTrialMenstrualChatRequestContext(
+    menstrualContext: MenstrualManagementContext,
+  ): string {
+    return `체험 신청자 일반 채팅에 제공되는 월경 기록 정보야.
+
+서버가 전체 기록을 기준으로 계산한 주기별 월경기·난포기·배란기·황체기와 다음 월경 예상일:
+${JSON.stringify(menstrualContext)}
+
+[월경 기록 활용 규칙]
+- cycles에는 기록된 모든 월경 회차가 있고, 각 회차의 menstrual_phase, follicular_phase, ovulation_phase, luteal_phase가 각각 월경기, 난포기, 배란기, 황체기야.
+- next_expected_menstrual_date는 서버가 계산한 다음 월경 예상일이므로 날짜를 다시 계산하거나 바꾸지 마.
+- 데이터가 없거나 null인 단계는 추측해서 채우지 마.
+- latest_cycle_ongoing이 true이거나 latest_cycle_end_date_confirmed가 false이면 마지막 기록일을 실제 월경 종료일로 해석하지 말고, 다음 단계가 시작됐다고 단정하지 마.
+- 사용자의 질문과 관련 있을 때만 이 정보를 자연스럽게 활용하고, 관련 없는 질문에 월경 정보를 불필요하게 언급하지 마.`;
   }
 
   private buildMealFeedbackScoreContext(

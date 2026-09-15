@@ -47,6 +47,10 @@ describe('ChatService conversation memory', () => {
     };
     jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue(userInfo);
     jest.spyOn(service, 'getRecentChatContext').mockResolvedValue(context);
+    const menstrualContext = jest.spyOn(
+      service,
+      'getMenstrualManagementContext',
+    );
     jest
       .spyOn(service, 'callGeminiText')
       .mockResolvedValue('제미나이 원문 답변');
@@ -70,7 +74,105 @@ describe('ChatService conversation memory', () => {
       context,
       userInfo,
     );
+    expect(menstrualContext).not.toHaveBeenCalled();
     expect(legacyPipeline).not.toHaveBeenCalled();
+  });
+
+  it('adds all menstrual cycle phases to regular chat for trial users', async () => {
+    const service = createService() as any;
+    const chatContext = {
+      messages: [],
+      session_summaries: [],
+      long_term_profile_traits: null,
+      recent_meal_records_3_days: [],
+      recent_workout_records_3_days: [],
+      recent_weight_records_7_days: [],
+      recent_step_records_7_days: [],
+      previous_user_input: null,
+      previous_category: null,
+      previous_recommended_menu_names: [],
+      previous_feedback_menu_names: [],
+      previous_brand: null,
+      previous_category_name: null,
+      previous_meal_time: null,
+    };
+    const userInfo = { goal: 0, target_ratio: [40, 30, 30] };
+    const menstrualContext = {
+      reference_date: '2026-09-15',
+      data_available: true,
+      recorded_cycle_count: 1,
+      cycle_length_days: 28,
+      cycle_length_source: 'default_28_days',
+      normal_cycle_intervals_used: [],
+      cycles: [
+        {
+          cycle_number: 1,
+          recording_status: 'completed',
+          end_date_confirmed: true,
+          recorded_menstrual_period: {
+            start_date: '2026-08-18',
+            end_date: '2026-08-22',
+          },
+          menstrual_phase: {
+            start_date: '2026-08-18',
+            end_date: '2026-08-22',
+          },
+          follicular_phase: {
+            start_date: '2026-08-23',
+            end_date: '2026-08-29',
+          },
+          ovulation_phase: {
+            start_date: '2026-08-30',
+            end_date: '2026-09-01',
+          },
+          luteal_phase: {
+            start_date: '2026-09-02',
+            end_date: '2026-09-14',
+          },
+        },
+      ],
+      latest_cycle_ongoing: false,
+      latest_cycle_end_date_confirmed: true,
+      current_phase: null,
+      current_phase_starts_today: false,
+      next_phase: null,
+      next_phase_starts_today: false,
+      next_expected_menstrual_date: '2026-09-15',
+    };
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue(userInfo);
+    jest.spyOn(service, 'getRecentChatContext').mockResolvedValue(chatContext);
+    jest
+      .spyOn(service, 'getMenstrualManagementContext')
+      .mockResolvedValue(menstrualContext);
+    const callGemini = jest
+      .spyOn(service, 'callGeminiText')
+      .mockResolvedValue('월경 기록이 반영된 답변');
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.recommend(
+      { id: 42 },
+      { input: '오늘 운동은 어떻게 할까?' },
+    );
+
+    expect(callGemini).toHaveBeenCalledWith(
+      '오늘 운동은 어떻게 할까?',
+      chatContext,
+      userInfo,
+      expect.stringContaining('체험 신청자 일반 채팅에 제공되는 월경 기록'),
+    );
+    const requestContext = callGemini.mock.calls[0][3];
+    expect(requestContext).toContain('menstrual_phase');
+    expect(requestContext).toContain('follicular_phase');
+    expect(requestContext).toContain('ovulation_phase');
+    expect(requestContext).toContain('luteal_phase');
+    expect(requestContext).toContain('2026-09-15');
+    expect(response).toEqual({
+      chat_category: 'general',
+      intro_message: '월경 기록이 반영된 답변',
+    });
   });
 
   it('handles app feature questions without restoring the legacy pipeline', async () => {
