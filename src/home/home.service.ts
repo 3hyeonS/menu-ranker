@@ -114,6 +114,18 @@ import {
   WorkoutSearchResponseDto,
 } from './dto/response-dto/workout-search-response-dto';
 import { WorkoutDetailResponseDto } from './dto/response-dto/workout-detail-response-dto';
+import { WaterIntakeEntity } from './entity/water-intake.entity';
+import { WaterSettingEntity } from './entity/water-setting.entity';
+import { WaterDateRequestDto } from './dto/request-dto/water-date-request-dto';
+import { UpsertWaterIntakeRequestDto } from './dto/request-dto/upsert-water-intake-request-dto';
+import { UpdateWaterCupSizeRequestDto } from './dto/request-dto/update-water-cup-size-request-dto';
+import { WaterIntakeResponseDto } from './dto/response-dto/water-intake-response-dto';
+import { RecentMenuResponseDto } from './dto/response-dto/recent-menu-response-dto';
+import {
+  MonthlyCalendarMode,
+  MonthlyCalendarRequestDto,
+} from './dto/request-dto/monthly-calendar-request-dto';
+import { MonthlyCalendarResponseDto } from './dto/response-dto/monthly-calendar-response-dto';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -357,6 +369,10 @@ export class HomeService {
     private workoutRecordSetRepository: Repository<WorkoutRecordSetEntity>,
     @InjectRepository(WeightStepsEntity)
     private weightStepsRepository: Repository<WeightStepsEntity>,
+    @InjectRepository(WaterIntakeEntity)
+    private waterIntakeRepository: Repository<WaterIntakeEntity>,
+    @InjectRepository(WaterSettingEntity)
+    private waterSettingRepository: Repository<WaterSettingEntity>,
     @InjectRepository(BrandAddEntity)
     private brandAddRepository: Repository<BrandAddEntity>,
     private httpService: HttpService,
@@ -4822,5 +4838,276 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     }
 
     return new WeightStepsResponseDto(weightSteps.weight, weightSteps.steps);
+  }
+
+  async getWaterIntake(
+    user: UserEntity,
+    dto: WaterDateRequestDto,
+  ): Promise<WaterIntakeResponseDto> {
+    this.parseDateOnly(dto.date, false);
+
+    const [setting, intake] = await Promise.all([
+      this.waterSettingRepository.findOne({
+        where: { user: { id: user.id } },
+      }),
+      this.waterIntakeRepository.findOne({
+        where: { user: { id: user.id }, date: dto.date },
+      }),
+    ]);
+
+    return new WaterIntakeResponseDto(
+      setting?.cupSizeMl ?? 100,
+      intake?.amountMl ?? 0,
+    );
+  }
+
+  async upsertWaterIntake(
+    user: UserEntity,
+    dto: UpsertWaterIntakeRequestDto,
+  ): Promise<void> {
+    this.parseDateOnly(dto.date, false);
+    const existing = await this.waterIntakeRepository.findOne({
+      where: { user: { id: user.id }, date: dto.date },
+    });
+
+    if (dto.water_intake === 0) {
+      if (existing) {
+        await this.waterIntakeRepository.remove(existing);
+      }
+      return;
+    }
+
+    const intake =
+      existing ??
+      this.waterIntakeRepository.create({
+        user,
+        date: dto.date,
+      });
+    intake.amountMl = dto.water_intake;
+    await this.waterIntakeRepository.save(intake);
+  }
+
+  async updateWaterCupSize(
+    user: UserEntity,
+    dto: UpdateWaterCupSizeRequestDto,
+  ): Promise<void> {
+    const existing = await this.waterSettingRepository.findOne({
+      where: { user: { id: user.id } },
+    });
+    const setting =
+      existing ??
+      this.waterSettingRepository.create({
+        user,
+      });
+    setting.cupSizeMl = dto.cup_size;
+    await this.waterSettingRepository.save(setting);
+  }
+
+  async getRecentMenus(user: UserEntity): Promise<RecentMenuResponseDto[]> {
+    const rows = await this.mealMenuRepository
+      .createQueryBuilder('mealMenu')
+      .innerJoin('mealMenu.meal', 'meal')
+      .innerJoin('mealMenu.menu', 'menu')
+      .select('menu.id', 'menu_id')
+      .addSelect('menu.name', 'menu_name')
+      .where('meal.userId = :userId', { userId: user.id })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .groupBy('menu.id')
+      .addGroupBy('menu.name')
+      .orderBy('MAX(meal.date)', 'DESC')
+      .addOrderBy('MAX(meal.updatedAt)', 'DESC')
+      .addOrderBy('MAX(meal.id)', 'DESC')
+      .limit(10)
+      .getRawMany<{ menu_id: number | string; menu_name: string }>();
+
+    return rows.map(
+      (row) =>
+        new RecentMenuResponseDto(
+          Number(row.menu_id),
+          stripPublicMenuSourcePrefix(row.menu_name),
+        ),
+    );
+  }
+
+  async getMonthlyCalendar(
+    user: UserEntity,
+    dto: MonthlyCalendarRequestDto,
+  ): Promise<MonthlyCalendarResponseDto[]> {
+    const mode = this.normalizeMonthlyCalendarMode(dto.mode);
+    const range = this.getMonthDateRange(dto.date);
+
+    switch (mode) {
+      case 'intake':
+        return await this.getMonthlyMealCalories(user.id, range);
+      case 'workout':
+        return await this.getMonthlyWorkoutCalories(user.id, range);
+      case 'weight':
+        return await this.getMonthlyWeights(user.id, range);
+      case 'water':
+        return await this.getMonthlyWaterIntakes(user.id, range);
+    }
+  }
+
+  private normalizeMonthlyCalendarMode(
+    mode: MonthlyCalendarMode,
+  ): 'intake' | 'workout' | 'weight' | 'water' {
+    const modeMap: Record<
+      MonthlyCalendarMode,
+      'intake' | 'workout' | 'weight' | 'water'
+    > = {
+      intake: 'intake',
+      workout: 'workout',
+      weight: 'weight',
+      water: 'water',
+      섭취: 'intake',
+      운동: 'workout',
+      몸무게: 'weight',
+      '물 섭취': 'water',
+    };
+
+    return modeMap[mode];
+  }
+
+  private getMonthDateRange(month: string): {
+    startDate: string;
+    endDate: string;
+    startDateTime: Date;
+    endDateTime: Date;
+  } {
+    const [year, monthNumber] = month.split('-').map(Number);
+
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(monthNumber) ||
+      monthNumber < 1 ||
+      monthNumber > 12
+    ) {
+      throw new BadRequestException('Invalid month');
+    }
+
+    const lastDay = new Date(year, monthNumber, 0).getDate();
+    const startDate = `${year}-${`${monthNumber}`.padStart(2, '0')}-01`;
+    const endDate = `${year}-${`${monthNumber}`.padStart(2, '0')}-${`${lastDay}`.padStart(2, '0')}`;
+
+    return {
+      startDate,
+      endDate,
+      startDateTime: this.parseDateOnly(startDate, false),
+      endDateTime: this.parseDateOnly(endDate, true),
+    };
+  }
+
+  private async getMonthlyMealCalories(
+    userId: number,
+    range: ReturnType<HomeService['getMonthDateRange']>,
+  ): Promise<MonthlyCalendarResponseDto[]> {
+    const meals = await this.mealRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(range.startDateTime, range.endDateTime),
+      },
+      relations: {
+        mealMenus: {
+          menu: true,
+        },
+      },
+      order: { date: 'ASC', id: 'ASC' },
+    });
+    const totals = new Map<string, number>();
+
+    meals.forEach((meal) => {
+      const date = this.formatDateOnly(meal.date);
+      const calories = (meal.mealMenus ?? []).reduce(
+        (sum, mealMenu) =>
+          sum +
+          this.calculateMenuCaloriesForQuantity(
+            mealMenu.menu,
+            mealMenu.quantity,
+            mealMenu.menu_input_mode,
+          ),
+        0,
+      );
+      totals.set(date, (totals.get(date) ?? 0) + calories);
+    });
+
+    return Array.from(totals.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, calories]) => ({
+        date,
+        calories: roundToOneDecimal(calories),
+      }));
+  }
+
+  private async getMonthlyWorkoutCalories(
+    userId: number,
+    range: ReturnType<HomeService['getMonthDateRange']>,
+  ): Promise<MonthlyCalendarResponseDto[]> {
+    const records = await this.workoutRecordRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(range.startDate, range.endDate),
+      },
+      order: { date: 'ASC', id: 'ASC' },
+    });
+    const totals = new Map<string, number>();
+
+    records.forEach((record) => {
+      totals.set(
+        record.date,
+        (totals.get(record.date) ?? 0) + Number(record.burned_calories ?? 0),
+      );
+    });
+
+    return Array.from(totals.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, calories]) => ({
+        date,
+        burned_calories: roundToOneDecimal(calories),
+      }));
+  }
+
+  private async getMonthlyWeights(
+    userId: number,
+    range: ReturnType<HomeService['getMonthDateRange']>,
+  ): Promise<MonthlyCalendarResponseDto[]> {
+    const records = await this.weightStepsRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(range.startDateTime, range.endDateTime),
+      },
+      order: { date: 'ASC', id: 'ASC' },
+    });
+    const weights = new Map<string, number>();
+
+    records.forEach((record) => {
+      if (record.weight !== null && record.weight !== undefined) {
+        weights.set(this.formatDateOnly(record.date), Number(record.weight));
+      }
+    });
+
+    return Array.from(weights.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, weight]) => ({
+        date,
+        weight: roundToOneDecimal(weight),
+      }));
+  }
+
+  private async getMonthlyWaterIntakes(
+    userId: number,
+    range: ReturnType<HomeService['getMonthDateRange']>,
+  ): Promise<MonthlyCalendarResponseDto[]> {
+    const records = await this.waterIntakeRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(range.startDate, range.endDate),
+      },
+      order: { date: 'ASC', id: 'ASC' },
+    });
+
+    return records.map((record) => ({
+      date: record.date,
+      water_intake: record.amountMl,
+    }));
   }
 }

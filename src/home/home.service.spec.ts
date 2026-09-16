@@ -214,4 +214,77 @@ describe('HomeService menu search priority', () => {
     });
     expect(alternativeSearch).not.toHaveBeenCalled();
   });
+
+  it('returns the default cup size and zero when no water data exists', async () => {
+    const waterService = Object.create(HomeService.prototype) as any;
+    waterService.waterSettingRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+    waterService.waterIntakeRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      waterService.getWaterIntake({ id: 51 }, { date: '2026-09-17' }),
+    ).resolves.toEqual({
+      cup_size: 100,
+      water_intake: 0,
+    });
+  });
+
+  it('removes an existing water record when total intake is set to zero', async () => {
+    const waterService = Object.create(HomeService.prototype) as any;
+    const existing = { id: 10, date: '2026-09-17', amountMl: 500 };
+    const remove = jest.fn().mockResolvedValue(existing);
+    const save = jest.fn();
+    waterService.waterIntakeRepository = {
+      findOne: jest.fn().mockResolvedValue(existing),
+      remove,
+      save,
+    };
+
+    await waterService.upsertWaterIntake(
+      { id: 51 },
+      { date: '2026-09-17', water_intake: 0 },
+    );
+
+    expect(remove).toHaveBeenCalledWith(existing);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('builds an exact leap-year range for monthly calendar queries', () => {
+    const calendarService = Object.create(HomeService.prototype) as any;
+
+    expect(calendarService.getMonthDateRange('2024-02')).toMatchObject({
+      startDate: '2024-02-01',
+      endDate: '2024-02-29',
+    });
+    expect(calendarService.normalizeMonthlyCalendarMode('물 섭취')).toBe(
+      'water',
+    );
+    expect(() => calendarService.getMonthDateRange('2026-13')).toThrow(
+      'Invalid month',
+    );
+  });
+
+  it('sums workout calories by date for the monthly calendar', async () => {
+    const calendarService = Object.create(HomeService.prototype) as any;
+    calendarService.workoutRecordRepository = {
+      find: jest.fn().mockResolvedValue([
+        { id: 1, date: '2026-09-01', burned_calories: 120.25 },
+        { id: 2, date: '2026-09-01', burned_calories: 79.75 },
+        { id: 3, date: '2026-09-03', burned_calories: 50.04 },
+      ]),
+    };
+
+    await expect(
+      calendarService.getMonthlyCalendar(
+        { id: 51 },
+        { date: '2026-09', mode: '운동' },
+      ),
+    ).resolves.toEqual([
+      { date: '2026-09-01', burned_calories: 200 },
+      { date: '2026-09-03', burned_calories: 50 },
+    ]);
+  });
 });

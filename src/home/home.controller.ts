@@ -78,6 +78,13 @@ import { WorkoutRecordResponseDto } from './dto/response-dto/workout-record-resp
 import { WorkoutSearchResponseDto } from './dto/response-dto/workout-search-response-dto';
 import { WorkoutDetailResponseDto } from './dto/response-dto/workout-detail-response-dto';
 import { WorkoutIdResponseDto } from './dto/response-dto/workout-id-response-dto';
+import { WaterDateRequestDto } from './dto/request-dto/water-date-request-dto';
+import { UpsertWaterIntakeRequestDto } from './dto/request-dto/upsert-water-intake-request-dto';
+import { UpdateWaterCupSizeRequestDto } from './dto/request-dto/update-water-cup-size-request-dto';
+import { MonthlyCalendarRequestDto } from './dto/request-dto/monthly-calendar-request-dto';
+import { WaterIntakeResponseDto } from './dto/response-dto/water-intake-response-dto';
+import { RecentMenuResponseDto } from './dto/response-dto/recent-menu-response-dto';
+import { MonthlyCalendarResponseDto } from './dto/response-dto/monthly-calendar-response-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -1474,5 +1481,139 @@ export class HomeController {
     @Body() dateRequestDto: DateRequestDto,
   ): Promise<WeightStepsResponseDto> {
     return await this.homeService.weightSteps(user, dateRequestDto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '물 섭취량 조회',
+    description:
+      '해당 날짜의 총 물 섭취량과 사용자가 설정한 컵 크기를 반환합니다. 컵 설정이 없으면 100ml를 반환합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '물 섭취량 조회 성공',
+    message: 'Water intake returned successfully',
+    model: WaterIntakeResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '날짜 형식 오류',
+    message: 'Invalid date',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ResponseMsg('Water intake returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/water')
+  async getWaterIntake(
+    @GetUser() user: UserEntity,
+    @Body() dto: WaterDateRequestDto,
+  ): Promise<WaterIntakeResponseDto> {
+    return await this.homeService.getWaterIntake(user, dto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '물 섭취량 등록',
+    description:
+      '해당 날짜의 총 물 섭취량(ml)을 등록합니다. 0을 전달하면 해당 날짜의 기록을 삭제합니다.',
+  })
+  @NullApiResponse({
+    status: 201,
+    description: '물 섭취량 등록 성공',
+    message: 'Water intake registered successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '날짜 또는 물 섭취량 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ResponseMsg('Water intake registered successfully')
+  @UseGuards(AuthGuard())
+  @Post('/water/register')
+  async registerWaterIntake(
+    @GetUser() user: UserEntity,
+    @Body() dto: UpsertWaterIntakeRequestDto,
+  ): Promise<void> {
+    await this.homeService.upsertWaterIntake(user, dto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({ summary: '물 컵 크기 설정' })
+  @NullApiResponse({
+    status: 201,
+    description: '물 컵 크기 설정 성공',
+    message: 'Water cup size updated successfully',
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '컵 크기 형식 오류',
+    message: 'cup_size must not be less than 50',
+    error: 'BadRequestException',
+  })
+  @ResponseMsg('Water cup size updated successfully')
+  @UseGuards(AuthGuard())
+  @Post('/water/cup-size')
+  async updateWaterCupSize(
+    @GetUser() user: UserEntity,
+    @Body() dto: UpdateWaterCupSizeRequestDto,
+  ): Promise<void> {
+    await this.homeService.updateWaterCupSize(user, dto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '최근 먹은 메뉴 조회',
+    description: '최근 식사 기록 기준으로 중복 없이 최대 10개를 반환합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '최근 먹은 메뉴 조회 성공',
+    message: 'Recent menus returned successfully',
+    model: RecentMenuResponseDto,
+    isArray: true,
+  })
+  @ResponseMsg('Recent menus returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/recentMenus')
+  async getRecentMenus(
+    @GetUser() user: UserEntity,
+  ): Promise<RecentMenuResponseDto[]> {
+    return await this.homeService.getRecentMenus(user);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '월간 캘린더 기록 조회',
+    description:
+      'date는 YYYY-MM 형식으로 전달합니다. mode는 intake, workout, weight, water를 권장하며 한글 값도 호환합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '월간 캘린더 기록 조회 성공',
+    message: 'Monthly calendar records returned successfully',
+    model: MonthlyCalendarResponseDto,
+    isArray: true,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '월 또는 mode 형식 오류',
+    message: 'Invalid month',
+    error: 'BadRequestException',
+  })
+  @ResponseMsg('Monthly calendar records returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/monthlyCalendar')
+  async getMonthlyCalendar(
+    @GetUser() user: UserEntity,
+    @Body() dto: MonthlyCalendarRequestDto,
+  ): Promise<MonthlyCalendarResponseDto[]> {
+    return await this.homeService.getMonthlyCalendar(user, dto);
   }
 }

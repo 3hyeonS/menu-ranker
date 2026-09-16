@@ -26,6 +26,8 @@ import { MealSetEntity } from './entity/meal-set.entity';
 import { WorkoutEntity } from './entity/workout.entity';
 import { WorkoutRecordEntity } from './entity/workout-record.entity';
 import { WorkoutRecordSetEntity } from './entity/workout-record-set.entity';
+import { WaterIntakeEntity } from './entity/water-intake.entity';
+import { WaterSettingEntity } from './entity/water-setting.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -49,6 +51,8 @@ dotenv.config();
       WorkoutRecordEntity,
       WorkoutRecordSetEntity,
       WeightStepsEntity,
+      WaterIntakeEntity,
+      WaterSettingEntity,
       BrandAddEntity,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
