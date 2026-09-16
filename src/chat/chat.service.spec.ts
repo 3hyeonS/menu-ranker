@@ -153,7 +153,7 @@ describe('ChatService conversation memory', () => {
     jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
 
     const response = await service.recommend(
-      { id: 42 },
+      { id: 51 },
       { input: '오늘 운동은 어떻게 할까?' },
     );
 
@@ -271,9 +271,9 @@ describe('ChatService conversation memory', () => {
     };
     jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
 
-    const response = await service.personalizedManagement({ id: 42 });
+    const response = await service.personalizedManagement({ id: 51 });
 
-    expect(getChatContext).toHaveBeenCalledWith(42, 8, {
+    expect(getChatContext).toHaveBeenCalledWith(51, 8, {
       meals: 7,
       workouts: 7,
       weights: 30,
