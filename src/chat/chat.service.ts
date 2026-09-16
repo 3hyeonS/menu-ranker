@@ -4889,6 +4889,7 @@ ${JSON.stringify(scoreContext)}
 - score, calorie_score, macro_balance_score는 서비스 정책에 따라 서버가 계산한 확정값이야. 다시 계산하거나 다른 점수로 바꾸지 마.
 - 총점은 calorie_score 50점과 macro_balance_score 50점의 합이야. calorie_score의 adjusted_target_calories에는 선택 날짜의 exercise_burned_calories가 더해져 있어.
 - 매크로 실제 비율은 탄수화물과 단백질은 1g당 4kcal, 지방은 1g당 9kcal로 환산한 뒤 세 매크로 열량 합계에서 차지하는 비율이야.
+- 사용자에게 보여주는 답변에서는 "매크로", "macro", "macro_balance_score" 같은 내부 용어를 절대 사용하지 마. 대신 "탄수화물·단백질·지방의 균형" 또는 "영양소 균형"처럼 이해하기 쉬운 한국어로 설명해.
 - 당류·식이섬유·나트륨은 종합 점수에 직접 포함되지 않으므로 별도의 영양 조언 근거로만 사용해.
 - 어떤 음식이 각 탄수화물·단백질·지방 섭취와 점수에 크게 기여했는지 meal_records의 메뉴별 consumed_nutrition을 근거로 구체적으로 설명해.
 - 점수를 제한하는 영양소와 그 원인이 된 기록을 먼저 짚고, 기록된 식사의 구성이나 양을 어떻게 바꾸면 점수를 높일 수 있는지 실행 가능한 방법을 제시해.

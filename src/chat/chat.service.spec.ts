@@ -390,6 +390,12 @@ describe('ChatService conversation memory', () => {
     expect(callGemini.mock.calls[0][3]).toContain(
       'selected_date의 식사만 분석해',
     );
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '사용자에게 보여주는 답변에서는 "매크로", "macro", "macro_balance_score" 같은 내부 용어를 절대 사용하지 마',
+    );
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '탄수화물·단백질·지방의 균형',
+    );
     expect(response).toEqual({
       chat_category: 'general',
       intro_message: '선택 날짜 식사 피드백',
