@@ -153,7 +153,7 @@ describe('ChatService conversation memory', () => {
     jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
 
     const response = await service.recommend(
-      { id: 51 },
+      { id: 38 },
       { input: '오늘 운동은 어떻게 할까?' },
     );
 
