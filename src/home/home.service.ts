@@ -4916,21 +4916,28 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       .innerJoin('mealMenu.menu', 'menu')
       .select('menu.id', 'menu_id')
       .addSelect('menu.name', 'menu_name')
+      .addSelect('menu.brand', 'menu_brand')
       .where('meal.userId = :userId', { userId: user.id })
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .groupBy('menu.id')
       .addGroupBy('menu.name')
+      .addGroupBy('menu.brand')
       .orderBy('MAX(meal.date)', 'DESC')
       .addOrderBy('MAX(meal.updatedAt)', 'DESC')
       .addOrderBy('MAX(meal.id)', 'DESC')
       .limit(10)
-      .getRawMany<{ menu_id: number | string; menu_name: string }>();
+      .getRawMany<{
+        menu_id: number | string;
+        menu_name: string;
+        menu_brand: string | null;
+      }>();
 
     return rows.map(
       (row) =>
         new RecentMenuResponseDto(
           Number(row.menu_id),
           stripPublicMenuSourcePrefix(row.menu_name),
+          row.menu_brand,
         ),
     );
   }

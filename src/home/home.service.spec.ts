@@ -288,6 +288,51 @@ describe('HomeService menu search priority', () => {
     ]);
   });
 
+  it('returns the brand with recently eaten menus', async () => {
+    const recentMenuService = Object.create(HomeService.prototype) as any;
+    const queryBuilder: Record<string, jest.Mock> = {};
+    [
+      'innerJoin',
+      'select',
+      'addSelect',
+      'where',
+      'andWhere',
+      'groupBy',
+      'addGroupBy',
+      'orderBy',
+      'addOrderBy',
+      'limit',
+    ].forEach((method) => {
+      queryBuilder[method] = jest.fn(() => queryBuilder);
+    });
+    queryBuilder.getRawMany = jest.fn().mockResolvedValue([
+      {
+        menu_id: '123',
+        menu_name: '(식약처_가공) 닭가슴살',
+        menu_brand: '비비고',
+      },
+      {
+        menu_id: 124,
+        menu_name: '(식약처_음식) 사과',
+        menu_brand: null,
+      },
+    ]);
+    recentMenuService.mealMenuRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+
+    await expect(recentMenuService.getRecentMenus({ id: 50 })).resolves.toEqual(
+      [
+        { menu_id: 123, menu_name: '닭가슴살', brand: '비비고' },
+        { menu_id: 124, menu_name: '사과', brand: null },
+      ],
+    );
+    expect(queryBuilder.addSelect).toHaveBeenCalledWith(
+      'menu.brand',
+      'menu_brand',
+    );
+  });
+
   it('excludes deleted menus from folder list summaries', async () => {
     const folderService = Object.create(HomeService.prototype) as any;
     const queryBuilder: Record<string, jest.Mock> = {};

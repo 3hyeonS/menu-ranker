@@ -7,8 +7,17 @@ export class RecentMenuResponseDto {
   @ApiProperty({ type: String, description: '메뉴명', example: '닭가슴살' })
   menu_name: string;
 
-  constructor(menuId: number, menuName: string) {
+  @ApiProperty({
+    type: String,
+    description: '브랜드명',
+    example: '비비고',
+    nullable: true,
+  })
+  brand: string | null;
+
+  constructor(menuId: number, menuName: string, brand: string | null) {
     this.menu_id = menuId;
     this.menu_name = menuName;
+    this.brand = brand;
   }
 }
