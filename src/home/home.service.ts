@@ -4106,6 +4106,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
               folder: {
                 id: In(folderIds),
               },
+              menu: {
+                is_deleted: 0,
+              },
             },
             relations: {
               folder: true,
@@ -4161,6 +4164,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       where: {
         folder: {
           id: folder.id,
+        },
+        menu: {
+          is_deleted: 0,
         },
       },
       relations: {

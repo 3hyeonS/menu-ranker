@@ -287,4 +287,72 @@ describe('HomeService menu search priority', () => {
       { date: '2026-09-03', burned_calories: 50 },
     ]);
   });
+
+  it('excludes deleted menus from folder list summaries', async () => {
+    const folderService = Object.create(HomeService.prototype) as any;
+    const queryBuilder: Record<string, jest.Mock> = {};
+    ['innerJoin', 'where', 'orderBy', 'limit'].forEach((method) => {
+      queryBuilder[method] = jest.fn(() => queryBuilder);
+    });
+    queryBuilder.getMany = jest
+      .fn()
+      .mockResolvedValue([{ id: 10, name: '아침 메뉴' }]);
+    folderService.folderRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+    folderService.folderMenuRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+
+    await expect(
+      folderService.getFolders({ id: 50 }, { limit: 20 }),
+    ).resolves.toEqual({
+      folder_list: [
+        { folder_id: 10, folder_name: '아침 메뉴', menu_names: [] },
+      ],
+      next_cursor: null,
+    });
+    expect(folderService.folderMenuRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          folder: { id: expect.anything() },
+          menu: { is_deleted: 0 },
+        },
+      }),
+    );
+  });
+
+  it('excludes deleted menus from folder detail', async () => {
+    const folderService = Object.create(HomeService.prototype) as any;
+    const queryBuilder: Record<string, jest.Mock> = {};
+    ['innerJoin', 'where', 'andWhere'].forEach((method) => {
+      queryBuilder[method] = jest.fn(() => queryBuilder);
+    });
+    queryBuilder.getOne = jest
+      .fn()
+      .mockResolvedValue({ id: 10, name: '아침 메뉴' });
+    folderService.folderRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+    folderService.folderMenuRepository = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+
+    await expect(
+      folderService.getFolderDetail({ id: 50 }, { folder_id: 10 }),
+    ).resolves.toEqual({
+      folder_name: '아침 메뉴',
+      menu_list: [],
+      menu_quantities: [],
+      menu_input_modes: [],
+    });
+    expect(folderService.folderMenuRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          folder: { id: 10 },
+          menu: { is_deleted: 0 },
+        },
+      }),
+    );
+  });
 });
