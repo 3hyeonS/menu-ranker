@@ -78,6 +78,58 @@ describe('ChatService conversation memory', () => {
     expect(legacyPipeline).not.toHaveBeenCalled();
   });
 
+  it('does not claim that ordinary text chat saved a meal record', async () => {
+    const service = createService() as any;
+    const context = {
+      messages: [],
+      session_summaries: [],
+      long_term_profile_traits: null,
+      recent_meal_records_3_days: [],
+      recent_workout_records_3_days: [],
+      recent_weight_records_7_days: [],
+      recent_step_records_7_days: [],
+      previous_user_input: null,
+      previous_category: null,
+      previous_recommended_menu_names: [],
+      previous_feedback_menu_names: [],
+      previous_brand: null,
+      previous_category_name: null,
+      previous_meal_time: null,
+    };
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue({
+      goal: 0,
+      target_ratio: [40, 30, 30],
+    });
+    jest.spyOn(service, 'getRecentChatContext').mockResolvedValue(context);
+    jest
+      .spyOn(service, 'callGeminiText')
+      .mockResolvedValue(
+        '기록해 줄게. 오늘 간식으로 방울토마토 29g, 샤인머스캣 63g을 먹었구나.',
+      );
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.recommend(
+      { id: 9 },
+      { input: '간식으로 방울토마토 29g 샤인머스캣 63g' },
+    );
+
+    expect(response.intro_message).toBe(
+      '말해준 식사 내용은 확인했어. 다만 일반 채팅에서는 식사 기록에 저장되지 않아. 기록하려면 식사 기록 모드를 켜서 입력해줘.',
+    );
+    expect(response.intro_message).not.toContain('기록해 줄게');
+    expect(service.saveNewChatHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        response_payload: expect.objectContaining({
+          intro_message:
+            '말해준 식사 내용은 확인했어. 다만 일반 채팅에서는 식사 기록에 저장되지 않아. 기록하려면 식사 기록 모드를 켜서 입력해줘.',
+        }),
+      }),
+    );
+  });
+
   it('adds all menstrual cycle phases to regular chat for trial users', async () => {
     const service = createService() as any;
     const chatContext = {
@@ -679,7 +731,17 @@ describe('ChatService conversation memory', () => {
               },
             },
           ],
-          recent_workout_records_3_days: [{ workout_name: '스쿼트' }],
+          recent_workout_records_3_days: [
+            {
+              date: '2026-08-28',
+              workout_name: '스쿼트',
+              workout_type: 'strength',
+              duration_minutes: 30,
+              burned_calories: 180,
+              intensity: 1,
+              sets: [],
+            },
+          ],
           recent_weight_records_7_days: [
             { date: '2026-08-28', weight_kg: 64.3 },
           ],
@@ -722,7 +784,12 @@ describe('ChatService conversation memory', () => {
         },
         { role: 'user', parts: [{ text: '현재 질문' }] },
       ]);
-      expect(JSON.stringify(requestBody)).toContain('닭가슴살');
+      const systemPrompt = requestBody.system_instruction.parts[0].text;
+      expect(systemPrompt).toContain('닭가슴살');
+      expect(systemPrompt).toContain('운동 소모 칼로리 일별 합계');
+      expect(systemPrompt).toContain('"burned_calories":180');
+      expect(systemPrompt).toContain('"estimated_burned_calories":284.9');
+      expect(systemPrompt).toContain('"calorie_value_type":"estimated"');
       expect(JSON.stringify(requestBody)).toContain('스쿼트');
       expect(JSON.stringify(requestBody)).toContain('64.3');
       expect(JSON.stringify(requestBody)).toContain('8765');
@@ -760,6 +827,12 @@ describe('ChatService conversation memory', () => {
       );
       expect(systemInstruction).toContain(
         '이전 assistant 답변의 결론이나 거절 논리를 반복하지 말고',
+      );
+      expect(systemInstruction).toContain(
+        '현재 AI 답변 경로에서는 식사·운동·체중·물 기록을 DB에 등록, 저장, 수정하거나 삭제할 수 없어',
+      );
+      expect(systemInstruction).toContain(
+        '기록 완료나 저장 예정이라고 약속하지 마',
       );
       expect(systemInstruction).toContain(
         '"date":"2026-08-27","weekday":"목요일"',
@@ -951,7 +1024,7 @@ describe('ChatService conversation memory', () => {
     });
   });
 
-  it('adds estimated quantity calories without changing the DB serving fields', () => {
+  it('applies estimated food-image quantity to the legacy card fields', () => {
     const service = createService() as any;
     const menu = {
       id: 10,
@@ -973,8 +1046,8 @@ describe('ChatService conversation memory', () => {
       quantityConfidence: 0.7,
     });
 
-    expect(result.weight).toBe(200);
-    expect(result.calories).toBe(300);
+    expect(result.weight).toBe(100);
+    expect(result.calories).toBe(150);
     expect(result.estimated_quantity).toBe(100);
     expect(result.estimated_quantity_unit).toBe('g');
     expect(result.quantity_confidence).toBe(0.7);
@@ -1295,5 +1368,13 @@ describe('ChatService conversation memory', () => {
 
     expect(service.formatLocalDate(range.start)).toBe('2026-08-18');
     expect(service.formatLocalDate(range.end)).toBe('2026-08-24');
+  });
+
+  it('estimates calories burned from steps using the current weight', () => {
+    const service = createService() as any;
+
+    expect(service.estimateStepBurnedCalories(9099, 64.2)).toBe(292.1);
+    expect(service.estimateStepBurnedCalories(0, 64.2)).toBe(0);
+    expect(service.estimateStepBurnedCalories(9099, 0)).toBe(0);
   });
 });

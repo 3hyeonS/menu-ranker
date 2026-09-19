@@ -867,7 +867,7 @@ export class ChatService {
         ? this.getMenstrualManagementContext(user.id)
         : Promise.resolve(null),
     ]);
-    const answer = menstrualContext
+    const generatedAnswer = menstrualContext
       ? await this.callGeminiText(
           input,
           chatContext,
@@ -875,6 +875,7 @@ export class ChatService {
           this.buildTrialMenstrualChatRequestContext(menstrualContext),
         )
       : await this.callGeminiText(input, chatContext, userInfo);
+    const answer = this.enforceGeneralChatNoWriteClaims(generatedAnswer);
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'general';
     response.intro_message = answer;
@@ -2287,6 +2288,17 @@ export class ChatService {
     }
 
     return null;
+  }
+
+  private enforceGeneralChatNoWriteClaims(answer: string): string {
+    const writeClaimPattern =
+      /(?:기록|저장|등록|추가)(?:해\s*줄게|해\s*둘게|할게|했어|해뒀어|해\s*뒀어)/;
+
+    if (!writeClaimPattern.test(answer)) {
+      return answer;
+    }
+
+    return '말해준 식사 내용은 확인했어. 다만 일반 채팅에서는 식사 기록에 저장되지 않아. 기록하려면 식사 기록 모드를 켜서 입력해줘.';
   }
 
   private isUnsupportedChatActionRequest(normalizedInput: string): boolean {
@@ -4388,6 +4400,22 @@ ${JSON.stringify(
       date: this.formatLocalDate(new Date(record.date)),
       steps: roundToOneDecimal(record.steps),
     }));
+  }
+
+  private estimateStepBurnedCalories(steps: number, weightKg: number): number {
+    const normalizedSteps = Number(steps);
+    const normalizedWeightKg = Number(weightKg);
+
+    if (
+      !Number.isFinite(normalizedSteps) ||
+      normalizedSteps <= 0 ||
+      !Number.isFinite(normalizedWeightKg) ||
+      normalizedWeightKg <= 0
+    ) {
+      return 0;
+    }
+
+    return roundToOneDecimal(normalizedSteps * normalizedWeightKg * 0.0005);
   }
 
   private async getRecentPersonalizedManagementFeedback(
@@ -10133,30 +10161,40 @@ ${JSON.stringify(
     match?: ComparisonMenuMatch,
   ): ChatFeedbackMenuResponseDto {
     const response = new ChatFeedbackMenuResponseDto();
+    const estimatedQuantity = match?.estimatedQuantity;
+    const hasEstimatedQuantity =
+      estimatedQuantity !== null &&
+      estimatedQuantity !== undefined &&
+      Number.isFinite(Number(estimatedQuantity)) &&
+      Number(estimatedQuantity) > 0 &&
+      Number(menu.weight) > 0;
+    const estimatedCalories = hasEstimatedQuantity
+      ? roundToOneDecimal(
+          Number(menu.calories ?? 0) *
+            getRecordedWeightMultiplier(
+              Number(estimatedQuantity),
+              Number(menu.weight),
+            ),
+        )
+      : null;
 
     response.input_menu_name = inputMenuName;
     response.menu_id = menu.id;
     response.menu_name = stripPublicMenuSourcePrefix(menu.name);
     response.brand = menu.brand ?? null;
     response.unit = menu.unit;
-    response.weight = roundNullableToOneDecimal(menu.weight) ?? 0;
+    response.weight = hasEstimatedQuantity
+      ? roundToOneDecimal(Number(estimatedQuantity))
+      : (roundNullableToOneDecimal(menu.weight) ?? 0);
     response.unit_quantity = menu.unit_quantity;
-    response.calories = roundNullableToOneDecimal(menu.calories) ?? 0;
-    response.estimated_quantity = match?.estimatedQuantity ?? null;
+    response.calories =
+      estimatedCalories ?? roundNullableToOneDecimal(menu.calories) ?? 0;
+    response.estimated_quantity = hasEstimatedQuantity
+      ? roundToOneDecimal(Number(estimatedQuantity))
+      : null;
     response.estimated_quantity_unit = match?.estimatedQuantityUnit ?? null;
     response.quantity_confidence = match?.quantityConfidence ?? null;
-    response.estimated_calories =
-      match?.estimatedQuantity !== null &&
-      match?.estimatedQuantity !== undefined &&
-      Number(menu.weight) > 0
-        ? roundToOneDecimal(
-            Number(menu.calories ?? 0) *
-              getRecordedWeightMultiplier(
-                match.estimatedQuantity,
-                Number(menu.weight),
-              ),
-          )
-        : null;
+    response.estimated_calories = estimatedCalories;
     response.score = roundToOneDecimal(score.finalScore);
     response.is_appropriate = score.finalScore >= 65;
     response.data_source = menu.data_source;
@@ -12534,6 +12572,34 @@ ${JSON.stringify(candidates)}
       weekday: this.getKoreanWeekday(date),
       nutrition_totals: this.sumRecentMealNutrition(totals),
     }));
+    const dailyWorkoutBurnedCalories = Array.from(
+      chatContext.recent_workout_records_3_days.reduce(
+        (totalsByDate, record) => {
+          totalsByDate.set(
+            record.date,
+            (totalsByDate.get(record.date) ?? 0) +
+              Number(record.burned_calories ?? 0),
+          );
+          return totalsByDate;
+        },
+        new Map<string, number>(),
+      ),
+    ).map(([date, burnedCalories]) => ({
+      date,
+      weekday: this.getKoreanWeekday(date),
+      burned_calories: roundToOneDecimal(burnedCalories),
+    }));
+    const recentStepRecordsWithBurnedCalories =
+      chatContext.recent_step_records_7_days.map((record) => ({
+        ...record,
+        weekday: this.getKoreanWeekday(record.date),
+        estimated_burned_calories: this.estimateStepBurnedCalories(
+          record.steps,
+          userInfo.weight,
+        ),
+        weight_basis_kg: roundToOneDecimal(userInfo.weight),
+        calorie_value_type: 'estimated',
+      }));
     const recordContextDays = chatContext.record_context_days ?? {
       meals: CHAT_RECORD_CONTEXT_DAYS,
       workouts: CHAT_RECORD_CONTEXT_DAYS,
@@ -12594,17 +12660,17 @@ ${JSON.stringify(candidates)}
           weekday: this.getKoreanWeekday(record.date),
         })),
       )}`,
+      `최근 ${recordContextDays.workouts}일 운동 소모 칼로리 일별 합계:\n${JSON.stringify(
+        dailyWorkoutBurnedCalories,
+      )}`,
       `최근 ${recordContextDays.weights}일 체중 기록:\n${JSON.stringify(
         chatContext.recent_weight_records_7_days.map((record) => ({
           ...record,
           weekday: this.getKoreanWeekday(record.date),
         })),
       )}`,
-      `최근 ${recordContextDays.steps}일 걸음 수 기록:\n${JSON.stringify(
-        chatContext.recent_step_records_7_days.map((record) => ({
-          ...record,
-          weekday: this.getKoreanWeekday(record.date),
-        })),
+      `최근 ${recordContextDays.steps}일 걸음 수와 추정 소모 칼로리:\n${JSON.stringify(
+        recentStepRecordsWithBurnedCalories,
       )}`,
       chatContext.long_term_profile_traits
         ? `장기 대화 기억:\n${chatContext.long_term_profile_traits}`
@@ -12637,6 +12703,12 @@ ${JSON.stringify(candidates)}
 - 가장 최근 사용자 메시지의 질문이나 요청을 최우선으로 해석하고, 요청한 결론부터 직접 답해.
 - 저장된 기록이나 과거 대화 설명으로 현재 질문에 대한 답을 대신하거나 회피하지 마.
 - 사용자가 이전 답변에 이의를 제기하거나 다시 물으면 가장 최근 요청을 새로 판단해. 이전 assistant 답변의 결론이나 거절 논리를 반복하지 말고, 빠졌던 답을 직접 보완해.
+
+[채팅 기능 경계]
+- 현재 AI 답변 경로에서는 식사·운동·체중·물 기록을 DB에 등록, 저장, 수정하거나 삭제할 수 없어.
+- 사용자가 음식과 섭취량을 적더라도 실제 기록 처리를 했다는 뜻의 "기록해 줄게", "기록할게", "기록했어", "저장했어", "추가했어" 같은 표현을 절대 쓰지 마.
+- 사용자가 먹은 내용을 단순히 말한 경우에는 자연스럽게 대화를 이어가되, 기록 완료나 저장 예정이라고 약속하지 마.
+- 기록 여부를 묻거나 기록을 요청한 경우에는 일반 채팅에서는 저장되지 않으며 식사 기록 모드를 이용해야 한다고 안내해.
 
 [식사 기록 반영 규칙]
 - 최근 ${recordContextDays.meals}일 식단 기록은 사용자가 실제로 먹은 음식이야. 단순 대화나 이전 추천보다 우선해서 판단해.
@@ -12673,7 +12745,13 @@ ${JSON.stringify(candidates)}
 
 [걸음 수 기록 반영 규칙]
 - 최근 ${recordContextDays.steps}일 걸음 수 기록은 DB에 실제 저장된 날짜별 걸음 수야. 기록된 수치를 그대로 사용하고 없는 날짜의 걸음 수는 추측하지 마.
+- estimated_burned_calories는 서버가 걸음 수와 현재 체중을 이용해 계산한 추정치야. 측정된 정확한 값처럼 표현하지 말고 "걸음 기준 추정"이라고 밝혀.
 - 걸음 수 변화나 활동량을 말할 때는 기록 날짜와 수치를 기준으로 하고, 기록이 부족하면 장기 추세를 단정하지 마.
+
+[활동 소모 칼로리 반영 규칙]
+- 운동 기록의 burned_calories와 운동 소모 칼로리 일별 합계는 DB에 저장된 운동 소모 칼로리야.
+- 사용자가 섭취 칼로리와 소비 칼로리를 비교해 달라고 하면 운동 소모 칼로리와 걸음 기준 추정 소모 칼로리를 모두 확인해. 값이 전달됐는데도 소모 칼로리 기록이 없다고 답하지 마.
+- 운동과 걸음이 같은 활동을 포함할 수 있으므로 두 값을 합산할 때는 중복 가능성이 있다고 밝혀. 사용자가 합계를 요구하지 않았다면 각각 구분해서 설명해.
 
 ${CHAT_USER_FACT_PROVENANCE_RULES}
 
