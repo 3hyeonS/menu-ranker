@@ -1245,6 +1245,107 @@ describe('ChatService conversation memory', () => {
     });
   });
 
+  it('prioritizes menus matching a brand read from a food image', () => {
+    const service = createService() as any;
+    const result = service.findFoodImageBrandCandidates(
+      {
+        foodName: '즉석밥',
+        brand: '햇반',
+        confidence: 0.98,
+        position: { x: 0.5, y: 0.5 },
+        estimatedQuantity: 210,
+        estimatedQuantityUnit: 'g',
+        quantityConfidence: 0.9,
+      },
+      [
+        {
+          id: 1,
+          name: '일반 즉석밥',
+          brand: '다른브랜드',
+          category: '즉석밥',
+        },
+        {
+          id: 2,
+          name: '햇반 백미밥',
+          brand: 'CJ제일제당',
+          category: '즉석밥',
+        },
+        {
+          id: 3,
+          name: '잡곡밥',
+          brand: '햇반',
+          category: '즉석밥',
+        },
+      ],
+      8,
+    );
+
+    expect(result.map((menu: { id: number }) => menu.id)).toEqual([3, 2]);
+  });
+
+  it('locally fills only foods omitted from a partial Gemini image rematch', () => {
+    const service = createService() as any;
+    const predictions = [
+      {
+        foodName: '수육',
+        brand: null,
+        confidence: 0.95,
+        position: { x: 0.3, y: 0.4 },
+        estimatedQuantity: 150,
+        estimatedQuantityUnit: 'g',
+        quantityConfidence: 0.8,
+      },
+      {
+        foodName: '즉석밥',
+        brand: '햇반',
+        confidence: 0.98,
+        position: { x: 0.7, y: 0.8 },
+        estimatedQuantity: 210,
+        estimatedQuantityUnit: 'g',
+        quantityConfidence: 0.9,
+      },
+    ];
+    const riceCandidate = {
+      id: 2,
+      name: '햇반 백미밥',
+      brand: '햇반',
+      category: '즉석밥',
+      unit: 0,
+    };
+    const rematchedPork = {
+      id: 1,
+      name: '수육',
+      brand: null,
+      category: '한식',
+      unit: 0,
+      foodIndex: 0,
+      confidence: 0.95,
+      position: predictions[0].position,
+      estimatedQuantity: 150,
+      estimatedQuantityUnit: 'g',
+      quantityConfidence: 0.8,
+    };
+
+    const result = service.mergeFoodImageRematchesWithLocalFallback(
+      predictions,
+      [
+        { foodIndex: 0, foodName: '수육', candidates: [rematchedPork] },
+        { foodIndex: 1, foodName: '즉석밥', candidates: [riceCandidate] },
+      ],
+      [rematchedPork, riceCandidate],
+      [rematchedPork],
+    );
+
+    expect(result.map((food: { id: number }) => food.id)).toEqual([1, 2]);
+    expect(result[1]).toEqual(
+      expect.objectContaining({
+        foodIndex: 1,
+        estimatedQuantity: 210,
+        estimatedQuantityUnit: 'g',
+      }),
+    );
+  });
+
   it('applies estimated food-image quantity to the legacy card fields', () => {
     const service = createService() as any;
     const menu = {

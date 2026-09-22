@@ -606,6 +606,7 @@ type FoodImagePrediction = {
 };
 
 type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
+  foodIndex?: number;
   confidence: number | null;
   position: FoodImagePosition;
   estimatedQuantity: number | null;
@@ -5328,17 +5329,26 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     timing?.mark('food_image_gemini_rematch_completed', {
       rematchedCount: rematchedFoods.length,
     });
-    const recognizedFoods =
-      rematchedFoods.length > 0
-        ? rematchedFoods
-        : predictions
-            .map((prediction) =>
-              this.matchFoodImagePredictionLocally(prediction, menus),
-            )
-            .filter((food): food is RecognizedFoodImageMenu => food !== null);
+    const recognizedFoods = this.mergeFoodImageRematchesWithLocalFallback(
+      predictions,
+      candidateGroups,
+      menus,
+      rematchedFoods,
+    );
+    const localFallbackCount = Math.max(
+      recognizedFoods.length - rematchedFoods.length,
+      0,
+    );
     timing?.mark('food_image_final_match_selected', {
       recognizedFoodCount: recognizedFoods.length,
-      source: rematchedFoods.length > 0 ? 'gemini_rematch' : 'local',
+      rematchedCount: rematchedFoods.length,
+      localFallbackCount,
+      source:
+        rematchedFoods.length === 0
+          ? 'local'
+          : localFallbackCount > 0
+            ? 'gemini_rematch_with_local_fallback'
+            : 'gemini_rematch',
     });
     const uniqueRecognizedFoods =
       this.deduplicateRecognizedFoodImageMenus(recognizedFoods);
@@ -5520,6 +5530,7 @@ ${JSON.stringify(
   private matchFoodImagePredictionLocally(
     prediction: FoodImagePrediction,
     menus: MenuRecognitionCandidate[],
+    foodIndex?: number,
   ): RecognizedFoodImageMenu | null {
     const preferredMenu = prediction.brand
       ? undefined
@@ -5538,6 +5549,7 @@ ${JSON.stringify(
       this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)
       ? {
           ...matchedMenu,
+          foodIndex,
           confidence: prediction.confidence,
           position: prediction.position,
           estimatedQuantity: prediction.estimatedQuantity,
@@ -5545,6 +5557,51 @@ ${JSON.stringify(
           quantityConfidence: prediction.quantityConfidence,
         }
       : null;
+  }
+
+  private mergeFoodImageRematchesWithLocalFallback(
+    predictions: FoodImagePrediction[],
+    candidateGroups: FoodImageCandidateGroup[],
+    menus: MenuRecognitionCandidate[],
+    rematchedFoods: RecognizedFoodImageMenu[],
+  ): RecognizedFoodImageMenu[] {
+    if (rematchedFoods.length === 0) {
+      return predictions
+        .map((prediction, foodIndex) =>
+          this.matchFoodImagePredictionLocally(
+            prediction,
+            menus,
+            foodIndex,
+          ),
+        )
+        .filter((food): food is RecognizedFoodImageMenu => food !== null);
+    }
+
+    const rematchedFoodIndexes = new Set(
+      rematchedFoods
+        .map((food) => food.foodIndex)
+        .filter((foodIndex): foodIndex is number => foodIndex !== undefined),
+    );
+    const candidateGroupMap = new Map(
+      candidateGroups.map((group) => [group.foodIndex, group]),
+    );
+    const fallbackFoods = predictions
+      .map((prediction, foodIndex) => {
+        if (rematchedFoodIndexes.has(foodIndex)) {
+          return null;
+        }
+
+        const groupCandidates =
+          candidateGroupMap.get(foodIndex)?.candidates ?? menus;
+        return this.matchFoodImagePredictionLocally(
+          prediction,
+          groupCandidates,
+          foodIndex,
+        );
+      })
+      .filter((food): food is RecognizedFoodImageMenu => food !== null);
+
+    return [...rematchedFoods, ...fallbackFoods];
   }
 
   private normalizeMenuBoardRecognition(
@@ -5701,6 +5758,13 @@ ${JSON.stringify(
           foodName: prediction.foodName,
           candidates: [],
         };
+        const brandMenus = prediction.brand
+          ? this.findFoodImageBrandCandidates(
+              prediction,
+              menus,
+              this.getFoodImagePerFoodVectorCandidateLimit(),
+            )
+          : [];
         const preferredMenus = prediction.brand
           ? []
           : menus.filter(
@@ -5717,6 +5781,7 @@ ${JSON.stringify(
           candidates: prioritizeGenericFoodImageCandidate(
             prediction.foodName,
             this.mergeRecognitionCandidatesById([
+              ...brandMenus,
               ...preferredMenus,
               ...group.candidates,
             ]),
@@ -5724,6 +5789,38 @@ ${JSON.stringify(
         };
       })
       .filter((group) => group.candidates.length > 0);
+  }
+
+  private findFoodImageBrandCandidates(
+    prediction: FoodImagePrediction,
+    menus: MenuRecognitionCandidate[],
+    limit: number,
+  ): MenuRecognitionCandidate[] {
+    const brand = this.normalizeCompactText(prediction.brand ?? '');
+
+    if (!brand) {
+      return [];
+    }
+
+    return menus
+      .filter((menu) => {
+        const menuBrand = this.normalizeCompactText(menu.brand ?? '');
+        const menuName = this.normalizeCompactText(menu.name);
+
+        return menuBrand.includes(brand) || menuName.includes(brand);
+      })
+      .map((menu) => ({
+        menu,
+        score: this.calculateRecognitionCandidateScore(
+          prediction.foodName,
+          menu,
+          prediction.brand,
+          null,
+        ),
+      }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map(({ menu }) => menu);
   }
 
   private async getFoodImageVectorCandidateGroupsByPrediction(
@@ -5888,19 +5985,24 @@ ${JSON.stringify(
   private logFoodImageCandidateGroups(
     candidateGroups: FoodImageCandidateGroup[],
   ): void {
-    console.log('[CHAT] food image DB candidate groups', {
-      groups: candidateGroups.map((group) => ({
-        foodIndex: group.foodIndex,
-        foodName: group.foodName,
-        requiredDishType: this.getFoodImageStrictDishTypeToken(group.foodName),
-        candidates: group.candidates.map((candidate) => ({
-          menuId: candidate.id,
-          menuName: candidate.name,
-          menuBrand: candidate.brand,
-          menuCategory: candidate.category,
+    console.log(
+      '[CHAT] food image DB candidate groups',
+      JSON.stringify({
+        groups: candidateGroups.map((group) => ({
+          foodIndex: group.foodIndex,
+          foodName: group.foodName,
+          requiredDishType: this.getFoodImageStrictDishTypeToken(
+            group.foodName,
+          ),
+          candidates: group.candidates.map((candidate) => ({
+            menuId: candidate.id,
+            menuName: candidate.name,
+            menuBrand: candidate.brand,
+            menuCategory: candidate.category,
+          })),
         })),
-      })),
-    });
+      }),
+    );
   }
 
   private mergeRecognitionCandidatesById(
@@ -6499,6 +6601,7 @@ ${JSON.stringify(
 
     return {
       ...matchedMenu,
+      foodIndex,
       confidence:
         confidence === null
           ? prediction.confidence
