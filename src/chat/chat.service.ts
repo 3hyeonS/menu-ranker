@@ -2095,14 +2095,11 @@ export class ChatService {
       mealTime,
       'regular',
     );
-    const feedbackIntent = this.buildFeedbackIntent('개별 메뉴 피드백');
-
     const buildFeedbackPayload = (
       targetMatchedMenus: ComparisonMenuMatch[],
     ) => {
-      const combinationNutrition = this.sumFeedbackNutrition(
-        targetMatchedMenus.map(({ menu }) => menu),
-      );
+      const combinationNutrition =
+        this.sumFeedbackNutrition(targetMatchedMenus);
       const combinationScore = this.scoreFeedbackCombination(
         combinationNutrition,
         userInfo,
@@ -2114,7 +2111,11 @@ export class ChatService {
         this.toFeedbackMenuResponse(
           match.inputMenuName,
           match.menu,
-          this.scoreMenu(match.menu, feedbackIntent, userInfo, rankingBasis),
+          this.scoreFeedbackCombination(
+            this.sumFeedbackNutrition([match]),
+            userInfo,
+            rankingBasis,
+          ),
           match,
         ),
       );
@@ -2148,7 +2149,7 @@ export class ChatService {
     let validatedMatchedMenus = matchedMenus;
     let feedback = buildFeedbackPayload(validatedMatchedMenus);
     const combinationNutrition = this.sumFeedbackNutrition(
-      validatedMatchedMenus.map(({ menu }) => menu),
+      validatedMatchedMenus,
     );
 
     try {
@@ -10436,17 +10437,24 @@ ${JSON.stringify(
     return response;
   }
 
-  private sumFeedbackNutrition(menus: MenuEntity[]): FeedbackNutrition {
-    return menus.reduce(
-      (acc, menu) => {
-        acc.calories += menu.calories ?? 0;
-        acc.carbs += this.getEffectiveCarbs(menu);
-        acc.protein += menu.protein ?? 0;
-        acc.fat += this.getEffectiveFat(menu);
-        acc.sugars += menu.sugars ?? 0;
-        acc.sodium += menu.sodium ?? 0;
-        acc.caffeine += menu.caffeine ?? 0;
-        acc.weight += menu.weight ?? 0;
+  private sumFeedbackNutrition(
+    matches: ComparisonMenuMatch[],
+  ): FeedbackNutrition {
+    return matches.reduce(
+      (acc, match) => {
+        const { menu } = match;
+        const multiplier = this.getFeedbackQuantityMultiplier(match);
+        acc.calories += Number(menu.calories ?? 0) * multiplier;
+        acc.carbs += this.getEffectiveCarbs(menu) * multiplier;
+        acc.protein += Number(menu.protein ?? 0) * multiplier;
+        acc.fat += this.getEffectiveFat(menu) * multiplier;
+        acc.sugars += Number(menu.sugars ?? 0) * multiplier;
+        acc.sodium += Number(menu.sodium ?? 0) * multiplier;
+        acc.caffeine += Number(menu.caffeine ?? 0) * multiplier;
+        acc.weight +=
+          multiplier === 1
+            ? Number(menu.weight ?? 0)
+            : Number(match.estimatedQuantity);
         return acc;
       },
       {
@@ -10460,6 +10468,22 @@ ${JSON.stringify(
         weight: 0,
       },
     );
+  }
+
+  private getFeedbackQuantityMultiplier(match: ComparisonMenuMatch): number {
+    const estimatedQuantity = Number(match.estimatedQuantity);
+    const referenceWeight = Number(match.menu.weight);
+
+    if (
+      !Number.isFinite(estimatedQuantity) ||
+      estimatedQuantity <= 0 ||
+      !Number.isFinite(referenceWeight) ||
+      referenceWeight <= 0
+    ) {
+      return 1;
+    }
+
+    return getRecordedWeightMultiplier(estimatedQuantity, referenceWeight);
   }
 
   private sumFeedbackEstimatedCalories(
@@ -12286,29 +12310,34 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
     userInfo: UserInfoEntity;
     dailyNutrition: DailyNutrition;
     basis: ReturnType<ChatService['buildRecommendationBasis']>;
-    matchedMenus: Array<{ inputMenuName: string; menu: MenuEntity }>;
+    matchedMenus: ComparisonMenuMatch[];
     combinationNutrition: FeedbackNutrition;
   }): Promise<GeminiFeedbackScoreResult | null> {
     const menusPayload = params.matchedMenus.map(
-      ({ inputMenuName, menu }, index) => ({
-        order: index + 1,
-        input_menu_name: inputMenuName,
-        menu_id: menu.id,
-        menu_name: menu.name,
-        display_menu_name: stripPublicMenuSourcePrefix(menu.name),
-        brand: menu.brand ?? null,
-        category: menu.category ?? null,
-        unit: menu.unit,
-        weight: roundNullableToOneDecimal(menu.weight) ?? 0,
-        unit_quantity: menu.unit_quantity,
-        calories: roundNullableToOneDecimal(menu.calories) ?? 0,
-        carbs: roundToOneDecimal(this.getEffectiveCarbs(menu)),
-        protein: roundNullableToOneDecimal(menu.protein) ?? 0,
-        fat: roundToOneDecimal(this.getEffectiveFat(menu)),
-        sugars: roundNullableToOneDecimal(menu.sugars) ?? 0,
-        sodium: roundNullableToOneDecimal(menu.sodium) ?? 0,
-        caffeine: roundNullableToOneDecimal(menu.caffeine) ?? 0,
-      }),
+      (match, index) => {
+        const { inputMenuName, menu } = match;
+        const nutrition = this.sumFeedbackNutrition([match]);
+
+        return {
+          order: index + 1,
+          input_menu_name: inputMenuName,
+          menu_id: menu.id,
+          menu_name: menu.name,
+          display_menu_name: stripPublicMenuSourcePrefix(menu.name),
+          brand: menu.brand ?? null,
+          category: menu.category ?? null,
+          unit: menu.unit,
+          weight: roundToOneDecimal(nutrition.weight),
+          unit_quantity: menu.unit_quantity,
+          calories: roundToOneDecimal(nutrition.calories),
+          carbs: roundToOneDecimal(nutrition.carbs),
+          protein: roundToOneDecimal(nutrition.protein),
+          fat: roundToOneDecimal(nutrition.fat),
+          sugars: roundToOneDecimal(nutrition.sugars),
+          sodium: roundToOneDecimal(nutrition.sodium),
+          caffeine: roundToOneDecimal(nutrition.caffeine),
+        };
+      },
     );
     const prompt = `
 피드백 응답에 사용할 적합도 점수를 한국어가 아닌 JSON object로만 산출해줘.

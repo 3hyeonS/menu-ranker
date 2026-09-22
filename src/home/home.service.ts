@@ -62,6 +62,8 @@ import {
   canonicalizeMenuSearchName,
   findPreferredGenericFoodImageCandidate,
   isGenericPlainRiceName,
+  isPreferredGenericFriedEggMenu,
+  isPreferredGenericPlainRiceMenu,
   normalizeMenuSearchName,
   prioritizeGenericFoodImageCandidate,
   stripPublicMenuSourcePrefix,
@@ -139,6 +141,42 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
 const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+const FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS = [
+  '볶음밥',
+  '비빔밥',
+  '덮밥',
+  '국밥',
+  '주먹밥',
+  '김밥',
+  '초밥',
+  '샤브샤브',
+  '파스타',
+  '스파게티',
+  '짜장면',
+  '자장면',
+  '짬뽕',
+  '냉면',
+  '국수',
+  '라면',
+  '우동',
+  '찌개',
+  '전골',
+  '샐러드',
+  '스테이크',
+  '돈가스',
+  '돈까스',
+  '카츠',
+  '피자',
+  '버거',
+  '만두',
+  '튀김',
+  '구이',
+  '조림',
+  '볶음',
+  '무침',
+  '찜',
+  '탕',
+] as const;
 
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
@@ -149,12 +187,28 @@ type HomeFoodImageRecognitionCandidate = {
   brand: string | null;
   category: string | null;
   weight: number | null;
+  unit: number | null;
+};
+
+type HomeFoodImagePrediction = {
+  foodName: string;
+  brand: string | null;
+  confidence: number | null;
+  estimatedQuantity: number | null;
+  estimatedQuantityUnit: 'g' | 'ml' | null;
+  quantityConfidence: number | null;
 };
 
 type HomeFoodImageCandidateGroup = {
   foodIndex: number;
   foodName: string;
   candidates: HomeFoodImageRecognitionCandidate[];
+};
+
+type HomeFoodImageMatchedMenu = {
+  foodIndex: number;
+  menu: HomeFoodImageRecognitionCandidate;
+  estimatedQuantity: number;
 };
 
 type AlternativeNutritionGoal =
@@ -1177,7 +1231,13 @@ export class HomeService {
             })()),
           ]
         : exactMenus,
-    ).sort((left, right) => {
+    );
+
+    const uniqueMenuList = this.dedupeMenusByCompactNameAndBrand(
+      this.dedupeMenusByDisplayName(rawMenuList),
+    );
+    const basePagedMenuList = uniqueMenuList.slice(0, limit);
+    const sortedPagedMenuList = [...basePagedMenuList].sort((left, right) => {
       const leftPreferred = this.isPreferredShineMuscatSearchResult(
         left,
         keyword,
@@ -1224,25 +1284,34 @@ export class HomeService {
 
       return 0;
     });
-
-    const uniqueMenuList = this.dedupeMenusByCompactNameAndBrand(
-      this.dedupeMenusByDisplayName(rawMenuList),
-    );
-    const basePagedMenuList = uniqueMenuList.slice(0, limit);
     const pagedMenuList =
       cursor === undefined
         ? await this.insertPopularRecordedMenusAfterTopSearchResults(
-            basePagedMenuList,
+            sortedPagedMenuList,
           )
-        : basePagedMenuList;
+        : sortedPagedMenuList;
     const menu_list: MenuSimpleResponseDto[] = pagedMenuList.map(
       (menu) => new MenuSimpleResponseDto(menu),
     );
-    const nextCursor =
-      (uniqueMenuList.length > limit || rawMenuList.length >= rawFetchLimit) &&
-      rawMenuList.length > 0
-        ? rawMenuList[rawMenuList.length - 1].id
-        : null;
+    const hasMoreResults =
+      uniqueMenuList.length > limit || rawMenuList.length >= rawFetchLimit;
+    const uniqueMenuIds = new Set(uniqueMenuList.map((menu) => menu.id));
+    const pageMenuIds = new Set(basePagedMenuList.map((menu) => menu.id));
+    let nextCursor: number | null = null;
+
+    if (hasMoreResults) {
+      for (const menu of rawMenuList) {
+        if (exactMenuIds.includes(menu.id)) {
+          continue;
+        }
+
+        if (uniqueMenuIds.has(menu.id) && !pageMenuIds.has(menu.id)) {
+          break;
+        }
+
+        nextCursor = menu.id;
+      }
+    }
     const has_result = menu_list.length > 0;
 
     return new SearchResponseDto(has_result, menu_list, nextCursor);
@@ -1440,73 +1509,16 @@ export class HomeService {
         foodImageDescription,
       );
 
-      if (perFoodRecognized.menu_ids.length > 0) {
-        const imageUrl = await this.uploadRecognizedFoodImage(user, file);
-
-        return new FoodImageRecognitionResponseDto({
-          ...perFoodRecognized,
-          image_url: imageUrl,
-        });
+      if (perFoodRecognized.menu_ids.length === 0) {
+        throw new BadRequestException(
+          FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
+        );
       }
 
-      const menus = await this.getFoodImageRecognitionCandidateMenus(
-        user.id,
-        foodImageDescription,
-      );
-
-      if (menus.length === 0) {
-        throw new NotFoundException('No menus available for recognition');
-      }
-
-      const prompt = `
-음식 사진을 보고, 아래 후보 메뉴 중 사진에 실제로 포함된 음식만 골라서 JSON object만 반환해.
-
-규칙:
-- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- 후보 메뉴에 없는 음식은 절대 추가하지 마
-- 가장 일치하는 후보 menu id를 선택해
-- 같은 음식이 여러 개면 개수를 합산해서 수량으로 반환해
-- 확실하지 않은 음식은 제외해
-- menu_ids와 menu_quantities의 길이는 반드시 같아야 해
-- 수량은 0보다 큰 숫자만 허용해
-- 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
-- 사진 문제로 실패한 경우 recognition_status는 "failed", menu_ids와 menu_quantities는 빈 배열로 반환해
-- 음식은 보이지만 후보 메뉴와 일치하는 항목이 없으면 failure_reason은 "NO_MATCHING_MENU"로 반환해
-
-후보 메뉴:
-${JSON.stringify(menus)}
-
-1차 사진 분석:
-${JSON.stringify(foodImageDescription)}
-
-반환 shape:
-{
-  "recognition_status": "recognized",
-  "failure_reason": null,
-  "menu_ids": [1, 2],
-  "menu_quantities": [1, 2]
-}
-
-failure_reason enum:
-- LOW_IMAGE_QUALITY: 사진의 해상도/화질이 너무 낮음
-- FOOD_TOO_SMALL: 사진에서 음식이 너무 작게 보임
-- TOO_BLURRY: 사진이 흔들렸거나 초점이 맞지 않음
-- POOR_LIGHTING: 사진이 너무 어둡거나 밝아 음식 구분이 어려움
-- FOOD_OCCLUDED: 음식이 가려졌거나 잘려서 판단이 어려움
-- NO_FOOD_DETECTED: 사진에서 음식을 찾을 수 없음
-- NO_MATCHING_MENU: 음식은 보이지만 후보 메뉴와 매칭할 수 없음
-`.trim();
-
-      const data = await this.callGeminiJsonWithImage(
-        prompt,
-        file,
-        'Food image recognition is unavailable',
-      );
-      const recognized = this.normalizeFoodImageRecognition(data, menus);
       const imageUrl = await this.uploadRecognizedFoodImage(user, file);
 
       return new FoodImageRecognitionResponseDto({
-        ...recognized,
+        ...perFoodRecognized,
         image_url: imageUrl,
       });
     } catch (error) {
@@ -1516,6 +1528,7 @@ failure_reason enum:
   }
 
   private async describeFoodImage(file: Express.Multer.File): Promise<{
+    foods: HomeFoodImagePrediction[];
     foodNames: string[];
     visualDescription: string | null;
   }> {
@@ -1524,20 +1537,34 @@ failure_reason enum:
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- 음식명은 알 수 있는 범위에서 최대한 구체적으로 작성해
-- 정확한 메뉴명을 모르더라도 "양념된 구운 돼지고기", "숯불에 구운 고기", "구운 마늘"처럼 보이는 특징을 food_names에 넣어
+- 음식명은 알 수 있는 범위에서 최대한 구체적으로 작성하되 브랜드명은 제외해
+- 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣고 불확실하면 null로 반환해
+- 정확한 메뉴명을 모르더라도 "양념된 구운 돼지고기", "숯불에 구운 고기", "구운 마늘"처럼 보이는 특징을 detected_foods에 넣어
 - visual_description에는 주요 식재료, 조리 방식, 양념 여부, 보이는 구성 요소를 1~3문장으로 설명해
-- 같은 음식이 여러 개 보여도 food_names에는 중복 없이 한 번만 넣어
+- 식판, 도시락, 한상차림은 밥, 국/찌개, 고기·생선·계란 반찬, 채소 반찬, 김치·절임류, 소스를 가능한 한 개별 음식으로 분리해
+- 같은 음식이 여러 개 보여도 detected_foods에는 중복 없이 한 번만 넣고 사진에 보이는 전체 양을 합산해
+- 각 음식의 실제 전체 양을 estimated_quantity로 추정해. 고형 음식은 g, 음료·국물은 ml 단위를 사용해
+- 접시, 수저, 포장 용량처럼 크기 단서가 있으면 활용하고, 부족하면 일반적인 1인분 크기를 기준으로 보수적으로 추정해
+- quantity_confidence는 음식 양 추정 신뢰도를 0~1로 반환해
 - 확실하지 않은 경우에도 사진에서 보이는 범용 음식 설명은 남겨
 - 사진 문제로 인식이 어렵다면 아래 failure_reason 중 가장 가까운 값을 하나 선택해
-- 사진 문제로 실패한 경우에만 recognition_status는 "failed", food_names는 빈 배열로 반환해
+- 사진 문제로 실패한 경우에만 recognition_status는 "failed", detected_foods는 빈 배열로 반환해
 - 음식은 보이지만 정확한 메뉴명을 특정하기 어려운 경우에는 실패로 처리하지 말고 범용 설명을 반환해
 
 반환 shape:
 {
   "recognition_status": "recognized",
   "failure_reason": null,
-  "food_names": ["양념된 구운 고기", "구운 마늘"],
+  "detected_foods": [
+    {
+      "food_name": "양념된 구운 고기",
+      "brand": null,
+      "confidence": 0.86,
+      "estimated_quantity": 180,
+      "quantity_unit": "g",
+      "quantity_confidence": 0.65
+    }
+  ],
   "visual_description": "불판 위에 양념된 고기와 소금구이처럼 보이는 고기, 구운 마늘이 함께 보입니다."
 }
 
@@ -1566,10 +1593,13 @@ failure_reason enum:
       );
     }
 
-    const foodNames = Array.isArray(data?.food_names) ? data.food_names : [];
-    const normalizedFoodNames = foodNames
-      .map((foodName) => (typeof foodName === 'string' ? foodName.trim() : ''))
-      .filter((foodName) => foodName.length >= 2);
+    const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
+      ? data.detected_foods
+      : [];
+    const foods = detectedFoods
+      .map((value) => this.normalizeHomeFoodImagePrediction(value))
+      .filter((food): food is HomeFoodImagePrediction => food !== null)
+      .slice(0, 10);
 
     const visualDescription =
       typeof data?.visual_description === 'string' &&
@@ -1577,21 +1607,73 @@ failure_reason enum:
         ? data.visual_description.trim()
         : null;
 
-    if (normalizedFoodNames.length === 0 && !visualDescription) {
+    if (foods.length === 0) {
       throw new BadRequestException(
         FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES.NO_MATCHING_MENU,
       );
     }
 
     return {
-      foodNames: Array.from(new Set<string>(normalizedFoodNames)).slice(0, 10),
+      foods,
+      foodNames: foods.map((food) => food.foodName),
       visualDescription,
     };
+  }
+
+  private normalizeHomeFoodImagePrediction(
+    value: unknown,
+  ): HomeFoodImagePrediction | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const item = value as Record<string, unknown>;
+    const foodName =
+      typeof item.food_name === 'string' ? item.food_name.trim() : '';
+    const rawUnit =
+      typeof (item.quantity_unit ?? item.estimated_quantity_unit) === 'string'
+        ? String(
+            item.quantity_unit ?? item.estimated_quantity_unit,
+          ).toLowerCase()
+        : '';
+    const estimatedQuantity = this.asNullableNumber(
+      item.estimated_quantity ?? item.quantity,
+    );
+
+    if (foodName.length === 0) {
+      return null;
+    }
+
+    return {
+      foodName,
+      brand:
+        typeof item.brand === 'string' && item.brand.trim().length > 0
+          ? item.brand.trim().slice(0, 80)
+          : null,
+      confidence: this.normalizeFoodImageConfidence(item.confidence),
+      estimatedQuantity:
+        estimatedQuantity !== null && estimatedQuantity > 0
+          ? roundToOneDecimal(Math.min(estimatedQuantity, 5000))
+          : null,
+      estimatedQuantityUnit:
+        rawUnit === 'g' || rawUnit === 'ml' ? rawUnit : null,
+      quantityConfidence: this.normalizeFoodImageConfidence(
+        item.quantity_confidence,
+      ),
+    };
+  }
+
+  private normalizeFoodImageConfidence(value: unknown): number | null {
+    const confidence = this.asNullableNumber(value);
+    return confidence === null
+      ? null
+      : roundToOneDecimal(Math.min(Math.max(confidence, 0), 1) * 100) / 100;
   }
 
   private async getFoodImageRecognitionCandidateMenus(
     userId: number,
     description: {
+      foods: HomeFoodImagePrediction[];
       foodNames: string[];
       visualDescription: string | null;
     },
@@ -1602,6 +1684,7 @@ failure_reason enum:
       brand: string | null;
       category: string | null;
       weight: number | null;
+      unit: number | null;
     }>
   > {
     const vectorMenus = await this.getVectorFoodImageCandidateMenus(
@@ -1619,6 +1702,7 @@ failure_reason enum:
   private async getVectorFoodImageCandidateMenus(
     userId: number,
     description: {
+      foods: HomeFoodImagePrediction[];
       foodNames: string[];
       visualDescription: string | null;
     },
@@ -1629,6 +1713,7 @@ failure_reason enum:
       brand: string | null;
       category: string | null;
       weight: number | null;
+      unit: number | null;
     }>
   > {
     if (
@@ -1684,6 +1769,7 @@ failure_reason enum:
     userId: number,
     file: Express.Multer.File,
     description: {
+      foods: HomeFoodImagePrediction[];
       foodNames: string[];
       visualDescription: string | null;
     },
@@ -1691,27 +1777,47 @@ failure_reason enum:
     menu_ids: number[];
     menu_quantities: number[];
   }> {
-    const foodNames = description.foodNames.slice(0, 10);
+    const predictions = description.foods.slice(0, 10);
 
-    if (foodNames.length === 0) {
+    if (predictions.length === 0) {
       return { menu_ids: [], menu_quantities: [] };
     }
 
-    const candidateGroups = await Promise.all(
-      foodNames.map(async (foodName, index) => {
+    let candidateGroups = await Promise.all(
+      predictions.map(async (prediction, index) => {
         const candidates = await this.getFoodImageCandidatesForSingleFood(
           userId,
-          foodName,
+          prediction,
           description.visualDescription,
         );
 
         return {
           foodIndex: index,
-          foodName,
+          foodName: prediction.foodName,
           candidates,
         };
       }),
     );
+    if (candidateGroups.some((group) => group.candidates.length === 0)) {
+      const allMenus =
+        await this.getAllFoodImageRecognitionCandidateMenus(userId);
+      const limit = this.getFoodImagePerFoodVectorCandidateLimit();
+      candidateGroups = candidateGroups.map((group) => {
+        if (group.candidates.length > 0) {
+          return group;
+        }
+
+        const prediction = predictions[group.foodIndex];
+        return {
+          ...group,
+          candidates: this.findTopHomeFoodImageLocalCandidates(
+            prediction,
+            allMenus,
+            limit,
+          ),
+        };
+      });
+    }
     const groupsWithCandidates = candidateGroups.filter(
       (group) => group.candidates.length > 0,
     );
@@ -1720,17 +1826,26 @@ failure_reason enum:
       return { menu_ids: [], menu_quantities: [] };
     }
 
-    return await this.rematchHomeFoodImageMenusWithGemini(
+    const rematched = await this.rematchHomeFoodImageMenusWithGemini(
       file,
+      predictions,
       groupsWithCandidates,
     );
+    const completed = this.mergeHomeFoodImageMatchesWithLocalFallback(
+      predictions,
+      groupsWithCandidates,
+      rematched,
+    );
+
+    return this.toHomeFoodImageRecognitionResult(completed);
   }
 
   private async getFoodImageCandidatesForSingleFood(
     userId: number,
-    foodName: string,
+    prediction: HomeFoodImagePrediction,
     visualDescription: string | null,
   ): Promise<HomeFoodImageRecognitionCandidate[]> {
+    const { foodName } = prediction;
     const limit = this.getFoodImagePerFoodVectorCandidateLimit();
     const keywordMenus = await this.searchFoodImageCandidateMenusByKeyword(
       userId,
@@ -1738,12 +1853,23 @@ failure_reason enum:
       limit,
       visualDescription,
     );
+    const brandMenus = prediction.brand
+      ? await this.searchFoodImageCandidateMenusByBrand(
+          userId,
+          prediction.brand,
+          limit,
+        )
+      : [];
+    let vectorMenus: HomeFoodImageRecognitionCandidate[] = [];
 
     if (this.isVectorSearchEnabled() && this.menuVectorService) {
       try {
         const vectorResults = await this.menuVectorService.searchMenusByText(
           [
             `음식명: ${foodName}`,
+            prediction.brand
+              ? `이미지에서 읽힌 브랜드/라벨: ${prediction.brand}`
+              : null,
             visualDescription ? `사진 전체 특징: ${visualDescription}` : null,
           ]
             .filter((value): value is string => !!value)
@@ -1754,18 +1880,10 @@ failure_reason enum:
           },
         );
 
-        const vectorMenus = await this.getFoodImageRecognitionMenusByIds(
+        vectorMenus = await this.getFoodImageRecognitionMenusByIds(
           userId,
           vectorResults.map((result) => result.menuId),
         );
-
-        return prioritizeGenericFoodImageCandidate(
-          foodName,
-          this.mergeFoodImageRecognitionCandidates([
-            ...keywordMenus,
-            ...vectorMenus,
-          ]),
-        ).slice(0, limit);
       } catch (error) {
         console.warn('[HOME] per-food vector image search failed', {
           foodName,
@@ -1774,7 +1892,25 @@ failure_reason enum:
       }
     }
 
-    return prioritizeGenericFoodImageCandidate(foodName, keywordMenus);
+    const preferredMenus = prediction.brand
+      ? []
+      : [...keywordMenus, ...vectorMenus].filter(
+          (menu) =>
+            isPreferredGenericFriedEggMenu(foodName, menu.name) ||
+            isPreferredGenericPlainRiceMenu(foodName, menu.name),
+        );
+
+    return prioritizeGenericFoodImageCandidate(
+      foodName,
+      this.mergeFoodImageRecognitionCandidates([
+        ...brandMenus,
+        ...preferredMenus,
+        ...keywordMenus,
+        ...vectorMenus,
+      ]).filter((candidate) =>
+        this.isHomeFoodImageDishTypeCompatible(foodName, candidate),
+      ),
+    ).slice(0, limit);
   }
 
   private mergeFoodImageRecognitionCandidates(
@@ -1789,6 +1925,59 @@ failure_reason enum:
     });
 
     return Array.from(candidateMap.values());
+  }
+
+  private findTopHomeFoodImageLocalCandidates(
+    prediction: HomeFoodImagePrediction,
+    menus: HomeFoodImageRecognitionCandidate[],
+    limit: number,
+  ): HomeFoodImageRecognitionCandidate[] {
+    return menus
+      .filter((menu) =>
+        this.isHomeFoodImageDishTypeCompatible(prediction.foodName, menu),
+      )
+      .map((menu) => ({
+        menu,
+        score: this.calculateHomeFoodImageCandidateScore(prediction, menu),
+      }))
+      .filter(({ score }) => score >= 32)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, limit)
+      .map(({ menu }) => menu);
+  }
+
+  private calculateHomeFoodImageCandidateScore(
+    prediction: HomeFoodImagePrediction,
+    menu: HomeFoodImageRecognitionCandidate,
+  ): number {
+    const input = this.normalizeCompactSearchText(prediction.foodName);
+    const menuName = this.normalizeCompactSearchText(menu.name);
+    const brand = this.normalizeCompactSearchText(menu.brand ?? '');
+    const category = this.normalizeCompactSearchText(menu.category ?? '');
+    const searchable = `${menuName}${brand}${category}`;
+    let score = 0;
+
+    if (menuName === input) {
+      score = 100;
+    } else if (menuName.includes(input) || input.includes(menuName)) {
+      score = 84;
+    } else if (searchable.includes(input)) {
+      score = 74;
+    } else if (
+      category &&
+      (input.includes(category) || category.includes(input))
+    ) {
+      score = 68;
+    }
+
+    const recognizedBrand = this.normalizeCompactSearchText(
+      prediction.brand ?? '',
+    );
+    if (recognizedBrand && brand.includes(recognizedBrand)) {
+      score += 20;
+    }
+
+    return score;
   }
 
   private async searchFoodImageCandidateMenusByKeyword(
@@ -1825,6 +2014,8 @@ failure_reason enum:
         'menu.brand AS brand',
         'menu.category AS category',
         'menu.weight AS weight',
+        'menu.unit AS unit',
+        'menu.unit AS unit',
       ])
       .where(
         new Brackets((qb) => {
@@ -1875,6 +2066,7 @@ failure_reason enum:
         brand: string | null;
         category: string | null;
         weight: number | null;
+        unit: number | null;
       }>();
 
     return rows.map((row) => ({
@@ -1883,23 +2075,102 @@ failure_reason enum:
       brand: row.brand ?? null,
       category: row.category ?? null,
       weight: this.asNullableNumber(row.weight),
+      unit: this.asNullableNumber(row.unit),
     }));
+  }
+
+  private async searchFoodImageCandidateMenusByBrand(
+    userId: number,
+    brand: string,
+    limit: number,
+  ): Promise<HomeFoodImageRecognitionCandidate[]> {
+    const compactBrand = this.normalizeCompactSearchText(brand);
+    if (!compactBrand) {
+      return [];
+    }
+
+    const rows = await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select([
+        'menu.id AS id',
+        'menu.name AS name',
+        'menu.brand AS brand',
+        'menu.category AS category',
+        'menu.weight AS weight',
+        'menu.unit AS unit',
+      ])
+      .where(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
+        }),
+      )
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where(
+            "REPLACE(LOWER(COALESCE(menu.brand, '')), ' ', '') LIKE :brand",
+          ).orWhere("REPLACE(LOWER(menu.name), ' ', '') LIKE :brand");
+        }),
+      )
+      .setParameter('brand', `%${compactBrand}%`)
+      .orderBy('menu.id', 'ASC')
+      .limit(limit)
+      .getRawMany<{
+        id: number;
+        name: string;
+        brand: string | null;
+        category: string | null;
+        weight: number | null;
+        unit: number | null;
+      }>();
+
+    return rows.map((row) => ({
+      id: Number(row.id),
+      name: row.name,
+      brand: row.brand ?? null,
+      category: row.category ?? null,
+      weight: this.asNullableNumber(row.weight),
+      unit: this.asNullableNumber(row.unit),
+    }));
+  }
+
+  private getHomeFoodImageStrictDishTypeToken(foodName: string): string | null {
+    const compactFoodName = this.normalizeCompactSearchText(foodName);
+    return (
+      FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS.find((token) =>
+        compactFoodName.includes(token),
+      ) ?? null
+    );
+  }
+
+  private isHomeFoodImageDishTypeCompatible(
+    foodName: string,
+    menu: HomeFoodImageRecognitionCandidate,
+  ): boolean {
+    const requiredDishType = this.getHomeFoodImageStrictDishTypeToken(foodName);
+    if (!requiredDishType) {
+      return true;
+    }
+
+    return (
+      this.normalizeCompactSearchText(menu.name).includes(requiredDishType) ||
+      this.normalizeCompactSearchText(menu.category ?? '').includes(
+        requiredDishType,
+      )
+    );
   }
 
   private async rematchHomeFoodImageMenusWithGemini(
     file: Express.Multer.File,
+    predictions: HomeFoodImagePrediction[],
     candidateGroups: HomeFoodImageCandidateGroup[],
-  ): Promise<{
-    menu_ids: number[];
-    menu_quantities: number[];
-  }> {
+  ): Promise<HomeFoodImageMatchedMenu[]> {
     const candidateMap = new Map<number, HomeFoodImageRecognitionCandidate>();
     const candidateIdsByFoodIndex = new Map<number, Set<number>>();
-    const foodNamesByIndex = new Map<number, string>();
 
     candidateGroups.forEach((group) => {
       const ids = new Set<number>();
-      foodNamesByIndex.set(group.foodIndex, group.foodName);
 
       group.candidates.forEach((candidate) => {
         candidateMap.set(candidate.id, candidate);
@@ -1918,13 +2189,27 @@ failure_reason enum:
 - 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
 - 후보 목록에 없는 menu_id는 절대 반환하지 마
 - 사진의 시각 정보, food_name, 후보 메뉴명/브랜드/카테고리를 함께 비교해
+- detected_foods.brand가 null이 아니면 사진에서 읽힌 브랜드이므로 같은 브랜드의 후보를 우선해
+- food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥과 김치볶음, 참치김밥과 참치샐러드는 서로 다른 음식이야
 - food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
 - "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
 - food_name이 일반적인 "밥", "흰밥", "쌀밥", "백미밥"이고 포장이나 브랜드 단서가 없으면 "(식약처_음식) 밥"을 우선해
 - "따끈한 흰쌀밥 득템" 같은 상품 메뉴는 해당 포장이나 브랜드가 사진에서 명확할 때만 선택해
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 위치에 보여도 같은 menu_id는 한 번만 반환해
-- quantity는 사진 속 해당 음식의 대략적인 인분/개수야. 모르겠으면 1로 반환해
+
+detected_foods:
+${JSON.stringify(
+  predictions.map((prediction, index) => ({
+    index,
+    food_name: prediction.foodName,
+    brand: prediction.brand,
+    confidence: prediction.confidence,
+    estimated_quantity: prediction.estimatedQuantity,
+    estimated_quantity_unit: prediction.estimatedQuantityUnit,
+    quantity_confidence: prediction.quantityConfidence,
+  })),
+)}
 
 food_groups:
 ${JSON.stringify(
@@ -1945,8 +2230,7 @@ ${JSON.stringify(
   "detected_foods": [
     {
       "food_index": 0,
-      "menu_id": 1,
-      "quantity": 1
+      "menu_id": 1
     }
   ]
 }
@@ -1962,75 +2246,146 @@ ${JSON.stringify(
         ? data.detected_foods
         : [];
 
-      return this.normalizeHomeFoodImageRematchResult(
+      return this.normalizeHomeFoodImageRematches(
         detectedFoods,
+        predictions,
         candidateMap,
         candidateIdsByFoodIndex,
-        foodNamesByIndex,
       );
     } catch (error) {
       console.warn('[HOME] food image Gemini rematch failed', {
         message: error instanceof Error ? error.message : String(error),
       });
 
-      return { menu_ids: [], menu_quantities: [] };
+      return [];
     }
   }
 
-  private normalizeHomeFoodImageRematchResult(
+  private normalizeHomeFoodImageRematches(
     values: unknown[],
+    predictions: HomeFoodImagePrediction[],
     candidateMap: Map<number, HomeFoodImageRecognitionCandidate>,
     candidateIdsByFoodIndex: Map<number, Set<number>>,
-    foodNamesByIndex: Map<number, string>,
-  ): {
-    menu_ids: number[];
-    menu_quantities: number[];
-  } {
-    const merged = new Map<number, number>();
-
-    values.forEach((value) => {
+  ): HomeFoodImageMatchedMenu[] {
+    return values.flatMap((value): HomeFoodImageMatchedMenu[] => {
       if (!value || typeof value !== 'object') {
-        return;
+        return [];
       }
 
       const item = value as Record<string, unknown>;
       const foodIndex = this.asNullableNumber(item.food_index);
       const menuId = this.asNullableNumber(item.menu_id);
-      const quantity = this.asNullableNumber(item.quantity) ?? 1;
 
       if (
         foodIndex === null ||
         menuId === null ||
         !Number.isInteger(foodIndex) ||
         !Number.isInteger(menuId) ||
-        quantity <= 0 ||
+        foodIndex < 0 ||
+        foodIndex >= predictions.length ||
         !candidateIdsByFoodIndex.get(foodIndex)?.has(menuId)
       ) {
-        return;
+        return [];
       }
 
-      const recognizedFoodName = foodNamesByIndex.get(foodIndex) ?? '';
-      const preferredCandidate = findPreferredGenericFoodImageCandidate(
-        recognizedFoodName,
-        Array.from(candidateIdsByFoodIndex.get(foodIndex) ?? [])
-          .map((candidateId) => candidateMap.get(candidateId))
-          .filter(
-            (candidate): candidate is HomeFoodImageRecognitionCandidate =>
-              !!candidate,
-          ),
-      );
+      const prediction = predictions[foodIndex];
+      const groupCandidates = Array.from(
+        candidateIdsByFoodIndex.get(foodIndex) ?? [],
+      )
+        .map((candidateId) => candidateMap.get(candidateId))
+        .filter(
+          (candidate): candidate is HomeFoodImageRecognitionCandidate =>
+            !!candidate,
+        );
+      const preferredCandidate = prediction.brand
+        ? undefined
+        : findPreferredGenericFoodImageCandidate(
+            prediction.foodName,
+            groupCandidates,
+          );
       const candidate = preferredCandidate ?? candidateMap.get(menuId);
 
-      if (!candidate) {
-        return;
+      if (
+        !candidate ||
+        !this.isHomeFoodImageDishTypeCompatible(prediction.foodName, candidate)
+      ) {
+        return [];
       }
 
-      const weight = this.asNullableNumber(candidate.weight) ?? 0;
-      const weightQuantity = weight > 0 ? weight * quantity : quantity;
-      const previousQuantity = merged.get(candidate.id) ?? 0;
+      return [
+        this.toHomeFoodImageMatchedMenu(foodIndex, prediction, candidate),
+      ];
+    });
+  }
+
+  private mergeHomeFoodImageMatchesWithLocalFallback(
+    predictions: HomeFoodImagePrediction[],
+    candidateGroups: HomeFoodImageCandidateGroup[],
+    rematched: HomeFoodImageMatchedMenu[],
+  ): HomeFoodImageMatchedMenu[] {
+    const matchedIndexes = new Set(rematched.map((match) => match.foodIndex));
+    const groupsByIndex = new Map(
+      candidateGroups.map((group) => [group.foodIndex, group]),
+    );
+    const fallbackMatches = predictions.flatMap(
+      (prediction, foodIndex): HomeFoodImageMatchedMenu[] => {
+        if (matchedIndexes.has(foodIndex)) {
+          return [];
+        }
+
+        const candidates = groupsByIndex.get(foodIndex)?.candidates ?? [];
+        const preferredCandidate = prediction.brand
+          ? undefined
+          : findPreferredGenericFoodImageCandidate(
+              prediction.foodName,
+              candidates,
+            );
+        const candidate = preferredCandidate ?? candidates[0];
+
+        if (
+          !candidate ||
+          !this.isHomeFoodImageDishTypeCompatible(
+            prediction.foodName,
+            candidate,
+          )
+        ) {
+          return [];
+        }
+
+        return [
+          this.toHomeFoodImageMatchedMenu(foodIndex, prediction, candidate),
+        ];
+      },
+    );
+
+    return [...rematched, ...fallbackMatches];
+  }
+
+  private toHomeFoodImageMatchedMenu(
+    foodIndex: number,
+    prediction: HomeFoodImagePrediction,
+    menu: HomeFoodImageRecognitionCandidate,
+  ): HomeFoodImageMatchedMenu {
+    const estimatedQuantity =
+      prediction.estimatedQuantity ?? this.asNullableNumber(menu.weight) ?? 1;
+
+    return {
+      foodIndex,
+      menu,
+      estimatedQuantity: roundToOneDecimal(estimatedQuantity),
+    };
+  }
+
+  private toHomeFoodImageRecognitionResult(
+    matches: HomeFoodImageMatchedMenu[],
+  ): { menu_ids: number[]; menu_quantities: number[] } {
+    const merged = new Map<number, number>();
+    matches.forEach((match) => {
       merged.set(
-        candidate.id,
-        roundToOneDecimal(previousQuantity + weightQuantity),
+        match.menu.id,
+        roundToOneDecimal(
+          (merged.get(match.menu.id) ?? 0) + match.estimatedQuantity,
+        ),
       );
     });
 
@@ -2050,6 +2405,7 @@ ${JSON.stringify(
       brand: string | null;
       category: string | null;
       weight: number | null;
+      unit: number | null;
     }>
   > {
     if (menuIds.length === 0) {
@@ -2065,6 +2421,7 @@ ${JSON.stringify(
         'menu.brand AS brand',
         'menu.category AS category',
         'menu.weight AS weight',
+        'menu.unit AS unit',
       ])
       .where('menu.id IN (:...menuIds)', { menuIds })
       .andWhere(
@@ -2079,6 +2436,7 @@ ${JSON.stringify(
         brand: string | null;
         category: string | null;
         weight: number | null;
+        unit: number | null;
       }>();
     const menuMap = new Map(rows.map((menu) => [Number(menu.id), menu]));
 
@@ -2089,6 +2447,7 @@ ${JSON.stringify(
         ...menu,
         id: Number(menu.id),
         weight: this.asNullableNumber(menu.weight),
+        unit: this.asNullableNumber(menu.unit),
       }));
   }
 
@@ -2101,9 +2460,10 @@ ${JSON.stringify(
       brand: string | null;
       category: string | null;
       weight: number | null;
+      unit: number | null;
     }>
   > {
-    return await this.menuRepository
+    const rows = await this.menuRepository
       .createQueryBuilder('menu')
       .leftJoin('menu.user', 'user')
       .select([
@@ -2112,6 +2472,7 @@ ${JSON.stringify(
         'menu.brand AS brand',
         'menu.category AS category',
         'menu.weight AS weight',
+        'menu.unit AS unit',
       ])
       .where(
         new Brackets((qb) => {
@@ -2128,7 +2489,15 @@ ${JSON.stringify(
         brand: string | null;
         category: string | null;
         weight: number | null;
+        unit: number | null;
       }>();
+
+    return rows.map((menu) => ({
+      ...menu,
+      id: Number(menu.id),
+      weight: this.asNullableNumber(menu.weight),
+      unit: this.asNullableNumber(menu.unit),
+    }));
   }
 
   private isVectorSearchEnabled(): boolean {

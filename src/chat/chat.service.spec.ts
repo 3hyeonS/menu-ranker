@@ -1433,6 +1433,69 @@ describe('ChatService conversation memory', () => {
     expect(result).toBe(290);
   });
 
+  it('scales all feedback nutrition by the estimated food-image quantity', () => {
+    const service = createService() as any;
+    const menu = {
+      weight: 200,
+      calories: 300,
+      carbs: 60,
+      protein: 10,
+      fat: 4,
+      sugars: 2,
+      sodium: 400,
+      caffeine: 20,
+    };
+
+    const result = service.sumFeedbackNutrition([
+      {
+        inputMenuName: '밥',
+        menu,
+        estimatedQuantity: 100,
+        estimatedQuantityUnit: 'g',
+      },
+    ]);
+
+    expect(result).toEqual({
+      calories: 150,
+      carbs: 30,
+      protein: 5,
+      fat: 2,
+      sugars: 1,
+      sodium: 200,
+      caffeine: 10,
+      weight: 100,
+    });
+  });
+
+  it('keeps the original feedback nutrition when no estimate is available', () => {
+    const service = createService() as any;
+    const menu = {
+      weight: 200,
+      calories: 300,
+      carbs: 60,
+      protein: 10,
+      fat: 4,
+      sugars: 2,
+      sodium: 400,
+      caffeine: 20,
+    };
+
+    const result = service.sumFeedbackNutrition([
+      { inputMenuName: '밥', menu },
+    ]);
+
+    expect(result).toEqual({
+      calories: 300,
+      carbs: 60,
+      protein: 10,
+      fat: 4,
+      sugars: 2,
+      sodium: 400,
+      caffeine: 20,
+      weight: 200,
+    });
+  });
+
   it('replaces a processed fried-egg chat image match with the generic food menu', () => {
     const service = createService() as any;
     const result = service.normalizeRematchedFoodImageMenu(

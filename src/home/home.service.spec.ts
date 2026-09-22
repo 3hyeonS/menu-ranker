@@ -75,6 +75,7 @@ describe('HomeService menu search priority', () => {
           brand: null,
           category: null,
           weight: 50,
+          unit: 0,
         },
       ],
       [
@@ -85,18 +86,27 @@ describe('HomeService menu search priority', () => {
           brand: null,
           category: null,
           weight: 100,
+          unit: 0,
         },
       ],
     ]);
 
     expect(
-      service.normalizeHomeFoodImageRematchResult(
-        [{ food_index: 0, menu_id: 3, quantity: 1 }],
-        candidates,
-        new Map([[0, new Set([1, 3])]]),
-        new Map([[0, '계란 후라이']]),
+      service.toHomeFoodImageRecognitionResult(
+        service.normalizeHomeFoodImageRematches(
+          [{ food_index: 0, menu_id: 3 }],
+          [
+            {
+              foodName: '계란 후라이',
+              brand: null,
+              estimatedQuantity: 55,
+            },
+          ],
+          candidates,
+          new Map([[0, new Set([1, 3])]]),
+        ),
       ),
-    ).toEqual({ menu_ids: [1], menu_quantities: [50] });
+    ).toEqual({ menu_ids: [1], menu_quantities: [55] });
   });
 
   it('keeps an explicitly recognized processed fried egg', () => {
@@ -109,18 +119,27 @@ describe('HomeService menu search priority', () => {
           brand: null,
           category: null,
           weight: 100,
+          unit: 0,
         },
       ],
     ]);
 
     expect(
-      service.normalizeHomeFoodImageRematchResult(
-        [{ food_index: 0, menu_id: 2, quantity: 1 }],
-        candidates,
-        new Map([[0, new Set([2])]]),
-        new Map([[0, '냉동 계란 후라이']]),
+      service.toHomeFoodImageRecognitionResult(
+        service.normalizeHomeFoodImageRematches(
+          [{ food_index: 0, menu_id: 2 }],
+          [
+            {
+              foodName: '냉동 계란 후라이',
+              brand: null,
+              estimatedQuantity: 80,
+            },
+          ],
+          candidates,
+          new Map([[0, new Set([2])]]),
+        ),
       ),
-    ).toEqual({ menu_ids: [2], menu_quantities: [100] });
+    ).toEqual({ menu_ids: [2], menu_quantities: [80] });
   });
 
   it('replaces a product rice image match with the generic plain rice menu', () => {
@@ -133,6 +152,7 @@ describe('HomeService menu search priority', () => {
           brand: null,
           category: null,
           weight: 200,
+          unit: 0,
         },
       ],
       [
@@ -143,18 +163,84 @@ describe('HomeService menu search priority', () => {
           brand: '득템',
           category: null,
           weight: 210,
+          unit: 0,
         },
       ],
     ]);
 
     expect(
-      service.normalizeHomeFoodImageRematchResult(
-        [{ food_index: 0, menu_id: 11, quantity: 1 }],
-        candidates,
-        new Map([[0, new Set([10, 11])]]),
-        new Map([[0, '흰밥']]),
+      service.toHomeFoodImageRecognitionResult(
+        service.normalizeHomeFoodImageRematches(
+          [{ food_index: 0, menu_id: 11 }],
+          [
+            {
+              foodName: '흰밥',
+              brand: null,
+              estimatedQuantity: 180,
+            },
+          ],
+          candidates,
+          new Map([[0, new Set([10, 11])]]),
+        ),
       ),
-    ).toEqual({ menu_ids: [10], menu_quantities: [200] });
+    ).toEqual({ menu_ids: [10], menu_quantities: [180] });
+  });
+
+  it('fills a food omitted from a partial home image rematch', () => {
+    const predictions = [
+      { foodName: '수육', brand: null, estimatedQuantity: 150 },
+      { foodName: '밥', brand: null, estimatedQuantity: 180 },
+    ];
+    const pork = {
+      id: 1,
+      name: '수육',
+      brand: null,
+      category: '고기',
+      weight: 200,
+      unit: 0,
+    };
+    const rice = {
+      id: 2,
+      name: '(식약처_음식) 밥',
+      brand: null,
+      category: '밥',
+      weight: 200,
+      unit: 0,
+    };
+
+    const matches = service.mergeHomeFoodImageMatchesWithLocalFallback(
+      predictions,
+      [
+        { foodIndex: 0, foodName: '수육', candidates: [pork] },
+        { foodIndex: 1, foodName: '밥', candidates: [rice] },
+      ],
+      [{ foodIndex: 0, menu: pork, estimatedQuantity: 150 }],
+    );
+
+    expect(service.toHomeFoodImageRecognitionResult(matches)).toEqual({
+      menu_ids: [1, 2],
+      menu_quantities: [150, 180],
+    });
+  });
+
+  it('normalizes Gemini home image quantity as an actual gram estimate', () => {
+    expect(
+      service.normalizeHomeFoodImagePrediction({
+        food_name: '밥',
+        brand: null,
+        confidence: 0.91,
+        estimated_quantity: 183.26,
+        quantity_unit: 'g',
+        quantity_confidence: 0.74,
+      }),
+    ).toEqual({
+      foodName: '밥',
+      brand: null,
+      confidence: 0.91,
+      estimatedQuantity: 183.3,
+      estimatedQuantityUnit: 'g',
+      quantityConfidence: 0.74,
+    });
   });
 
   it('calculates recorded calories from weight regardless of input tab', () => {
@@ -213,6 +299,58 @@ describe('HomeService menu search priority', () => {
       next_cursor: null,
     });
     expect(alternativeSearch).not.toHaveBeenCalled();
+  });
+
+  it('does not advance the cursor past brand matches omitted from the page', async () => {
+    const createQueryBuilder = (menus: Record<string, unknown>[]) => {
+      const builder: Record<string, jest.Mock> = {};
+      ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'take'].forEach(
+        (method) => {
+          builder[method] = jest.fn(() => builder);
+        },
+      );
+      builder.getMany = jest.fn().mockResolvedValue(menus);
+      return builder;
+    };
+    const createMenu = (id: number, name: string) => ({
+      id,
+      data_source: 0,
+      is_deleted: 0,
+      name: `(식약처_음식) ${name}`,
+      search_name: name.replace(/\s+/g, ''),
+      canonical_name: name.replace(/\s+/g, ''),
+      brand: '피자스쿨',
+      category: '피자',
+      unit: 0,
+      weight: 100,
+      unit_quantity: '1기준량',
+      calories: 250,
+      carbs: 30,
+      protein: 10,
+      fat: 8,
+    });
+    const rawMenus = [
+      createMenu(1, '고구마 피자'),
+      createMenu(2, '고구마피자'),
+      ...Array.from({ length: 11 }, (_, index) =>
+        createMenu(index + 3, `피자 메뉴 ${index + 1}`),
+      ),
+    ];
+    const searchService = Object.create(HomeService.prototype) as any;
+    searchService.menuRepository = {
+      createQueryBuilder: jest
+        .fn()
+        .mockReturnValueOnce(createQueryBuilder([]))
+        .mockReturnValueOnce(createQueryBuilder(rawMenus)),
+    };
+
+    const result = await searchService.search(
+      { input: '피자스쿨', limit: 3 },
+      { id: 7 },
+    );
+
+    expect(result.menu_list.map((menu) => menu.id)).toEqual([1, 3, 4]);
+    expect(result.next_cursor).toBe(4);
   });
 
   it('returns the default cup size and zero when no water data exists', async () => {
