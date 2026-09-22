@@ -305,6 +305,7 @@ type MealFeedbackScoreContext = {
     consumed_calories: number;
     base_target_calories: number;
     exercise_burned_calories: number;
+    exercise_calories_reflected_in_target: boolean;
     adjusted_target_calories: number;
     difference_rate_percent: number;
     score: number;
@@ -628,6 +629,7 @@ type GenericMenuCandidateMatchOptions = {
   disableDefaultNamePrefix?: boolean;
   useIntentCategoryFilters?: boolean;
   exactOnly?: boolean;
+  forceBestVectorMatch?: boolean;
 };
 
 type GenericMenuCandidatePlan = {
@@ -884,8 +886,15 @@ export class ChatService {
           chatContext,
           userInfo,
           this.buildTrialMenstrualChatRequestContext(menstrualContext),
+          true,
         )
-      : await this.callGeminiText(input, chatContext, userInfo);
+      : await this.callGeminiText(
+          input,
+          chatContext,
+          userInfo,
+          undefined,
+          true,
+        );
     const answer = this.enforceGeneralChatNoWriteClaims(generatedAnswer);
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'general';
@@ -1441,7 +1450,7 @@ export class ChatService {
       params.userInfo,
       `현재 업로드된 음식 사진 분석 결과:\n${JSON.stringify(
         currentRequestContext,
-      )}\n위 결과를 근거로 텍스트 채팅과 같은 형식과 말투로 직접 답해. 내부 필드명이나 점수 계산 과정을 그대로 노출하지 마.`,
+      )}\n위 결과를 근거로 텍스트 채팅과 같은 형식과 말투로 직접 답해. 내부 필드명이나 점수 계산 과정을 그대로 노출하지 마. 이 요청은 음식 사진 스캔 결과이므로 일반 채팅이나 식사 기록 모드에 관한 안내를 덧붙이지 마.`,
     );
   }
 
@@ -3134,6 +3143,7 @@ ${JSON.stringify(
       candidates,
       intent,
       timing,
+      { forceBestVectorMatch: true },
     );
     const quantitiesByName = new Map<string, number[]>();
 
@@ -4819,8 +4829,10 @@ ${JSON.stringify(menstrualContext)}
       mealRecords.map((record) => record.nutrition_totals),
     );
     const baseTargetCalories = Number(userInfo.target_calories);
+    const shouldReflectExerciseCalories = userInfo.goal !== 0;
     const adjustedTargetCalories = Math.max(
-      baseTargetCalories + exerciseBurnedCalories,
+      baseTargetCalories +
+        (shouldReflectExerciseCalories ? exerciseBurnedCalories : 0),
       1,
     );
     const calorieDifferenceRate =
@@ -4879,12 +4891,14 @@ ${JSON.stringify(menstrualContext)}
     return {
       selected_date: selectedDate,
       score: calorieScore + macroBalanceScore,
-      score_formula:
-        '총점 100점 = 총 섭취 열량 점수 50점 + 탄수화물·단백질·지방의 실제 열량 비율과 목표 비율 간 오차 점수 50점. 열량 목표에는 해당 날짜 운동 소모 칼로리를 더함',
+      score_formula: shouldReflectExerciseCalories
+        ? '총점 100점 = 총 섭취 열량 점수 50점 + 탄수화물·단백질·지방의 실제 열량 비율과 목표 비율 간 오차 점수 50점. 유지 또는 증량 목표이므로 열량 목표에 해당 날짜 운동 소모 칼로리를 더함'
+        : '총점 100점 = 총 섭취 열량 점수 50점 + 탄수화물·단백질·지방의 실제 열량 비율과 목표 비율 간 오차 점수 50점. 감량 목표이므로 운동 소모 칼로리와 관계없이 기본 목표 열량을 유지함',
       calorie_score: {
         consumed_calories: consumedNutrition.calories,
         base_target_calories: roundToOneDecimal(baseTargetCalories),
         exercise_burned_calories: exerciseBurnedCalories,
+        exercise_calories_reflected_in_target: shouldReflectExerciseCalories,
         adjusted_target_calories: roundToOneDecimal(adjustedTargetCalories),
         difference_rate_percent: roundToOneDecimal(calorieDifferenceRate),
         score: calorieScore,
@@ -4958,7 +4972,10 @@ ${JSON.stringify(scoreContext)}
 [식사 피드백 생성 규칙]
 - selected_date의 식사만 분석해. 최근 다른 날짜의 식사 기록이나 과거 대화를 이 날짜의 섭취 내역에 섞지 마.
 - score, calorie_score, macro_balance_score는 서비스 정책에 따라 서버가 계산한 확정값이야. 다시 계산하거나 다른 점수로 바꾸지 마.
-- 총점은 calorie_score 50점과 macro_balance_score 50점의 합이야. calorie_score의 adjusted_target_calories에는 선택 날짜의 exercise_burned_calories가 더해져 있어.
+- 총점은 calorie_score 50점과 macro_balance_score 50점의 합이야.
+- 감량 목표라면 adjusted_target_calories는 운동 소모 칼로리를 더하지 않은 base_target_calories와 같아.
+- 유지 또는 증량 목표라면 adjusted_target_calories에는 선택 날짜의 exercise_burned_calories가 더해져 있어.
+- exercise_calories_reflected_in_target를 확인해서 운동 소모 칼로리의 목표 반영 여부를 정확히 설명하고, 감량 목표에서 운동 칼로리만큼 더 먹어도 된다고 안내하지 마.
 - 매크로 실제 비율은 탄수화물과 단백질은 1g당 4kcal, 지방은 1g당 9kcal로 환산한 뒤 세 매크로 열량 합계에서 차지하는 비율이야.
 - 사용자에게 보여주는 답변에서는 "매크로", "macro", "macro_balance_score" 같은 내부 용어를 절대 사용하지 마. 대신 "탄수화물·단백질·지방의 균형" 또는 "영양소 균형"처럼 이해하기 쉬운 한국어로 설명해.
 - 당류·식이섬유·나트륨은 종합 점수에 직접 포함되지 않으므로 별도의 영양 조언 근거로만 사용해.
@@ -7831,6 +7848,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     genericCandidates: GenericMenuCandidate[],
     intent: ParsedChatIntent,
     timing?: ChatTimingLogger,
+    options: GenericMenuCandidateMatchOptions = {},
   ): Promise<Array<{ inputMenuName: string; menu: MenuEntity }>> {
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
       const candidateMenus = await this.getAllCandidateMenus(userId);
@@ -7884,6 +7902,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       })),
       this.getGeminiGenericMenuVectorConcurrency(),
       async ({ candidate, candidateIndex }) => {
+        let forcedVectorFallbackMenu: MenuEntity | null = null;
         const brandFilters = this.hasBrandIntent(intent)
           ? this.getGenericCandidateVectorBrands(
               candidate,
@@ -7948,6 +7967,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
           );
           const menuIds = vectorResults.map((result) => result.menuId);
           const vectorMenus = await this.getMenusByIds(userId, menuIds);
+          if (
+            options.forceBestVectorMatch &&
+            vectorMenus.length > 0 &&
+            (!forcedVectorFallbackMenu || !useDefaultPrefix)
+          ) {
+            forcedVectorFallbackMenu = vectorMenus[0];
+          }
           const rematchResult =
             await this.rematchGenericCandidateMenuWithGemini(
               candidate,
@@ -8082,6 +8108,28 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
               menu: broadKeywordFallbackMenu,
             };
           }
+        }
+
+        if (options.forceBestVectorMatch && forcedVectorFallbackMenu) {
+          matchLogs.push({
+            candidateIndex,
+            candidate: {
+              name: candidate.name,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'vector',
+            menuId: forcedVectorFallbackMenu.id,
+            menuName: stripPublicMenuSourcePrefix(
+              forcedVectorFallbackMenu.name,
+            ),
+            menuBrand: forcedVectorFallbackMenu.brand ?? null,
+          });
+
+          return {
+            inputMenuName: candidate.name,
+            menu: forcedVectorFallbackMenu,
+          };
         }
 
         matchLogs.push({
@@ -12533,6 +12581,7 @@ ${JSON.stringify(candidates)}
     chatContext: ChatContextSummary,
     userInfo: UserInfoEntity,
     currentRequestContext?: string,
+    includeGeneralChatRecordBoundary = false,
   ): Promise<string> {
     const apiKey = process.env.GEMINI_API_KEY;
     const primaryModel = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
@@ -12652,6 +12701,13 @@ ${JSON.stringify(candidates)}
     };
     const recentWaterIntakeRecords =
       chatContext.recent_water_intake_records_3_days ?? [];
+    const generalChatRecordBoundary = includeGeneralChatRecordBoundary
+      ? `[일반 채팅 기능 경계]
+- 현재 AI 답변 경로에서는 식사·운동·체중·물 기록을 DB에 등록, 저장, 수정하거나 삭제할 수 없어.
+- 사용자가 음식과 섭취량을 적더라도 실제 기록 처리를 했다는 뜻의 "기록해 줄게", "기록할게", "기록했어", "저장했어", "추가했어" 같은 표현을 절대 쓰지 마.
+- 사용자가 먹은 내용을 단순히 말한 경우에는 자연스럽게 대화를 이어가되, 기록 완료나 저장 예정이라고 약속하지 마.
+- 기록 여부를 묻거나 기록을 요청한 경우에는 일반 채팅에서는 저장되지 않으며 식사 기록 모드를 이용해야 한다고 안내해.`
+      : '';
     const storedContext = [
       `날짜 기준표:\n${JSON.stringify({
         timezone: 'Asia/Seoul',
@@ -12756,11 +12812,7 @@ ${JSON.stringify(candidates)}
 - 저장된 기록이나 과거 대화 설명으로 현재 질문에 대한 답을 대신하거나 회피하지 마.
 - 사용자가 이전 답변에 이의를 제기하거나 다시 물으면 가장 최근 요청을 새로 판단해. 이전 assistant 답변의 결론이나 거절 논리를 반복하지 말고, 빠졌던 답을 직접 보완해.
 
-[채팅 기능 경계]
-- 현재 AI 답변 경로에서는 식사·운동·체중·물 기록을 DB에 등록, 저장, 수정하거나 삭제할 수 없어.
-- 사용자가 음식과 섭취량을 적더라도 실제 기록 처리를 했다는 뜻의 "기록해 줄게", "기록할게", "기록했어", "저장했어", "추가했어" 같은 표현을 절대 쓰지 마.
-- 사용자가 먹은 내용을 단순히 말한 경우에는 자연스럽게 대화를 이어가되, 기록 완료나 저장 예정이라고 약속하지 마.
-- 기록 여부를 묻거나 기록을 요청한 경우에는 일반 채팅에서는 저장되지 않으며 식사 기록 모드를 이용해야 한다고 안내해.
+${generalChatRecordBoundary}
 
 [식사 기록 반영 규칙]
 - 최근 ${recordContextDays.meals}일 식단 기록은 사용자가 실제로 먹은 음식이야. 단순 대화나 이전 추천보다 우선해서 판단해.

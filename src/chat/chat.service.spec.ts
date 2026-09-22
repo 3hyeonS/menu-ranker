@@ -74,6 +74,8 @@ describe('ChatService conversation memory', () => {
       '이전 얘기 이어서 답해줘',
       context,
       userInfo,
+      undefined,
+      true,
     );
     expect(menstrualContext).not.toHaveBeenCalled();
     expect(legacyPipeline).not.toHaveBeenCalled();
@@ -215,6 +217,7 @@ describe('ChatService conversation memory', () => {
       chatContext,
       userInfo,
       expect.stringContaining('체험 신청자 일반 채팅에 제공되는 월경 기록'),
+      true,
     );
     const requestContext = callGemini.mock.calls[0][3];
     expect(requestContext).toContain('menstrual_phase');
@@ -413,6 +416,7 @@ describe('ChatService conversation memory', () => {
       },
     ];
     const userInfo = {
+      goal: 1,
       target_calories: 1200,
       target_ratio: [50, 20, 30],
     };
@@ -447,6 +451,9 @@ describe('ChatService conversation memory', () => {
     );
     expect(callGemini.mock.calls[0][3]).toContain(
       '"adjusted_target_calories":1300',
+    );
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '"exercise_calories_reflected_in_target":true',
     );
     expect(callGemini.mock.calls[0][3]).toContain(
       'selected_date의 식사만 분석해',
@@ -484,6 +491,36 @@ describe('ChatService conversation memory', () => {
     expect(service.getMealFeedbackCalorieScore(15.1)).toBe(20);
     expect(service.getMealFeedbackCalorieScore(20.1)).toBe(10);
   });
+
+  it.each([
+    { goal: 0, adjustedTarget: 1200, reflected: false },
+    { goal: 1, adjustedTarget: 1300, reflected: true },
+    { goal: 2, adjustedTarget: 1300, reflected: true },
+  ])(
+    'applies exercise calories to the target according to goal $goal',
+    ({ goal, adjustedTarget, reflected }) => {
+      const service = createService() as any;
+
+      const context = service.buildMealFeedbackScoreContext(
+        '2026-09-12',
+        [],
+        {
+          goal,
+          target_calories: 1200,
+          target_ratio: [50, 20, 30],
+        },
+        100,
+      );
+
+      expect(context.calorie_score.exercise_burned_calories).toBe(100);
+      expect(
+        context.calorie_score.exercise_calories_reflected_in_target,
+      ).toBe(reflected);
+      expect(context.calorie_score.adjusted_target_calories).toBe(
+        adjustedTarget,
+      );
+    },
+  );
 
   it('applies the policy-specific macro scores for carbs, protein, and fat', () => {
     const service = createService() as any;
@@ -772,6 +809,7 @@ describe('ChatService conversation memory', () => {
           target_ratio: [40, 30, 30],
         },
         '현재 업로드된 음식 사진 분석 결과: 닭가슴살과 샐러드',
+        true,
       );
 
       expect(answer).toBe('이어진 답변');
@@ -1012,6 +1050,86 @@ describe('ChatService conversation memory', () => {
     expect(callGeminiText.mock.calls[0][3]).toContain(
       '아직 사용자가 먹었다거나 식사 기록을 완료했다는 뜻은 아니다',
     );
+    expect(callGeminiText.mock.calls[0][3]).toContain(
+      '일반 채팅이나 식사 기록 모드에 관한 안내를 덧붙이지 마',
+    );
+  });
+
+  it('forces the best broad vector candidate for text meal records when rematching rejects every candidate', async () => {
+    const service = createService() as any;
+    const defaultScopedMenu = {
+      id: 1,
+      name: '(식약처_음식) 국물떡볶이',
+      brand: null,
+    };
+    const broadScopedMenu = {
+      id: 2,
+      name: '(식약처_가공) 떡볶이분말(냉동)',
+      brand: '햇잎푸드',
+    };
+    service.menuVectorService = {
+      searchMenusByText: jest.fn(
+        (_query: string, options: { namePrefix: string | null }) =>
+          Promise.resolve([
+            {
+              menuId: options.namePrefix
+                ? defaultScopedMenu.id
+                : broadScopedMenu.id,
+            },
+          ]),
+      ),
+    };
+    jest.spyOn(service, 'isVectorSearchEnabled').mockReturnValue(true);
+    jest
+      .spyOn(service, 'getSupportedGenericCandidateBrandKeys')
+      .mockResolvedValue(new Set());
+    jest
+      .spyOn(service, 'findGenericCandidateMenuByKeywordFallback')
+      .mockResolvedValue(null);
+    jest.spyOn(service, 'getMenusByIds').mockImplementation(
+      async (_userId: number, menuIds: number[]) =>
+        menuIds.map((menuId) =>
+          menuId === broadScopedMenu.id
+            ? broadScopedMenu
+            : defaultScopedMenu,
+        ),
+    );
+    jest
+      .spyOn(service, 'rematchGenericCandidateMenuWithGemini')
+      .mockResolvedValue({ completed: true, menu: null });
+
+    const result = await service.matchGenericMenuCandidatesToFeedbackMenus(
+      107,
+      [
+        {
+          name: '엽땡분말',
+          originalName: null,
+          brand: '엽기떡볶이',
+          category: '소스',
+        },
+      ],
+      {
+        normalized_request: '엽땡분말을 먹었어',
+        meal_time: null,
+        desired_brand: null,
+        desired_category: null,
+        nutrition_focus: [],
+        amount_preference: null,
+        keywords: ['엽땡분말'],
+        include: service.emptyIntentConditionGroup(),
+        exclude: service.emptyIntentConditionGroup(),
+        nutrition_constraints: service.emptyNutritionConstraints(),
+      },
+      undefined,
+      { forceBestVectorMatch: true },
+    );
+
+    expect(result).toEqual([
+      {
+        inputMenuName: '엽땡분말',
+        menu: broadScopedMenu,
+      },
+    ]);
   });
 
   it('normalizes Gemini food-image quantity estimates', () => {
