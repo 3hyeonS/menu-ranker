@@ -120,17 +120,54 @@ describe('ChatService conversation memory', () => {
     );
 
     expect(response.intro_message).toBe(
-      '말해준 식사 내용은 확인했어. 다만 일반 채팅에서는 식사 기록에 저장되지 않아. 기록하려면 식사 기록 모드를 켜서 입력해줘.',
+      '말해준 식사 내용은 확인했어. 여기서는 실제 식사 기록을 저장하지 않았어.',
     );
     expect(response.intro_message).not.toContain('기록해 줄게');
     expect(service.saveNewChatHistory).toHaveBeenCalledWith(
       expect.objectContaining({
         response_payload: expect.objectContaining({
           intro_message:
-            '말해준 식사 내용은 확인했어. 다만 일반 채팅에서는 식사 기록에 저장되지 않아. 기록하려면 식사 기록 모드를 켜서 입력해줘.',
+            '말해준 식사 내용은 확인했어. 여기서는 실제 식사 기록을 저장하지 않았어.',
         }),
       }),
     );
+  });
+
+  it('removes unsolicited meal record mode guidance from ordinary chat', async () => {
+    const service = createService() as any;
+    const context = {
+      messages: [],
+      session_summaries: [],
+      long_term_profile_traits: null,
+      recent_meal_records_3_days: [],
+      recent_workout_records_3_days: [],
+      recent_weight_records_7_days: [],
+      recent_step_records_7_days: [],
+    };
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue({
+      goal: 2,
+      target_ratio: [40, 30, 30],
+    });
+    jest.spyOn(service, 'getRecentChatContext').mockResolvedValue(context);
+    jest
+      .spyOn(service, 'callGeminiText')
+      .mockResolvedValue(
+        '밤크림 라떼는 달콤하고 고소한 맛이 특징이야. 간식으로 곁들이기 괜찮아. 식사 기록이나 영양 관리를 원하면 식사 기록 모드를 이용해줘.',
+      );
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.recommend(
+      { id: 9 },
+      { input: '이디야 밤크림 라떼 L' },
+    );
+
+    expect(response.intro_message).toBe(
+      '밤크림 라떼는 달콤하고 고소한 맛이 특징이야. 간식으로 곁들이기 괜찮아.',
+    );
+    expect(response.intro_message).not.toContain('식사 기록 모드');
   });
 
   it('adds all menstrual cycle phases to regular chat for trial users', async () => {
@@ -1130,6 +1167,58 @@ describe('ChatService conversation memory', () => {
         menu: broadScopedMenu,
       },
     ]);
+  });
+
+  it('retries meal-record parsing when a meal-mode food list is initially returned empty', async () => {
+    const service = createService() as any;
+    const callGeminiJson = jest
+      .spyOn(service, 'callGeminiJson')
+      .mockResolvedValueOnce({ items: [], time: null, date: null })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            name: '소고기 샤브샤브',
+            brand: null,
+            category: '한식',
+            quantity_g: 300,
+          },
+          {
+            name: '아몬드크림치즈스틱',
+            brand: null,
+            category: '간식',
+            quantity_g: 100,
+          },
+        ],
+        time: null,
+        date: null,
+      });
+
+    const result = await service.generateMealRecordParsePlanWithGemini(
+      '저녁으로 소고기 샤브샤브, 간식으로 아몬드크림치즈스틱 2개',
+    );
+
+    expect(callGeminiJson).toHaveBeenCalledTimes(2);
+    expect(callGeminiJson.mock.calls[0][0]).toContain(
+      '식사 기록 모드를 켠 상태에서 보낸 입력',
+    );
+    expect(callGeminiJson.mock.calls[1][0]).toContain(
+      '과거형 "먹었어"가 없다는 이유만으로 items를 비우지 마',
+    );
+    expect(result.items).toEqual([
+      {
+        name: '소고기 샤브샤브',
+        brand: null,
+        category: '한식',
+        quantityG: 300,
+      },
+      {
+        name: '아몬드크림치즈스틱',
+        brand: null,
+        category: '간식',
+        quantityG: 100,
+      },
+    ]);
+    expect(result.time).toBeNull();
   });
 
   it('normalizes Gemini food-image quantity estimates', () => {

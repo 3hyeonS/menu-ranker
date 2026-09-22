@@ -895,7 +895,7 @@ export class ChatService {
           undefined,
           true,
         );
-    const answer = this.enforceGeneralChatNoWriteClaims(generatedAnswer);
+    const answer = this.sanitizeGeneralChatAnswer(generatedAnswer);
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'general';
     response.intro_message = answer;
@@ -2319,7 +2319,30 @@ export class ChatService {
       return answer;
     }
 
-    return '말해준 식사 내용은 확인했어. 다만 일반 채팅에서는 식사 기록에 저장되지 않아. 기록하려면 식사 기록 모드를 켜서 입력해줘.';
+    return '말해준 식사 내용은 확인했어. 여기서는 실제 식사 기록을 저장하지 않았어.';
+  }
+
+  private sanitizeGeneralChatAnswer(answer: string): string {
+    const mealRecordModePattern = /식사\s*기록\s*모드/;
+    const answerWithoutModeGuidance = answer
+      .split('\n')
+      .map((line) => {
+        const sentences = line.match(/[^.!?。！？]+[.!?。！？]?/g) ?? [];
+
+        return sentences
+          .filter((sentence) => !mealRecordModePattern.test(sentence))
+          .map((sentence) => sentence.trim())
+          .join(' ')
+          .trim();
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    const sanitizedAnswer =
+      answerWithoutModeGuidance ||
+      '현재 질문에 답하는 데 필요한 내용만 바로 알려줄게.';
+
+    return this.enforceGeneralChatNoWriteClaims(sanitizedAnswer);
   }
 
   private isUnsupportedChatActionRequest(normalizedInput: string): boolean {
@@ -7417,7 +7440,10 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 반드시 JSON object만 반환하고 코드펜스는 쓰지 마.
 
 목표:
-- 사용자가 실제로 먹었다고 말한 음식만 items에 넣어
+- 이 요청은 사용자가 식사 기록 모드를 켠 상태에서 보낸 입력이야
+- "먹었어"라는 표현이 없어도 음식명이나 제품명을 나열하거나 "아침으로", "점심으로", "저녁으로", "간식으로", "야식으로"라고 적은 음식은 기록하려는 음식으로 보고 items에 넣어
+- "라면이랑 계란", "저녁으로 샤브샤브, 간식으로 아몬드"처럼 짧게 나열한 입력도 기록 대상으로 해석해
+- 사용자가 먹은 음식 또는 식사 기록 대상으로 명시한 음식만 items에 넣어
 - 음식명은 우리 DB에서 찾기 쉬운 형태로 정제하되, 사용자가 구체적인 메뉴명/제품명을 말한 경우 최대한 원문 그대로 보존해
 - 수량은 가능한 한 g 단위 중량으로 추정해 quantity_g에 넣어
 - 입력에 끼니나 날짜가 명시된 경우에만 time/date를 채워
@@ -7431,7 +7457,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - "피자", "치킨", "버거"처럼 대표 음식명으로 축약하지 말고, 입력에 있는 구체 메뉴명/제품명/맛/조리명을 우선 유지해
 - 브랜드/제품명이 명확하면 brand에 넣고, 아니면 null로 둬
 - category는 명확할 때만 짧게 넣고, 애매하면 null로 둬
-- 사용자가 먹은 것이 아니라 추천/질문/예시로 언급한 음식은 제외해
+- "뭐 먹을까", "추천해줘", "먹어도 될까"처럼 음식 선택을 질문하거나 예시로만 언급한 음식은 제외해
+- 한 입력에 여러 끼니가 섞여 있어 단일 time을 정할 수 없더라도 음식은 모두 items에 넣고 time만 null로 둬
 - 메뉴명에는 중량, 개수, "반공기", "1조각", "반조각" 같은 수량 표현만 넣지 마
 
 끼니 time 매핑:
@@ -7465,16 +7492,32 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 ${input}
 `.trim();
 
-    const data = await this.callGeminiJson(prompt, {
+    let data = await this.callGeminiJson(prompt, {
       context: 'chat-meal-record-parse',
       timeoutMs: this.getGeminiTextTimeoutMs(),
       systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
     });
-    const rawItems = Array.isArray(data?.items)
+    let rawItems = Array.isArray(data?.items)
       ? data.items
       : Array.isArray(data?.foods)
         ? data.foods
         : [];
+
+    if (rawItems.length === 0) {
+      data = await this.callGeminiJson(
+        `${prompt}\n\n보정 요청:\n이 입력은 식사 기록 모드에서 전달됐어. 과거형 "먹었어"가 없다는 이유만으로 items를 비우지 마. 사용자가 기록 대상으로 나열한 음식과 제품을 다시 빠짐없이 추출해. 단, 추천이나 섭취 가능 여부를 묻는 질문이면 빈 배열을 유지해.`,
+        {
+          context: 'chat-meal-record-parse-retry',
+          timeoutMs: this.getGeminiTextTimeoutMs(),
+          systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
+        },
+      );
+      rawItems = Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.foods)
+          ? data.foods
+          : [];
+    }
     const items = rawItems
       .map((item) => this.normalizeMealRecordParsedItem(item))
       .filter((item): item is ChatMealRecordParsedItem => item !== null)
@@ -12706,7 +12749,8 @@ ${JSON.stringify(candidates)}
 - 현재 AI 답변 경로에서는 식사·운동·체중·물 기록을 DB에 등록, 저장, 수정하거나 삭제할 수 없어.
 - 사용자가 음식과 섭취량을 적더라도 실제 기록 처리를 했다는 뜻의 "기록해 줄게", "기록할게", "기록했어", "저장했어", "추가했어" 같은 표현을 절대 쓰지 마.
 - 사용자가 먹은 내용을 단순히 말한 경우에는 자연스럽게 대화를 이어가되, 기록 완료나 저장 예정이라고 약속하지 마.
-- 기록 여부를 묻거나 기록을 요청한 경우에는 일반 채팅에서는 저장되지 않으며 식사 기록 모드를 이용해야 한다고 안내해.`
+- 식사 기록 모드를 사용하라는 안내를 먼저 꺼내거나 답변 끝에 덧붙이지 마.
+- 기록 여부를 묻거나 기록을 요청한 경우에는 현재 답변에서 실제 저장 처리는 할 수 없다는 사실만 짧게 말하고, 사용자가 묻지 않은 기록 방법은 안내하지 마.`
       : '';
     const storedContext = [
       `날짜 기준표:\n${JSON.stringify({
