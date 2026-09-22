@@ -7555,6 +7555,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 - "참외 1조각"처럼 조각/개/한입/조금 등으로 말하면 일반적인 섭취량을 g으로 합리적으로 추정해
 - "밥 반공기"는 name을 "밥"으로, quantity_g는 약 105로 정제해
 - "방울토마토 5개"처럼 개수만 있으면 일반적인 1개 중량을 반영해 g으로 변환해
+- 조리법 없이 "계란 1개", "달걀 2개"처럼 단독 달걀과 개수만 적으면 name은 "삶은 달걀"로 정제해. "계란빵", "계란찜", "계란말이", "계란 후라이", "생계란"처럼 다른 음식이나 조리법이 명시된 경우에는 바꾸지 마
 - "옥수수새우피자(L) 피자 반조각"처럼 구체 메뉴명과 수량이 함께 있으면 name은 "옥수수새우피자(L) 피자"처럼 메뉴명을 보존하고, "반조각"만 quantity_g로 분리해
 - "(L)", "(R)", "(P)", "대", "중", "소"처럼 크기 표기가 메뉴명 일부로 보이면 name에서 제거하지 마
 - "피자", "치킨", "버거"처럼 대표 음식명으로 축약하지 말고, 입력에 있는 구체 메뉴명/제품명/맛/조리명을 우선 유지해
@@ -8357,6 +8358,7 @@ Gemini가 만든 음식 후보와 서버가 찾은 DB 후보 메뉴를 비교해
 - 예: 케첩 -> 소시지 케첩볶음은 불일치
 - 예: 귤 -> 귤차는 불일치
 - 예: 밥 -> 국밥은 불일치
+- 예: 계란/달걀/삶은 달걀 -> 계란빵은 불일치
 - 예: 더단백 민트초코 -> 더단백드링크민트초코는 일치에 가깝고, 더단백 밸런스 로우슈거는 불일치에 가까워
 - 예: 부채살 스테이크 -> 부채살스테이크(샐러드), 부채살스테이크(포케)는 샐러드/포케 맥락이 없으면 불일치에 가까워
 
@@ -8645,13 +8647,8 @@ ${JSON.stringify(
           supportedCandidateBrandKeys,
         )
       : null;
-    const normalizedMenuNameExpression = [
-      "REPLACE(LOWER(menu.name), '(식약처_음식)', '')",
-      "REPLACE(%s, '(식약처_가공)', '')",
-      "REPLACE(%s, ' ', '')",
-      "REPLACE(%s, '\t', '')",
-      "REPLACE(%s, '\n', '')",
-    ].reduce((expression, template) => template.replace('%s', expression));
+    const normalizedMenuNameExpression =
+      this.buildNormalizedMenuNameSqlExpression('menu');
 
     const shouldUseDefaultPrefix =
       !options.disableDefaultNamePrefix &&
@@ -10792,6 +10789,8 @@ ${JSON.stringify(
     return [
       `REPLACE(LOWER(${alias}.name), '(식약처_음식)', '')`,
       "REPLACE(%s, '(식약처_가공)', '')",
+      "REPLACE(%s, '계란', '달걀')",
+      "REPLACE(%s, '후라이', '프라이')",
       "REPLACE(%s, ' ', '')",
       "REPLACE(%s, '\t', '')",
       "REPLACE(%s, '\n', '')",
@@ -13533,7 +13532,8 @@ ${storedContext}`,
     const rawName =
       this.asNonEmptyString(source.name) ??
       this.asNonEmptyString(source.food_name);
-    const name = this.normalizeGenericMenuCandidateName(rawName);
+    const normalizedName = this.normalizeGenericMenuCandidateName(rawName);
+    const name = this.normalizeStandaloneEggMealRecordName(normalizedName);
     const quantity =
       this.asNullableNumber(source.quantity_g) ??
       this.asNullableNumber(source.quantityG) ??
@@ -13554,6 +13554,20 @@ ${storedContext}`,
       category: this.asNonEmptyString(source.category),
       quantityG: roundToOneDecimal(Math.min(quantity, 5000)),
     };
+  }
+
+  private normalizeStandaloneEggMealRecordName(
+    name: string | null,
+  ): string | null {
+    if (!name) {
+      return null;
+    }
+
+    const compactName = name.replace(/\s+/g, '');
+
+    return /^(?:계란|달걀)(?:[0-9.]+개)?$/.test(compactName)
+      ? '삶은 달걀'
+      : name;
   }
 
   private isValidGenericMenuCandidateName(name: string): boolean {

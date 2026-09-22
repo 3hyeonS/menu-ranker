@@ -1221,6 +1221,42 @@ describe('ChatService conversation memory', () => {
     expect(result.time).toBeNull();
   });
 
+  it('normalizes a standalone egg meal record to boiled egg', () => {
+    const service = createService() as any;
+
+    expect(
+      service.normalizeMealRecordParsedItem({
+        name: '계란',
+        quantity_g: 50,
+      }),
+    ).toEqual({
+      name: '삶은 달걀',
+      brand: null,
+      category: null,
+      quantityG: 50,
+    });
+    expect(
+      service.normalizeMealRecordParsedItem({
+        name: '계란빵',
+        quantity_g: 80,
+      }).name,
+    ).toBe('계란빵');
+    expect(
+      service.normalizeMealRecordParsedItem({
+        name: '계란 후라이',
+        quantity_g: 60,
+      }).name,
+    ).toBe('계란 후라이');
+  });
+
+  it('normalizes egg and fried-egg aliases in SQL menu-name matching', () => {
+    const service = createService() as any;
+    const expression = service.buildNormalizedMenuNameSqlExpression('menu');
+
+    expect(expression).toContain("'계란', '달걀'");
+    expect(expression).toContain("'후라이', '프라이'");
+  });
+
   it('normalizes Gemini food-image quantity estimates', () => {
     const service = createService() as any;
 
