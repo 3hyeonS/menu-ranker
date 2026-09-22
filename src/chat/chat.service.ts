@@ -19,6 +19,7 @@ import { MealMenuEntity } from '../home/entity/meal-menu.entity';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
 import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
+import { WaterIntakeEntity } from '../home/entity/water-intake.entity';
 import { MenstrualCycleEntity } from '../menstrual/entity/menstrual-cycle.entity';
 import {
   roundNullableToOneDecimal,
@@ -254,6 +255,7 @@ type ChatContextSummary = {
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
   recent_weight_records_7_days: RecentWeightRecordContextItem[];
   recent_step_records_7_days: RecentStepRecordContextItem[];
+  recent_water_intake_records_3_days: RecentWaterIntakeContextItem[];
   record_context_days?: ChatRecordContextDays;
   previous_user_input: string | null;
   previous_category: ChatCategory | null;
@@ -357,11 +359,17 @@ type RecentStepRecordContextItem = {
   steps: number;
 };
 
+type RecentWaterIntakeContextItem = {
+  date: string;
+  amount_ml: number;
+};
+
 type ChatRecordContextDays = {
   meals: number;
   workouts: number;
   weights: number;
   steps: number;
+  water: number;
 };
 
 type MenstrualPhaseDateRange = {
@@ -456,6 +464,7 @@ type LightweightChatContext = {
   recent_workout_records_3_days: RecentWorkoutRecordContextItem[];
   recent_weight_records_7_days: RecentWeightRecordContextItem[];
   recent_step_records_7_days: RecentStepRecordContextItem[];
+  recent_water_intake_records_3_days: RecentWaterIntakeContextItem[];
   record_context_days?: ChatRecordContextDays;
 };
 
@@ -689,6 +698,8 @@ export class ChatService {
     private readonly workoutRecordRepository: Repository<WorkoutRecordEntity>,
     @InjectRepository(WeightStepsEntity)
     private readonly weightStepsRepository: Repository<WeightStepsEntity>,
+    @InjectRepository(WaterIntakeEntity)
+    private readonly waterIntakeRepository: Repository<WaterIntakeEntity>,
     @InjectRepository(MenstrualCycleEntity)
     private readonly menstrualCycleRepository: Repository<MenstrualCycleEntity>,
     @InjectRepository(ChatHistoryEntity)
@@ -905,6 +916,7 @@ export class ChatService {
       workouts: PERSONALIZED_MANAGEMENT_WORKOUT_CONTEXT_DAYS,
       weights: PERSONALIZED_MANAGEMENT_WEIGHT_CONTEXT_DAYS,
       steps: CHAT_STEPS_CONTEXT_DAYS,
+      water: PERSONALIZED_MANAGEMENT_MEAL_CONTEXT_DAYS,
     };
     const [
       userInfo,
@@ -2410,6 +2422,7 @@ export class ChatService {
       workouts: CHAT_RECORD_CONTEXT_DAYS,
       weights: CHAT_WEIGHT_CONTEXT_DAYS,
       steps: CHAT_STEPS_CONTEXT_DAYS,
+      water: CHAT_RECORD_CONTEXT_DAYS,
     },
   ): Promise<ChatContextSummary> {
     await this.reconcileConversationSessions(userId);
@@ -2466,11 +2479,13 @@ export class ChatService {
       recentWorkoutRecords,
       recentWeightRecords,
       recentStepRecords,
+      recentWaterIntakeRecords,
     ] = await Promise.all([
       this.getRecentMealRecordContext(userId, recordContextDays.meals),
       this.getRecentWorkoutRecordContext(userId, recordContextDays.workouts),
       this.getRecentWeightRecordContext(userId, recordContextDays.weights),
       this.getRecentStepRecordContext(userId, recordContextDays.steps),
+      this.getRecentWaterIntakeContext(userId, recordContextDays.water),
     ]);
 
     this.queueConversationMemoryMaintenance(userId);
@@ -2491,6 +2506,7 @@ export class ChatService {
       recent_workout_records_3_days: recentWorkoutRecords,
       recent_weight_records_7_days: recentWeightRecords,
       recent_step_records_7_days: recentStepRecords,
+      recent_water_intake_records_3_days: recentWaterIntakeRecords,
       record_context_days: recordContextDays,
       previous_user_input: previousMessage?.user_input ?? null,
       previous_category: previousMessage?.chat_category ?? null,
@@ -3000,6 +3016,8 @@ ${JSON.stringify(
       recent_workout_records_3_days: chatContext.recent_workout_records_3_days,
       recent_weight_records_7_days: chatContext.recent_weight_records_7_days,
       recent_step_records_7_days: chatContext.recent_step_records_7_days,
+      recent_water_intake_records_3_days:
+        chatContext.recent_water_intake_records_3_days ?? [],
       record_context_days: chatContext.record_context_days,
     };
   }
@@ -4399,6 +4417,31 @@ ${JSON.stringify(
     return records.map((record) => ({
       date: this.formatLocalDate(new Date(record.date)),
       steps: roundToOneDecimal(record.steps),
+    }));
+  }
+
+  private async getRecentWaterIntakeContext(
+    userId: number,
+    days = CHAT_RECORD_CONTEXT_DAYS,
+  ): Promise<RecentWaterIntakeContextItem[]> {
+    const { start, end } = this.getRecentRecordDateRange(new Date(), days);
+    const records = await this.waterIntakeRepository.find({
+      where: {
+        user: { id: userId },
+        date: Between(
+          this.formatLocalDate(start),
+          this.formatLocalDate(end),
+        ),
+      },
+      order: {
+        date: 'ASC',
+        id: 'ASC',
+      },
+    });
+
+    return records.map((record) => ({
+      date: record.date,
+      amount_ml: Number(record.amountMl),
     }));
   }
 
@@ -12605,7 +12648,10 @@ ${JSON.stringify(candidates)}
       workouts: CHAT_RECORD_CONTEXT_DAYS,
       weights: CHAT_WEIGHT_CONTEXT_DAYS,
       steps: CHAT_STEPS_CONTEXT_DAYS,
+      water: CHAT_RECORD_CONTEXT_DAYS,
     };
+    const recentWaterIntakeRecords =
+      chatContext.recent_water_intake_records_3_days ?? [];
     const storedContext = [
       `날짜 기준표:\n${JSON.stringify({
         timezone: 'Asia/Seoul',
@@ -12671,6 +12717,12 @@ ${JSON.stringify(candidates)}
       )}`,
       `최근 ${recordContextDays.steps}일 걸음 수와 추정 소모 칼로리:\n${JSON.stringify(
         recentStepRecordsWithBurnedCalories,
+      )}`,
+      `최근 ${recordContextDays.water}일 물 섭취 기록:\n${JSON.stringify(
+        recentWaterIntakeRecords.map((record) => ({
+          ...record,
+          weekday: this.getKoreanWeekday(record.date),
+        })),
       )}`,
       chatContext.long_term_profile_traits
         ? `장기 대화 기억:\n${chatContext.long_term_profile_traits}`
@@ -12752,6 +12804,11 @@ ${JSON.stringify(candidates)}
 - 운동 기록의 burned_calories와 운동 소모 칼로리 일별 합계는 DB에 저장된 운동 소모 칼로리야.
 - 사용자가 섭취 칼로리와 소비 칼로리를 비교해 달라고 하면 운동 소모 칼로리와 걸음 기준 추정 소모 칼로리를 모두 확인해. 값이 전달됐는데도 소모 칼로리 기록이 없다고 답하지 마.
 - 운동과 걸음이 같은 활동을 포함할 수 있으므로 두 값을 합산할 때는 중복 가능성이 있다고 밝혀. 사용자가 합계를 요구하지 않았다면 각각 구분해서 설명해.
+
+[물 섭취 기록 반영 규칙]
+- 최근 ${recordContextDays.water}일 물 섭취 기록은 DB에 실제 저장된 날짜별 총 섭취량이며 amount_ml의 단위는 ml야.
+- 기록된 날짜와 수치를 그대로 사용하고, 기록이 없는 날짜의 물 섭취량은 0이라고 단정하거나 추측하지 마.
+- 물 섭취 기록만으로 탈수 여부나 의학적 상태를 진단하지 마.
 
 ${CHAT_USER_FACT_PROVENANCE_RULES}
 

@@ -17,6 +17,7 @@ describe('ChatService conversation memory', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
       httpService as never,
     );
 
@@ -274,7 +275,14 @@ describe('ChatService conversation memory', () => {
       recent_workout_records_3_days: [],
       recent_weight_records_7_days: [],
       recent_step_records_7_days: [],
-      record_context_days: { meals: 7, workouts: 7, weights: 30, steps: 7 },
+      recent_water_intake_records_3_days: [],
+      record_context_days: {
+        meals: 7,
+        workouts: 7,
+        weights: 30,
+        steps: 7,
+        water: 7,
+      },
       previous_user_input: null,
       previous_category: null,
       previous_recommended_menu_names: [],
@@ -330,6 +338,7 @@ describe('ChatService conversation memory', () => {
       workouts: 7,
       weights: 30,
       steps: 7,
+      water: 7,
     });
     expect(callGemini).toHaveBeenCalledWith(
       '나에게 맞는 관리법을 알려줘',
@@ -746,6 +755,9 @@ describe('ChatService conversation memory', () => {
             { date: '2026-08-28', weight_kg: 64.3 },
           ],
           recent_step_records_7_days: [{ date: '2026-08-28', steps: 8765 }],
+          recent_water_intake_records_3_days: [
+            { date: '2026-08-28', amount_ml: 1800 },
+          ],
         },
         {
           user: { nickname: '튼튼이' },
@@ -793,6 +805,8 @@ describe('ChatService conversation memory', () => {
       expect(JSON.stringify(requestBody)).toContain('스쿼트');
       expect(JSON.stringify(requestBody)).toContain('64.3');
       expect(JSON.stringify(requestBody)).toContain('8765');
+      expect(systemPrompt).toContain('최근 3일 물 섭취 기록');
+      expect(systemPrompt).toContain('"amount_ml":1800');
       expect(JSON.stringify(requestBody)).toContain('target_calories');
       expect(JSON.stringify(requestBody)).toContain('같은 음식 문화권');
       expect(JSON.stringify(requestBody)).toContain('태국 음식을 먹었다면');
@@ -1328,6 +1342,7 @@ describe('ChatService conversation memory', () => {
       recent_workout_records_3_days: [],
       recent_weight_records_7_days: [],
       recent_step_records_7_days: [],
+      recent_water_intake_records_3_days: [],
       previous_user_input: null,
       previous_category: null,
       previous_recommended_menu_names: [],
@@ -1343,6 +1358,7 @@ describe('ChatService conversation memory', () => {
     expect(lightweightContext.recent_workout_records_3_days).toEqual([]);
     expect(lightweightContext.recent_weight_records_7_days).toEqual([]);
     expect(lightweightContext.recent_step_records_7_days).toEqual([]);
+    expect(lightweightContext.recent_water_intake_records_3_days).toEqual([]);
     expect(lightweightContext.consumption_interpretation).toContain(
       '실제 섭취가 아니다',
     );
@@ -1376,5 +1392,29 @@ describe('ChatService conversation memory', () => {
     expect(service.estimateStepBurnedCalories(9099, 64.2)).toBe(292.1);
     expect(service.estimateStepBurnedCalories(0, 64.2)).toBe(0);
     expect(service.estimateStepBurnedCalories(9099, 0)).toBe(0);
+  });
+
+  it('loads water intake for the requested chat context period', async () => {
+    const service = createService() as any;
+    const rangeSpy = jest
+      .spyOn(service, 'getRecentRecordDateRange')
+      .mockReturnValue({
+        start: new Date(2026, 8, 16, 0, 0, 0),
+        end: new Date(2026, 8, 22, 23, 59, 59),
+      });
+    service.waterIntakeRepository = {
+      find: jest.fn().mockResolvedValue([
+        { id: 1, date: '2026-09-21', amountMl: 1500 },
+        { id: 2, date: '2026-09-22', amountMl: 1800 },
+      ]),
+    };
+
+    const records = await service.getRecentWaterIntakeContext(51, 7);
+
+    expect(rangeSpy).toHaveBeenCalledWith(expect.any(Date), 7);
+    expect(records).toEqual([
+      { date: '2026-09-21', amount_ml: 1500 },
+      { date: '2026-09-22', amount_ml: 1800 },
+    ]);
   });
 });
