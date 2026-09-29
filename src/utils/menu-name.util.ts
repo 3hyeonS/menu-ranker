@@ -271,6 +271,10 @@ const MENU_SEARCH_ALIAS_GROUPS: Array<{
   { canonical: '단백질', aliases: ['단백질', '프로틴'] },
   { canonical: '소시지', aliases: ['소세지', '소시지'] },
   { canonical: '주스', aliases: ['쥬스', '주스'] },
+  { canonical: '만둣국', aliases: ['만두국', '만둣국'] },
+  { canonical: '초콜릿', aliases: ['초콜렛', '초콜릿'] },
+  { canonical: '부라보', aliases: ['브라보', '부라보'] },
+  { canonical: '장아찌', aliases: ['장아찌', '짱아찌'] },
 ];
 
 export const normalizeMenuSearchName = (menuName: string): string =>
