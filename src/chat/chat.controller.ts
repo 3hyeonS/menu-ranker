@@ -95,7 +95,7 @@ export class ChatController {
   @ApiOperation({
     summary: '과거 대화 맥락 기반 Gemini 채팅',
     description:
-      '사용자 프로필, 최근 3일 식단·운동 기록, 최근 7일 체중·걸음 수 기록, 최근 대화, 이전 세션 요약과 장기 대화 기억을 Gemini에 전달합니다. 일반 답변은 general, 앱 기능·사용법·오류 문의는 운영진 문의 연결을 위해 inquiry를 반환합니다.',
+      '사용자 프로필, 최근 3일 식단·운동·물 섭취 기록, 최근 7일 체중·걸음 수 기록, 최근 대화, 이전 세션 요약과 장기 대화 기억을 Gemini에 전달합니다. 물 섭취량은 날짜별 총량(ml)으로 전달합니다. 일반 답변은 general, 앱 기능·사용법·오류 문의는 운영진 문의 연결을 위해 inquiry를 반환합니다.',
   })
   @GenericApiResponse({
     status: 201,
@@ -142,7 +142,7 @@ export class ChatController {
   @ApiOperation({
     summary: '나에게 맞는 관리법',
     description:
-      '체험 대상 사용자의 전체 월경 주기와 최근 7일 식단·운동, 최근 30일 체중 기록을 종합해 개인화된 관리 피드백을 생성합니다.',
+      '체험 대상 사용자의 전체 월경 주기, 최근 7일 식단·운동·걸음 수·물 섭취 기록과 최근 30일 체중 기록을 종합해 개인화된 관리 피드백을 생성합니다. 물 섭취량은 식단과 동일하게 최근 7일의 날짜별 총량(ml)을 전달합니다.',
   })
   @GenericApiResponse({
     status: 201,
@@ -186,7 +186,7 @@ export class ChatController {
   @ApiOperation({
     summary: '최근 30일 나의 관리 패턴 분석',
     description:
-      '최근 30일 섭취 칼로리, 체중, 걸음·운동 소모 칼로리와 칼로리 적자를 Gemini에 전달해 관리 패턴 코칭 메시지를 생성합니다.',
+      '최근 30일 섭취 칼로리, 체중, 걸음·운동 소모 칼로리와 칼로리 적자 및 최근 3일 물 섭취량을 Gemini에 전달해 관리 패턴 코칭 메시지를 생성합니다.',
   })
   @GenericApiResponse({
     status: 201,

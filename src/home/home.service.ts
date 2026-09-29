@@ -4896,10 +4896,14 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const equipmentOriginalDetail = dto.equipment_original_detail?.trim();
     const workoutSearchPlan = this.getWorkoutSearchPlan(input);
     const resolvedInput = workoutSearchPlan.containsInput;
+    const normalizedContainsInput = this.normalizeWorkoutExactSearchName(
+      resolvedInput,
+    );
     const normalizedExactInput = this.normalizeWorkoutExactSearchName(
       workoutSearchPlan.preferredExact,
     );
-    const exactWorkoutNameExpression = "LOWER(REPLACE(workout.name, ' ', ''))";
+    const normalizedWorkoutNameExpression =
+      "LOWER(REPLACE(workout.name, ' ', ''))";
 
     const query = this.workoutRepository
       .createQueryBuilder('workout')
@@ -4941,25 +4945,31 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       isFirstPage && normalizedExactInput
         ? await query
             .clone()
-            .andWhere(`${exactWorkoutNameExpression} = :normalizedExactInput`, {
-              normalizedExactInput,
-            })
+            .andWhere(
+              `${normalizedWorkoutNameExpression} = :normalizedExactInput`,
+              {
+                normalizedExactInput,
+              },
+            )
             .orderBy('workout.id', 'ASC')
             .take(limit)
             .getMany()
         : [];
     const remainingLimit = Math.max(limit - exactWorkouts.length, 0);
 
-    if (input.length > 0) {
-      query.andWhere('workout.name LIKE :input', {
-        input: `%${resolvedInput}%`,
+    if (normalizedContainsInput.length > 0) {
+      query.andWhere(`${normalizedWorkoutNameExpression} LIKE :input`, {
+        input: `%${normalizedContainsInput}%`,
       });
     }
 
     if (normalizedExactInput) {
-      query.andWhere(`${exactWorkoutNameExpression} <> :normalizedExactInput`, {
-        normalizedExactInput,
-      });
+      query.andWhere(
+        `${normalizedWorkoutNameExpression} <> :normalizedExactInput`,
+        {
+          normalizedExactInput,
+        },
+      );
     }
 
     if (!isFirstPage) {

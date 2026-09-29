@@ -34,6 +34,32 @@ describe('HomeService menu search priority', () => {
     );
   });
 
+  it('ignores spaces for partial workout name searches', async () => {
+    const andWhere = jest.fn().mockReturnThis();
+    const query = {
+      where: jest.fn().mockReturnThis(),
+      andWhere,
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+      clone: jest.fn().mockReturnThis(),
+    };
+    service.workoutRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(query),
+    };
+
+    await service.searchWorkout({
+      input: '핵스쿼트',
+      limit: 20,
+      cursor: null,
+    });
+
+    expect(andWhere).toHaveBeenCalledWith(
+      "LOWER(REPLACE(workout.name, ' ', '')) LIKE :input",
+      { input: '%핵스쿼트%' },
+    );
+  });
+
   it('resolves inner and outer thigh workout search aliases', () => {
     expect(service.resolveWorkoutSearchNameAlias('아웃타이')).toBe(
       '레버 시티드 힙 애덕션',
