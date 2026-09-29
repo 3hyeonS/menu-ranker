@@ -17,20 +17,18 @@ export class ChatMealRecordParseResponseDto {
   menu_ids: number[];
 
   @ApiProperty({
+    type: [String],
+    description: 'menu_ids와 같은 순서의 DB 매칭 메뉴명 배열',
+    example: ['삶은 달걀', '현미밥'],
+  })
+  menu_names: string[];
+
+  @ApiProperty({
     type: [Number],
     description: '각 메뉴의 중량(g) 배열',
     example: [30, 100],
   })
   menu_quantities: number[];
-
-  @ApiProperty({
-    type: [Number],
-    nullable: true,
-    description:
-      '입력에서 사용자가 등록한 세트명이 감지된 경우 반환하는 메뉴 세트 id 배열. 감지된 세트가 없으면 null',
-    example: [12, 15],
-  })
-  menu_set_ids: number[] | null;
 
   @ApiPropertyOptional({
     type: Number,

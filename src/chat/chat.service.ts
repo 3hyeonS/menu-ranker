@@ -100,6 +100,8 @@ const PERSONALIZED_MANAGEMENT_MEAL_CONTEXT_DAYS = 7;
 const PERSONALIZED_MANAGEMENT_WORKOUT_CONTEXT_DAYS = 7;
 const PERSONALIZED_MANAGEMENT_WEIGHT_CONTEXT_DAYS = 30;
 const PERSONALIZED_MANAGEMENT_INPUT = '나에게 맞는 관리법을 알려줘';
+const MANAGEMENT_PATTERN_ANALYSIS_INPUT = '나의 최근 30일 관리 패턴을 분석해줘';
+const MANAGEMENT_PATTERN_ANALYSIS_CONTEXT_DAYS = 30;
 const PERSONALIZED_MANAGEMENT_PREVIOUS_FEEDBACK_LIMIT = 3;
 const PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS = new Set([
   36, 38, 42, 50, 51, 52, 53, 74, 80, 101, 106, 107,
@@ -189,7 +191,7 @@ const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 - 문장 전체를 볼드 처리하지 마세요.
 `.trim();
 
-type ChatCategory = 'feedback' | 'recommendation' | 'general';
+type ChatCategory = 'feedback' | 'recommendation' | 'general' | 'inquiry';
 type ChatIntroMessageSource =
   | 'text_recommendation'
   | 'text_feedback'
@@ -853,7 +855,7 @@ export class ChatService {
     const guardedAnswer = this.getGuardedGeneralAnswer(input);
     if (guardedAnswer) {
       const response = new ChatRecommendResponseDto();
-      response.chat_category = 'general';
+      response.chat_category = guardedAnswer.chat_category;
       response.intro_message = [
         guardedAnswer.intro_message,
         guardedAnswer.general_answer,
@@ -967,6 +969,165 @@ export class ChatService {
     );
 
     return response;
+  }
+
+  async managementPatternAnalysis(
+    user: UserEntity,
+  ): Promise<ChatRecommendResponseDto> {
+    const recordContextDays: ChatRecordContextDays = {
+      meals: MANAGEMENT_PATTERN_ANALYSIS_CONTEXT_DAYS,
+      workouts: MANAGEMENT_PATTERN_ANALYSIS_CONTEXT_DAYS,
+      weights: MANAGEMENT_PATTERN_ANALYSIS_CONTEXT_DAYS,
+      steps: MANAGEMENT_PATTERN_ANALYSIS_CONTEXT_DAYS,
+      water: CHAT_RECORD_CONTEXT_DAYS,
+    };
+    const [userInfo, chatContext] = await Promise.all([
+      this.getRequiredUserInfo(user.id),
+      this.getRecentChatContext(
+        user.id,
+        CHAT_RECENT_TURN_LIMIT,
+        recordContextDays,
+      ),
+    ]);
+    const referenceDate = this.formatKoreaDate(new Date());
+    const requestContext = this.buildManagementPatternAnalysisRequestContext(
+      chatContext,
+      userInfo,
+      referenceDate,
+    );
+    const answer = await this.callGeminiText(
+      MANAGEMENT_PATTERN_ANALYSIS_INPUT,
+      chatContext,
+      userInfo,
+      requestContext,
+    );
+    const response = new ChatRecommendResponseDto();
+    response.chat_category = 'general';
+    response.intro_message = answer;
+
+    await this.saveNewChatHistory(
+      this.chatHistoryRepository.create({
+        input_text: MANAGEMENT_PATTERN_ANALYSIS_INPUT,
+        response_payload: response as unknown as Record<string, any>,
+        user,
+      }),
+    );
+
+    return response;
+  }
+
+  private buildManagementPatternAnalysisRequestContext(
+    chatContext: ChatContextSummary,
+    userInfo: UserInfoEntity,
+    referenceDate: string,
+  ): string {
+    const intakeByDate = new Map<string, number>();
+    chatContext.recent_meal_records_3_days.forEach((record) => {
+      intakeByDate.set(
+        record.date,
+        (intakeByDate.get(record.date) ?? 0) +
+          Number(record.nutrition_totals.calories ?? 0),
+      );
+    });
+
+    const weightByDate = new Map<string, number>();
+    chatContext.recent_weight_records_7_days.forEach((record) => {
+      weightByDate.set(record.date, Number(record.weight_kg));
+    });
+
+    const stepsByDate = new Map<string, number>();
+    chatContext.recent_step_records_7_days.forEach((record) => {
+      stepsByDate.set(record.date, Number(record.steps));
+    });
+
+    const workoutByDate = new Map<string, number>();
+    chatContext.recent_workout_records_3_days.forEach((record) => {
+      workoutByDate.set(
+        record.date,
+        (workoutByDate.get(record.date) ?? 0) +
+          Number(record.burned_calories ?? 0),
+      );
+    });
+
+    const burnedDates = Array.from(
+      new Set([...stepsByDate.keys(), ...workoutByDate.keys()]),
+    ).sort();
+    const burnedCalories = burnedDates.map((date) => {
+      const stepsBurned = this.estimateStepBurnedCalories(
+        stepsByDate.get(date) ?? 0,
+        userInfo.weight,
+      );
+      const workoutBurned = roundToOneDecimal(workoutByDate.get(date) ?? 0);
+      return {
+        date,
+        total_burned_calories: roundToOneDecimal(stepsBurned + workoutBurned),
+        steps_burned_calories: stepsBurned,
+        workout_burned_calories: workoutBurned,
+      };
+    });
+    const burnedByDate = new Map(
+      burnedCalories.map((record) => [
+        record.date,
+        record.total_burned_calories,
+      ]),
+    );
+    const bmr = this.calculateManagementPatternBmr(userInfo, referenceDate);
+    const intakeCalories = Array.from(intakeByDate.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, calories]) => ({
+        date,
+        intake_calories: roundToOneDecimal(calories),
+      }));
+    const weights = Array.from(weightByDate.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, weight]) => ({
+        date,
+        weight: roundToOneDecimal(weight),
+      }));
+    const calorieDeficits = intakeCalories.map((record) => ({
+      date: record.date,
+      calorie_deficit: roundToOneDecimal(
+        record.intake_calories - bmr - (burnedByDate.get(record.date) ?? 0),
+      ),
+    }));
+
+    return `[최근 30일 관리 패턴 분석 요청]
+- 조회 기간: ${this.addDateOnlyDays(referenceDate, -29)} ~ ${referenceDate} (Asia/Seoul, 양 끝 날짜 포함)
+- 사용자가 기록하지 않은 날짜는 각 배열에서 생략되어 있어. 누락된 날짜의 값을 0으로 가정하거나 만들어내지 마.
+- 칼로리 적자 계산식: 섭취 칼로리 - (기초대사량 + 걸음 소모 칼로리 + 운동 소모 칼로리)
+- 칼로리 적자 값이 음수면 섭취량이 위 기준 소모량보다 적다는 뜻이고, 양수면 많다는 뜻이야.
+- 걸음 소모 칼로리는 걸음 수 × 사용자 체중(kg) × 0.0005로 추정한 값이므로 확정값처럼 표현하지 마.
+- 기록이 있는 날짜와 구체적인 수치를 근거로 섭취·체중·활동·칼로리 적자의 흐름과 반복 패턴을 종합해줘.
+- 데이터가 일부만 있으면 존재하는 데이터만 분석하고, 기록이 부족하다는 말로 끝내지 말고 지금 실천할 수 있는 구체적인 관리 방법을 제안해줘.
+- 같은 내용을 반복하지 말고 사용자가 이해하기 쉬운 표현을 사용해줘.
+
+분석 데이터:
+${JSON.stringify({
+  reference_date: referenceDate,
+  basal_metabolic_rate: bmr,
+  intake_calories: intakeCalories,
+  weights,
+  burned_calories: burnedCalories,
+  calorie_deficits: calorieDeficits,
+})}`;
+  }
+
+  private calculateManagementPatternBmr(
+    userInfo: UserInfoEntity,
+    referenceDate: string,
+  ): number {
+    const referenceYear = Number(referenceDate.slice(0, 4));
+    const age = referenceYear - userInfo.birthYear - 1;
+    let bmr =
+      10 * Number(userInfo.weight) +
+      6.25 * Number(userInfo.height) -
+      5 * age +
+      5;
+    if (userInfo.gender === 1) {
+      bmr -= 166;
+    }
+
+    return roundToOneDecimal(bmr);
   }
 
   async mealFeedback(
@@ -2269,10 +2430,14 @@ export class ChatService {
   private async saveGeneralChatResponse(
     user: UserEntity,
     input: string,
-    answer: { intro_message: string; general_answer: string },
+    answer: {
+      chat_category?: 'inquiry';
+      intro_message: string;
+      general_answer: string;
+    },
   ): Promise<ChatRecommendResponseDto> {
     const response = new ChatRecommendResponseDto();
-    response.chat_category = 'general';
+    response.chat_category = answer.chat_category ?? 'general';
     response.intro_message = answer.intro_message;
     response.general_answer = answer.general_answer;
 
@@ -2287,13 +2452,16 @@ export class ChatService {
     return response;
   }
 
-  private getGuardedGeneralAnswer(
-    input: string,
-  ): { intro_message: string; general_answer: string } | null {
+  private getGuardedGeneralAnswer(input: string): {
+    chat_category: 'inquiry';
+    intro_message: string;
+    general_answer: string;
+  } | null {
     const normalizedInput = input.replace(/\s+/g, '').toLowerCase();
 
     if (this.isUnsupportedChatActionRequest(normalizedInput)) {
       return {
+        chat_category: 'inquiry',
         intro_message:
           '앱 기능이나 오류는 내가 단정해서 안내하면 틀릴 수 있어.',
         general_answer:
@@ -2303,6 +2471,7 @@ export class ChatService {
 
     if (this.isAppSupportQuestion(normalizedInput)) {
       return {
+        chat_category: 'inquiry',
         intro_message:
           '앱 기능이나 오류는 내가 단정해서 안내하면 틀릴 수 있어.',
         general_answer:
@@ -2364,6 +2533,17 @@ export class ChatService {
       /(앱|서비스|기능|사용법|어떻게써|어떻게사용|오류|버그|안돼|안되|문의|아이디어|사진인식|메뉴판인식|영양성분표|구독|결제|탈퇴|계정|로그인|대화초기화|초기화|식사기록|식사기록은어떻게|운동기록|기록이어디|어디에적어)/;
     const foodConversationPattern =
       /(먹어도돼|뭐먹|추천|피드백|칼로리|단백질|탄수|지방|영양|식단)/;
+    const explicitAppContextPattern =
+      /(앱|서비스|기능|사용법|사진인식|메뉴판인식|영양성분표|구독|결제|탈퇴|계정|로그인|대화초기화|식사기록|운동기록)/;
+    const supportIntentPattern =
+      /(어떻게|어디|방법|수정|변경|삭제|등록|설정|안돼|안되|오류|버그|문의|아이디어)/;
+
+    if (
+      explicitAppContextPattern.test(normalizedInput) &&
+      supportIntentPattern.test(normalizedInput)
+    ) {
+      return true;
+    }
 
     return (
       appPattern.test(normalizedInput) &&
@@ -3104,15 +3284,6 @@ ${JSON.stringify(
       hasDate: parsedPlan.date !== null,
     });
 
-    const menuSetIds = await this.findMealRecordMenuSetIdsMentionedInText(
-      user.id,
-      text,
-    );
-    timing.mark('meal_record_menu_sets_matched', {
-      matchedSetCount: menuSetIds.length,
-      menuSetIds,
-    });
-
     const exactTextMenus = await this.findMealRecordMenusMentionedExactlyInText(
       user.id,
       text,
@@ -3180,6 +3351,7 @@ ${JSON.stringify(
     });
 
     const menuIds: number[] = [];
+    const menuNames: string[] = [];
     const menuQuantities: number[] = [];
     const matchedMenus: Array<{
       input_menu_name: string;
@@ -3198,6 +3370,7 @@ ${JSON.stringify(
       }
 
       menuIds.push(match.menu.id);
+      menuNames.push(stripPublicMenuSourcePrefix(match.menu.name));
       menuQuantities.push(quantity);
       matchedMenus.push({
         input_menu_name: match.inputMenuName,
@@ -3213,8 +3386,8 @@ ${JSON.stringify(
 
     const response = new ChatMealRecordParseResponseDto();
     response.menu_ids = menuIds;
+    response.menu_names = menuNames;
     response.menu_quantities = menuQuantities;
-    response.menu_set_ids = menuSetIds.length > 0 ? menuSetIds : null;
 
     if (parsedPlan.time !== null) {
       response.time = parsedPlan.time;
@@ -3235,8 +3408,8 @@ ${JSON.stringify(
             parsed_items: parsedPlan.items,
             matched_menus: matchedMenus,
             menu_ids: menuIds,
+            menu_names: menuNames,
             menu_quantities: menuQuantities,
-            menu_set_ids: response.menu_set_ids,
             ...(parsedPlan.time !== null ? { time: parsedPlan.time } : {}),
             ...(parsedPlan.date !== null ? { date: parsedPlan.date } : {}),
           },
@@ -4463,10 +4636,7 @@ ${JSON.stringify(
     const records = await this.waterIntakeRepository.find({
       where: {
         user: { id: userId },
-        date: Between(
-          this.formatLocalDate(start),
-          this.formatLocalDate(end),
-        ),
+        date: Between(this.formatLocalDate(start), this.formatLocalDate(end)),
       },
       order: {
         date: 'ASC',
@@ -5569,11 +5739,7 @@ ${JSON.stringify(
     if (rematchedFoods.length === 0) {
       return predictions
         .map((prediction, foodIndex) =>
-          this.matchFoodImagePredictionLocally(
-            prediction,
-            menus,
-            foodIndex,
-          ),
+          this.matchFoodImagePredictionLocally(prediction, menus, foodIndex),
         )
         .filter((food): food is RecognizedFoodImageMenu => food !== null);
     }
@@ -12313,32 +12479,30 @@ ${JSON.stringify(params.feedback ?? null, promptPayloadReplacer)}
     matchedMenus: ComparisonMenuMatch[];
     combinationNutrition: FeedbackNutrition;
   }): Promise<GeminiFeedbackScoreResult | null> {
-    const menusPayload = params.matchedMenus.map(
-      (match, index) => {
-        const { inputMenuName, menu } = match;
-        const nutrition = this.sumFeedbackNutrition([match]);
+    const menusPayload = params.matchedMenus.map((match, index) => {
+      const { inputMenuName, menu } = match;
+      const nutrition = this.sumFeedbackNutrition([match]);
 
-        return {
-          order: index + 1,
-          input_menu_name: inputMenuName,
-          menu_id: menu.id,
-          menu_name: menu.name,
-          display_menu_name: stripPublicMenuSourcePrefix(menu.name),
-          brand: menu.brand ?? null,
-          category: menu.category ?? null,
-          unit: menu.unit,
-          weight: roundToOneDecimal(nutrition.weight),
-          unit_quantity: menu.unit_quantity,
-          calories: roundToOneDecimal(nutrition.calories),
-          carbs: roundToOneDecimal(nutrition.carbs),
-          protein: roundToOneDecimal(nutrition.protein),
-          fat: roundToOneDecimal(nutrition.fat),
-          sugars: roundToOneDecimal(nutrition.sugars),
-          sodium: roundToOneDecimal(nutrition.sodium),
-          caffeine: roundToOneDecimal(nutrition.caffeine),
-        };
-      },
-    );
+      return {
+        order: index + 1,
+        input_menu_name: inputMenuName,
+        menu_id: menu.id,
+        menu_name: menu.name,
+        display_menu_name: stripPublicMenuSourcePrefix(menu.name),
+        brand: menu.brand ?? null,
+        category: menu.category ?? null,
+        unit: menu.unit,
+        weight: roundToOneDecimal(nutrition.weight),
+        unit_quantity: menu.unit_quantity,
+        calories: roundToOneDecimal(nutrition.calories),
+        carbs: roundToOneDecimal(nutrition.carbs),
+        protein: roundToOneDecimal(nutrition.protein),
+        fat: roundToOneDecimal(nutrition.fat),
+        sugars: roundToOneDecimal(nutrition.sugars),
+        sodium: roundToOneDecimal(nutrition.sodium),
+        caffeine: roundToOneDecimal(nutrition.caffeine),
+      };
+    });
     const prompt = `
 피드백 응답에 사용할 적합도 점수를 한국어가 아닌 JSON object로만 산출해줘.
 반드시 JSON만 반환하고 코드펜스는 쓰지 마.

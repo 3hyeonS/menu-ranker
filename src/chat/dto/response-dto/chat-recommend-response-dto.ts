@@ -5,10 +5,11 @@ import { ChatFeedbackResponseDto } from './chat-feedback-response-dto';
 export class ChatRecommendResponseDto {
   @ApiProperty({
     type: String,
-    description: '순수 채팅 모드에서는 항상 general',
-    example: 'general',
+    description:
+      '일반 채팅은 general, 앱 기능·사용법·오류 관련 운영진 문의 연결은 inquiry',
+    example: 'inquiry',
   })
-  chat_category: 'feedback' | 'recommendation' | 'general';
+  chat_category: 'feedback' | 'recommendation' | 'general' | 'inquiry';
 
   @ApiProperty({
     type: String,

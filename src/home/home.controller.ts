@@ -85,6 +85,9 @@ import { MonthlyCalendarRequestDto } from './dto/request-dto/monthly-calendar-re
 import { WaterIntakeResponseDto } from './dto/response-dto/water-intake-response-dto';
 import { RecentMenuResponseDto } from './dto/response-dto/recent-menu-response-dto';
 import { MonthlyCalendarResponseDto } from './dto/response-dto/monthly-calendar-response-dto';
+import { RecentAnalysisRequestDto } from './dto/request-dto/recent-analysis-request-dto';
+import { RecentAnalysisResponseDto } from './dto/response-dto/recent-analysis-response-dto';
+import { RegisteredMenuListRequestDto } from './dto/request-dto/registered-menu-list-request-dto';
 
 @ApiTags('홈 탭')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -306,12 +309,20 @@ export class HomeController {
   @ApiBearerAuth('accessToken')
   @ApiOperation({
     summary: '직접 등록한 메뉴 조회',
+    description:
+      'limit를 보내면 cursor 방식으로 조회하며, limit를 생략하면 기존 방식처럼 검색 조건에 맞는 전체 메뉴를 반환합니다.',
   })
   @GenericApiResponse({
     status: 201,
     description: '직접 등록한 메뉴 조회 성공',
     message: 'Registered menus returned successfully',
     model: MenuListResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'limit, cursor 또는 input 형식 오류',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
   })
   @ErrorApiResponse({
     status: 401,
@@ -324,8 +335,9 @@ export class HomeController {
   @Post('/registeredMenus')
   async registeredMenus(
     @GetUser() user: UserEntity,
+    @Body() dto: RegisteredMenuListRequestDto,
   ): Promise<MenuListResponseDto> {
-    return await this.homeService.getRegisteredMenus(user);
+    return await this.homeService.getRegisteredMenus(user, dto ?? {});
   }
 
   @ApiBearerAuth('accessToken')
@@ -782,10 +794,7 @@ export class HomeController {
     @GetUser() user: UserEntity,
     @Body() upsertMenuSetRequestDto: UpsertMenuSetRequestDto,
   ): Promise<MenuSetIdResponseDto> {
-    return await this.homeService.upsertMenuSet(
-      user,
-      upsertMenuSetRequestDto,
-    );
+    return await this.homeService.upsertMenuSet(user, upsertMenuSetRequestDto);
   }
 
   // 세트 조회
@@ -1347,7 +1356,8 @@ export class HomeController {
   @ApiBearerAuth('accessToken')
   @ApiOperation({
     summary: '운동 추가 및 수정',
-    description: '오늘 날짜 기준으로 같은 운동 기록이 있으면 수정하고 없으면 추가',
+    description:
+      '오늘 날짜 기준으로 같은 운동 기록이 있으면 수정하고 없으면 추가',
   })
   @GenericApiResponse({
     status: 201,
@@ -1615,5 +1625,34 @@ export class HomeController {
     @Body() dto: MonthlyCalendarRequestDto,
   ): Promise<MonthlyCalendarResponseDto[]> {
     return await this.homeService.getMonthlyCalendar(user, dto);
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '최근 30일 분석 기록 조회',
+    description:
+      '기준일을 포함한 최근 30일의 섭취 칼로리, 체중, 소모 칼로리 또는 칼로리 적자를 조회합니다. 해당 항목의 기록이 없는 날짜는 생략합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '최근 30일 분석 기록 조회 성공',
+    message: 'Recent analysis records returned successfully',
+    model: RecentAnalysisResponseDto,
+    isArray: true,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '날짜, mode 형식 오류 또는 사용자 프로필 없음',
+    message: 'Invalid date',
+    error: 'BadRequestException',
+  })
+  @ResponseMsg('Recent analysis records returned successfully')
+  @UseGuards(AuthGuard())
+  @Post('/recent30DaysAnalysis')
+  async getRecentAnalysis(
+    @GetUser() user: UserEntity,
+    @Body() dto: RecentAnalysisRequestDto,
+  ): Promise<RecentAnalysisResponseDto[]> {
+    return await this.homeService.getRecentAnalysis(user, dto);
   }
 }

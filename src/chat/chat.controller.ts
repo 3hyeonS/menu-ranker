@@ -95,7 +95,7 @@ export class ChatController {
   @ApiOperation({
     summary: '과거 대화 맥락 기반 Gemini 채팅',
     description:
-      '사용자 프로필, 최근 3일 식단·운동 기록, 최근 7일 체중·걸음 수 기록, 최근 대화, 이전 세션 요약과 장기 대화 기억을 Gemini에 전달하고 텍스트 답변을 그대로 반환합니다. 메뉴 분류, 추천 카드 및 서버 후처리는 수행하지 않습니다.',
+      '사용자 프로필, 최근 3일 식단·운동 기록, 최근 7일 체중·걸음 수 기록, 최근 대화, 이전 세션 요약과 장기 대화 기억을 Gemini에 전달합니다. 일반 답변은 general, 앱 기능·사용법·오류 문의는 운영진 문의 연결을 위해 inquiry를 반환합니다.',
   })
   @GenericApiResponse({
     status: 201,
@@ -178,6 +178,54 @@ export class ChatController {
       return await this.chatService.personalizedManagement(user);
     } catch (error) {
       this.logChatApiError('POST /chat/personalized-management', user, error);
+      throw error;
+    }
+  }
+
+  @ApiBearerAuth('accessToken')
+  @ApiOperation({
+    summary: '최근 30일 나의 관리 패턴 분석',
+    description:
+      '최근 30일 섭취 칼로리, 체중, 걸음·운동 소모 칼로리와 칼로리 적자를 Gemini에 전달해 관리 패턴 코칭 메시지를 생성합니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '관리 패턴 분석 메시지 생성 성공',
+    message: 'Management pattern analysis generated successfully',
+    model: ChatRecommendResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: '사용자 프로필 없음',
+    message: 'User profile is required for recommendation',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 503,
+    description: 'Gemini API 호출 실패',
+    message: 'Gemini recommendation pipeline is unavailable',
+    error: 'ServiceUnavailableException',
+  })
+  @ResponseMsg('Management pattern analysis generated successfully')
+  @UseGuards(AuthGuard())
+  @Post('/management-pattern-analysis')
+  async managementPatternAnalysis(
+    @GetUser() user: UserEntity,
+  ): Promise<ChatRecommendResponseDto> {
+    try {
+      return await this.chatService.managementPatternAnalysis(user);
+    } catch (error) {
+      this.logChatApiError(
+        'POST /chat/management-pattern-analysis',
+        user,
+        error,
+      );
       throw error;
     }
   }

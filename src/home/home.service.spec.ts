@@ -538,4 +538,183 @@ describe('HomeService menu search priority', () => {
       }),
     );
   });
+
+  it('returns every registered menu when limit is omitted', async () => {
+    const registeredMenuService = Object.create(HomeService.prototype) as any;
+    const queryBuilder: Record<string, jest.Mock> = {};
+    ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'take'].forEach(
+      (method) => {
+        queryBuilder[method] = jest.fn(() => queryBuilder);
+      },
+    );
+    queryBuilder.getMany = jest.fn().mockResolvedValue([
+      {
+        id: 3,
+        data_source: 1,
+        name: '직접 메뉴 3',
+        brand: null,
+        category: '기타',
+        unit: 0,
+        weight: 100,
+        unit_quantity: '1인분',
+        calories: 100,
+        carbs: 10,
+        protein: 5,
+        fat: 2,
+      },
+      {
+        id: 2,
+        data_source: 1,
+        name: '직접 메뉴 2',
+        brand: null,
+        category: '기타',
+        unit: 0,
+        weight: 100,
+        unit_quantity: '1인분',
+        calories: 90,
+        carbs: 9,
+        protein: 4,
+        fat: 2,
+      },
+    ]);
+    registeredMenuService.menuRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+
+    const response = await registeredMenuService.getRegisteredMenus(
+      { id: 50 },
+      {},
+    );
+
+    expect(response.menu_list.map((menu) => menu.id)).toEqual([3, 2]);
+    expect(response.next_cursor).toBeNull();
+    expect(queryBuilder.take).not.toHaveBeenCalled();
+  });
+
+  it('paginates and searches registered menus with an id cursor', async () => {
+    const registeredMenuService = Object.create(HomeService.prototype) as any;
+    const queryBuilder: Record<string, jest.Mock> = {};
+    ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'take'].forEach(
+      (method) => {
+        queryBuilder[method] = jest.fn(() => queryBuilder);
+      },
+    );
+    const createMenu = (id: number) => ({
+      id,
+      data_source: 1,
+      name: `닭가슴살 ${id}`,
+      brand: null,
+      category: '육류',
+      unit: 0,
+      weight: 100,
+      unit_quantity: '1인분',
+      calories: 120,
+      carbs: 2,
+      protein: 25,
+      fat: 2,
+    });
+    queryBuilder.getMany = jest
+      .fn()
+      .mockResolvedValue([createMenu(9), createMenu(8), createMenu(7)]);
+    registeredMenuService.menuRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+
+    const response = await registeredMenuService.getRegisteredMenus(
+      { id: 50 },
+      { limit: 2, cursor: 10, input: ' 닭가슴살 ' },
+    );
+
+    expect(response.menu_list.map((menu) => menu.id)).toEqual([9, 8]);
+    expect(response.next_cursor).toBe(8);
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      'menu.name LIKE :input',
+      { input: '%닭가슴살%' },
+    );
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('menu.id < :cursor', {
+      cursor: 10,
+    });
+    expect(queryBuilder.take).toHaveBeenCalledWith(3);
+  });
+
+  it('returns 30-day burned calories and deficit using steps and workouts', async () => {
+    const analysisService = Object.create(HomeService.prototype) as any;
+    analysisService.userInfoRepository = {
+      findOne: jest.fn().mockResolvedValue({
+        gender: 0,
+        birthYear: 1996,
+        height: 170,
+        weight: 60,
+      }),
+    };
+    analysisService.mealRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          date: new Date(2026, 8, 29, 12),
+          mealMenus: [{ menu: { calories: 1500 }, quantity: 1 }],
+        },
+      ]),
+    };
+    analysisService.weightStepsRepository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 1,
+          date: new Date(2026, 8, 29, 8),
+          weight: 60,
+          steps: 10000,
+        },
+      ]),
+    };
+    analysisService.workoutRecordRepository = {
+      find: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 1, date: '2026-09-29', burned_calories: 200 },
+        ]),
+    };
+    jest
+      .spyOn(analysisService, 'calculateMenuCaloriesForQuantity')
+      .mockReturnValue(1500);
+
+    await expect(
+      analysisService.getRecentAnalysis(
+        { id: 50 },
+        { date: '2026-09-29', mode: 'burned' },
+      ),
+    ).resolves.toEqual([
+      {
+        date: '2026-09-29',
+        total_burned_calories: 500,
+        steps_burned_calories: 300,
+        workout_burned_calories: 200,
+      },
+    ]);
+
+    await expect(
+      analysisService.getRecentAnalysis(
+        { id: 50 },
+        { date: '2026-09-29', mode: 'deficit' },
+      ),
+    ).resolves.toEqual([
+      {
+        date: '2026-09-29',
+        calorie_deficit: -522.5,
+      },
+    ]);
+  });
+
+  it('uses an inclusive 30-day range and rejects impossible dates', () => {
+    const analysisService = Object.create(HomeService.prototype) as any;
+
+    expect(analysisService.getRecentAnalysisDateRange('2026-09-29')).toEqual(
+      expect.objectContaining({
+        startDate: '2026-08-31',
+        endDate: '2026-09-29',
+      }),
+    );
+    expect(() =>
+      analysisService.getRecentAnalysisDateRange('2026-02-30'),
+    ).toThrow('Invalid date');
+  });
 });

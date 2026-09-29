@@ -284,7 +284,7 @@ describe('ChatService conversation memory', () => {
       { input: '식사 기록은 앱에서 어떻게 해?' },
     );
 
-    expect(response.chat_category).toBe('general');
+    expect(response.chat_category).toBe('inquiry');
     expect(response.intro_message).toContain(
       '[설정 - 문의하기/아이디어 보내기]',
     );
@@ -295,6 +295,30 @@ describe('ChatService conversation memory', () => {
     expect(chatContext).not.toHaveBeenCalled();
     expect(gemini).not.toHaveBeenCalled();
     expect(legacyPipeline).not.toHaveBeenCalled();
+  });
+
+  it('returns inquiry for an app modification request without calling Gemini', async () => {
+    const service = createService() as any;
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    const userInfo = jest.spyOn(service, 'getRequiredUserInfo');
+    const chatContext = jest.spyOn(service, 'getRecentChatContext');
+    const gemini = jest.spyOn(service, 'callGeminiText');
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.recommend(
+      { id: 9 },
+      { input: '앱에서 닉네임 수정해줘' },
+    );
+
+    expect(response.chat_category).toBe('inquiry');
+    expect(response.intro_message).toContain(
+      '[설정 - 문의하기/아이디어 보내기]',
+    );
+    expect(userInfo).not.toHaveBeenCalled();
+    expect(chatContext).not.toHaveBeenCalled();
+    expect(gemini).not.toHaveBeenCalled();
   });
 
   it('rejects personalized management for users outside the trial group', async () => {
@@ -397,6 +421,84 @@ describe('ChatService conversation memory', () => {
     expect(response).toEqual({
       chat_category: 'general',
       intro_message: '개인화된 관리법',
+    });
+  });
+
+  it('creates a 30-day management pattern analysis with intake, weight, and burned calories', async () => {
+    const service = createService() as any;
+    const chatContext = {
+      messages: [],
+      session_summaries: [],
+      long_term_profile_traits: null,
+      recent_meal_records_3_days: [
+        {
+          date: '2026-09-29',
+          meal_time: 1,
+          meal_time_label: '점심',
+          menus: [],
+          nutrition_totals: { calories: 1500 },
+        },
+      ],
+      recent_workout_records_3_days: [
+        {
+          date: '2026-09-29',
+          burned_calories: 200,
+        },
+      ],
+      recent_weight_records_7_days: [{ date: '2026-09-29', weight_kg: 60 }],
+      recent_step_records_7_days: [{ date: '2026-09-29', steps: 10000 }],
+      recent_water_intake_records_3_days: [],
+      previous_user_input: null,
+      previous_category: null,
+      previous_recommended_menu_names: [],
+      previous_feedback_menu_names: [],
+      previous_brand: null,
+      previous_category_name: null,
+      previous_meal_time: null,
+    };
+    const userInfo = {
+      gender: 0,
+      birthYear: 1996,
+      height: 170,
+      weight: 60,
+      goal: 0,
+      target_ratio: [40, 30, 30],
+    };
+    const getChatContext = jest
+      .spyOn(service, 'getRecentChatContext')
+      .mockResolvedValue(chatContext);
+    jest.spyOn(service, 'getRequiredUserInfo').mockResolvedValue(userInfo);
+    jest.spyOn(service, 'formatKoreaDate').mockReturnValue('2026-09-29');
+    const callGemini = jest
+      .spyOn(service, 'callGeminiText')
+      .mockResolvedValue('30일 관리 패턴 분석 결과');
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
+
+    const response = await service.managementPatternAnalysis({ id: 50 });
+
+    expect(getChatContext).toHaveBeenCalledWith(50, 8, {
+      meals: 30,
+      workouts: 30,
+      weights: 30,
+      steps: 30,
+      water: 3,
+    });
+    expect(callGemini).toHaveBeenCalledWith(
+      '나의 최근 30일 관리 패턴을 분석해줘',
+      chatContext,
+      userInfo,
+      expect.stringContaining('최근 30일 관리 패턴 분석 요청'),
+    );
+    expect(callGemini.mock.calls[0][3]).toContain(
+      '"total_burned_calories":500',
+    );
+    expect(callGemini.mock.calls[0][3]).toContain('"calorie_deficit":-522.5');
+    expect(response).toEqual({
+      chat_category: 'general',
+      intro_message: '30일 관리 패턴 분석 결과',
     });
   });
 
@@ -550,9 +652,9 @@ describe('ChatService conversation memory', () => {
       );
 
       expect(context.calorie_score.exercise_burned_calories).toBe(100);
-      expect(
-        context.calorie_score.exercise_calories_reflected_in_target,
-      ).toBe(reflected);
+      expect(context.calorie_score.exercise_calories_reflected_in_target).toBe(
+        reflected,
+      );
       expect(context.calorie_score.adjusted_target_calories).toBe(
         adjustedTarget,
       );
@@ -1123,14 +1225,13 @@ describe('ChatService conversation memory', () => {
     jest
       .spyOn(service, 'findGenericCandidateMenuByKeywordFallback')
       .mockResolvedValue(null);
-    jest.spyOn(service, 'getMenusByIds').mockImplementation(
-      async (_userId: number, menuIds: number[]) =>
+    jest
+      .spyOn(service, 'getMenusByIds')
+      .mockImplementation(async (_userId: number, menuIds: number[]) =>
         menuIds.map((menuId) =>
-          menuId === broadScopedMenu.id
-            ? broadScopedMenu
-            : defaultScopedMenu,
+          menuId === broadScopedMenu.id ? broadScopedMenu : defaultScopedMenu,
         ),
-    );
+      );
     jest
       .spyOn(service, 'rematchGenericCandidateMenuWithGemini')
       .mockResolvedValue({ completed: true, menu: null });
@@ -1219,6 +1320,89 @@ describe('ChatService conversation memory', () => {
       },
     ]);
     expect(result.time).toBeNull();
+  });
+
+  it('returns and stores menu names aligned with parsed meal menu ids', async () => {
+    const service = createService() as any;
+    jest.spyOn(service, 'createChatTimingLogger').mockReturnValue({
+      mark: jest.fn(),
+      end: jest.fn(),
+    });
+    jest
+      .spyOn(service, 'generateMealRecordParsePlanWithGemini')
+      .mockResolvedValue({
+        items: [
+          {
+            name: '계란',
+            brand: null,
+            category: null,
+            quantityG: 50,
+          },
+          {
+            name: '현미밥',
+            brand: null,
+            category: null,
+            quantityG: 180,
+          },
+        ],
+        time: 1,
+        date: '2026-09-29',
+      });
+    const menuSetLookup = jest
+      .spyOn(service, 'findMealRecordMenuSetIdsMentionedInText')
+      .mockResolvedValue([12]);
+    jest
+      .spyOn(service, 'findMealRecordMenusMentionedExactlyInText')
+      .mockResolvedValue([]);
+    jest
+      .spyOn(service, 'matchGenericMenuCandidatesToFeedbackMenus')
+      .mockResolvedValue([
+        {
+          inputMenuName: '계란',
+          menu: { id: 10, name: '(식약처_음식) 삶은 달걀' },
+        },
+        {
+          inputMenuName: '현미밥',
+          menu: { id: 20, name: '(식약처_음식) 현미밥' },
+        },
+      ]);
+    service.chatHistoryRepository = {
+      create: jest.fn((value) => value),
+    };
+    const saveHistory = jest
+      .spyOn(service, 'saveNewChatHistory')
+      .mockResolvedValue({ id: 321 });
+
+    const response = await service.parseMealRecordFromChatText(
+      { id: 107 },
+      { text: '점심으로 계란 1개와 현미밥 180g' },
+    );
+
+    expect(response).toEqual({
+      chat_id: 321,
+      menu_ids: [10, 20],
+      menu_names: ['삶은 달걀', '현미밥'],
+      menu_quantities: [50, 180],
+      time: 1,
+      date: '2026-09-29',
+    });
+    expect(response).not.toHaveProperty('menu_set_ids');
+    expect(menuSetLookup).not.toHaveBeenCalled();
+    expect(saveHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        response_payload: expect.objectContaining({
+          meal_record_parse: expect.objectContaining({
+            menu_ids: [10, 20],
+            menu_names: ['삶은 달걀', '현미밥'],
+            menu_quantities: [50, 180],
+          }),
+        }),
+      }),
+    );
+    const savedHistory = saveHistory.mock.calls[0][0] as any;
+    expect(savedHistory.response_payload.meal_record_parse).not.toHaveProperty(
+      'menu_set_ids',
+    );
   });
 
   it('normalizes a standalone egg meal record to boiled egg', () => {

@@ -128,6 +128,12 @@ import {
   MonthlyCalendarRequestDto,
 } from './dto/request-dto/monthly-calendar-request-dto';
 import { MonthlyCalendarResponseDto } from './dto/response-dto/monthly-calendar-response-dto';
+import {
+  RecentAnalysisMode,
+  RecentAnalysisRequestDto,
+} from './dto/request-dto/recent-analysis-request-dto';
+import { RecentAnalysisResponseDto } from './dto/response-dto/recent-analysis-response-dto';
+import { RegisteredMenuListRequestDto } from './dto/request-dto/registered-menu-list-request-dto';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -1431,17 +1437,41 @@ export class HomeService {
     return new MenuListResponseDto(menuList);
   }
 
-  async getRegisteredMenus(user: UserEntity): Promise<MenuListResponseDto> {
-    const menuList = await this.menuRepository
+  async getRegisteredMenus(
+    user: UserEntity,
+    dto: RegisteredMenuListRequestDto = {},
+  ): Promise<MenuListResponseDto> {
+    const limit = dto?.limit ?? null;
+    const cursor = dto?.cursor ?? null;
+    const input = dto?.input?.trim() ?? '';
+    const query = this.menuRepository
       .createQueryBuilder('menu')
       .leftJoinAndSelect('menu.user', 'user')
       .where('user.id = :userId', { userId: user.id })
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .orderBy('menu.id', 'DESC')
-      .getMany();
+      .orderBy('menu.id', 'DESC');
+
+    if (input) {
+      query.andWhere('menu.name LIKE :input', { input: `%${input}%` });
+    }
+
+    if (limit !== null) {
+      if (cursor !== null) {
+        query.andWhere('menu.id < :cursor', { cursor });
+      }
+      query.take(limit + 1);
+    }
+
+    const rows = await query.getMany();
+    const hasNextPage = limit !== null && rows.length > limit;
+    const pagedRows = limit !== null ? rows.slice(0, limit) : rows;
+    const nextCursor = hasNextPage
+      ? (pagedRows[pagedRows.length - 1]?.id ?? null)
+      : null;
 
     return new MenuListResponseDto(
-      menuList.map((menu) => new MenuSimpleResponseDto(menu)),
+      pagedRows.map((menu) => new MenuSimpleResponseDto(menu)),
+      nextCursor,
     );
   }
 
@@ -5328,6 +5358,211 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       case 'water':
         return await this.getMonthlyWaterIntakes(user.id, range);
     }
+  }
+
+  async getRecentAnalysis(
+    user: UserEntity,
+    dto: RecentAnalysisRequestDto,
+  ): Promise<RecentAnalysisResponseDto[]> {
+    const mode = this.normalizeRecentAnalysisMode(dto.mode);
+    const range = this.getRecentAnalysisDateRange(dto.date);
+    const userInfo = await this.userInfoRepository.findOne({
+      where: { user: { id: user.id } },
+    });
+
+    if (!userInfo) {
+      throw new BadRequestException('User profile is required for analysis');
+    }
+
+    const [meals, weightStepRecords, workoutRecords] = await Promise.all([
+      this.mealRepository.find({
+        where: {
+          user: { id: user.id },
+          date: Between(range.startDateTime, range.endDateTime),
+        },
+        relations: { mealMenus: { menu: true } },
+        order: { date: 'ASC', id: 'ASC' },
+      }),
+      this.weightStepsRepository.find({
+        where: {
+          user: { id: user.id },
+          date: Between(range.startDateTime, range.endDateTime),
+        },
+        order: { date: 'ASC', id: 'ASC' },
+      }),
+      this.workoutRecordRepository.find({
+        where: {
+          user: { id: user.id },
+          date: Between(range.startDate, range.endDate),
+        },
+        order: { date: 'ASC', id: 'ASC' },
+      }),
+    ]);
+
+    const intakeByDate = new Map<string, number>();
+    meals.forEach((meal) => {
+      const date = this.formatDateOnly(meal.date);
+      const calories = (meal.mealMenus ?? []).reduce(
+        (sum, mealMenu) =>
+          sum +
+          this.calculateMenuCaloriesForQuantity(
+            mealMenu.menu,
+            mealMenu.quantity,
+            mealMenu.menu_input_mode,
+          ),
+        0,
+      );
+      intakeByDate.set(date, (intakeByDate.get(date) ?? 0) + calories);
+    });
+
+    const weightByDate = new Map<string, number>();
+    const stepsByDate = new Map<string, number>();
+    weightStepRecords.forEach((record) => {
+      const date = this.formatDateOnly(record.date);
+      if (record.weight !== null && record.weight !== undefined) {
+        weightByDate.set(date, Number(record.weight));
+      }
+      if (record.steps !== null && record.steps !== undefined) {
+        stepsByDate.set(date, Number(record.steps));
+      }
+    });
+
+    const workoutBurnedByDate = new Map<string, number>();
+    workoutRecords.forEach((record) => {
+      workoutBurnedByDate.set(
+        record.date,
+        (workoutBurnedByDate.get(record.date) ?? 0) +
+          Number(record.burned_calories ?? 0),
+      );
+    });
+
+    const burnedByDate = new Map<
+      string,
+      { steps: number; workout: number; total: number }
+    >();
+    const burnedRecordedDates = new Set([
+      ...stepsByDate.keys(),
+      ...workoutBurnedByDate.keys(),
+    ]);
+    burnedRecordedDates.forEach((date) => {
+      const steps = this.estimateStepBurnedCalories(
+        stepsByDate.get(date) ?? 0,
+        userInfo.weight,
+      );
+      const workout = roundToOneDecimal(workoutBurnedByDate.get(date) ?? 0);
+      burnedByDate.set(date, {
+        steps,
+        workout,
+        total: roundToOneDecimal(steps + workout),
+      });
+    });
+
+    if (mode === 'intake') {
+      return this.sortedMapEntries(intakeByDate).map(([date, calories]) => ({
+        date,
+        intake_calories: roundToOneDecimal(calories),
+      }));
+    }
+
+    if (mode === 'weight') {
+      return this.sortedMapEntries(weightByDate).map(([date, weight]) => ({
+        date,
+        weight: roundToOneDecimal(weight),
+      }));
+    }
+
+    if (mode === 'burned') {
+      return this.sortedMapEntries(burnedByDate).map(([date, burned]) => ({
+        date,
+        total_burned_calories: burned.total,
+        steps_burned_calories: burned.steps,
+        workout_burned_calories: burned.workout,
+      }));
+    }
+
+    const bmr = this.calculateBasalMetabolicRate(userInfo, range.endDateTime);
+    return this.sortedMapEntries(intakeByDate).map(([date, intake]) => ({
+      date,
+      calorie_deficit: roundToOneDecimal(
+        intake - bmr - (burnedByDate.get(date)?.total ?? 0),
+      ),
+    }));
+  }
+
+  private normalizeRecentAnalysisMode(
+    mode: RecentAnalysisMode,
+  ): 'intake' | 'weight' | 'burned' | 'deficit' {
+    const modeMap: Record<
+      RecentAnalysisMode,
+      'intake' | 'weight' | 'burned' | 'deficit'
+    > = {
+      intake: 'intake',
+      weight: 'weight',
+      burned: 'burned',
+      deficit: 'deficit',
+      '섭취 칼로리': 'intake',
+      체중: 'weight',
+      '소모 칼로리': 'burned',
+      '칼로리 적자': 'deficit',
+    };
+
+    return modeMap[mode];
+  }
+
+  private getRecentAnalysisDateRange(date: string): {
+    startDate: string;
+    endDate: string;
+    startDateTime: Date;
+    endDateTime: Date;
+  } {
+    const endDateTime = this.parseDateOnly(date, true);
+    const startDateTime = this.parseDateOnly(date, false);
+    startDateTime.setDate(startDateTime.getDate() - 29);
+
+    return {
+      startDate: this.formatDateOnly(startDateTime),
+      endDate: this.formatDateOnly(endDateTime),
+      startDateTime,
+      endDateTime,
+    };
+  }
+
+  private calculateBasalMetabolicRate(
+    userInfo: UserInfoEntity,
+    referenceDate: Date,
+  ): number {
+    const age = referenceDate.getFullYear() - userInfo.birthYear - 1;
+    let bmr =
+      10 * Number(userInfo.weight) +
+      6.25 * Number(userInfo.height) -
+      5 * age +
+      5;
+    if (userInfo.gender === 1) {
+      bmr -= 166;
+    }
+
+    return roundToOneDecimal(bmr);
+  }
+
+  private estimateStepBurnedCalories(steps: number, weightKg: number): number {
+    const normalizedSteps = Number(steps);
+    const normalizedWeightKg = Number(weightKg);
+    if (
+      !Number.isFinite(normalizedSteps) ||
+      normalizedSteps <= 0 ||
+      !Number.isFinite(normalizedWeightKg) ||
+      normalizedWeightKg <= 0
+    ) {
+      return 0;
+    }
+
+    return roundToOneDecimal(normalizedSteps * normalizedWeightKg * 0.0005);
+  }
+
+  private sortedMapEntries<T>(map: Map<string, T>): Array<[string, T]> {
+    return Array.from(map.entries()).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
   }
 
   private normalizeMonthlyCalendarMode(
