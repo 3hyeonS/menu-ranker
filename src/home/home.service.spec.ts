@@ -25,6 +25,30 @@ describe('HomeService menu search priority', () => {
     expect(service.getPreferredShineMuscatNameCandidates('청포도')).toEqual([]);
   });
 
+  it('prioritizes the public steamed-corn menu for an 옥수수 search', () => {
+    const steamedCorn = { name: '(식약처_음식) 찐옥수수' };
+    const cornDonut = { name: '(식약처_음식) 옥수수찹쌀 도넛' };
+
+    expect(
+      service.isPreferredSteamedCornSearchResult(steamedCorn, '옥수수'),
+    ).toBe(true);
+    expect(
+      service.isPreferredSteamedCornSearchResult(cornDonut, '옥수수'),
+    ).toBe(false);
+    expect(
+      service.isPreferredSteamedCornSearchResult(steamedCorn, '옥수수 도넛'),
+    ).toBe(false);
+  });
+
+  it('adds the preferred steamed-corn menu to the exact candidate query', () => {
+    expect(service.getPreferredSteamedCornNameCandidates('옥수수')).toContain(
+      '(식약처_음식) 찐옥수수',
+    );
+    expect(
+      service.getPreferredSteamedCornNameCandidates('옥수수 도넛'),
+    ).toEqual([]);
+  });
+
   it('normalizes workout names for exact search matching', () => {
     expect(service.normalizeWorkoutExactSearchName('  Bench Press ')).toBe(
       'benchpress',

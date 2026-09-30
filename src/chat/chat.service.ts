@@ -13726,7 +13726,9 @@ ${storedContext}`,
       this.asNonEmptyString(source.name) ??
       this.asNonEmptyString(source.food_name);
     const normalizedName = this.normalizeGenericMenuCandidateName(rawName);
-    const name = this.normalizeStandaloneEggMealRecordName(normalizedName);
+    const eggNormalizedName =
+      this.normalizeStandaloneEggMealRecordName(normalizedName);
+    const name = this.normalizeGenericCornMealRecordName(eggNormalizedName);
     const quantity =
       this.asNullableNumber(source.quantity_g) ??
       this.asNullableNumber(source.quantityG) ??
@@ -13760,6 +13762,20 @@ ${storedContext}`,
 
     return /^(?:계란|달걀)(?:[0-9.]+개)?$/.test(compactName)
       ? '삶은 달걀'
+      : name;
+  }
+
+  private normalizeGenericCornMealRecordName(
+    name: string | null,
+  ): string | null {
+    if (!name) {
+      return null;
+    }
+
+    const compactName = name.replace(/\s+/g, '');
+
+    return /^(?:옥수수|찐옥수수|삶은옥수수)$/.test(compactName)
+      ? '찐옥수수'
       : name;
   }
 

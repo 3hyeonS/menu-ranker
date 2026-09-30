@@ -1433,6 +1433,31 @@ describe('ChatService conversation memory', () => {
     ).toBe('계란 후라이');
   });
 
+  it.each(['옥수수', '찐옥수수', '삶은 옥수수'])(
+    'normalizes a generic corn meal record (%s) to steamed corn',
+    (name) => {
+      const service = createService() as any;
+
+      expect(
+        service.normalizeMealRecordParsedItem({
+          name,
+          quantity_g: 100,
+        }).name,
+      ).toBe('찐옥수수');
+    },
+  );
+
+  it('does not normalize a specific corn dish to steamed corn', () => {
+    const service = createService() as any;
+
+    expect(
+      service.normalizeMealRecordParsedItem({
+        name: '옥수수찹쌀 도넛',
+        quantity_g: 100,
+      }).name,
+    ).toBe('옥수수찹쌀 도넛');
+  });
+
   it('normalizes egg and fried-egg aliases in SQL menu-name matching', () => {
     const service = createService() as any;
     const expression = service.buildNormalizedMenuNameSqlExpression('menu');

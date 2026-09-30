@@ -801,6 +801,27 @@ export class HomeService {
     ];
   }
 
+  private isPreferredSteamedCornSearchResult(
+    menu: MenuEntity,
+    keyword: string,
+  ): boolean {
+    return (
+      normalizeMenuSearchName(keyword) === normalizeMenuSearchName('옥수수') &&
+      this.hasFoodPublicMenuSourcePrefix(menu.name) &&
+      normalizeMenuSearchName(menu.name) === normalizeMenuSearchName('찐옥수수')
+    );
+  }
+
+  private getPreferredSteamedCornNameCandidates(keyword: string): string[] {
+    if (
+      normalizeMenuSearchName(keyword) !== normalizeMenuSearchName('옥수수')
+    ) {
+      return [];
+    }
+
+    return ['찐옥수수', '(식약처_음식) 찐옥수수'];
+  }
+
   private hasAnyKeyword(text: string, keywords: string[]): boolean {
     return keywords.some((keyword) => text.includes(keyword));
   }
@@ -1101,6 +1122,7 @@ export class HomeService {
       `(식약처_음식) ${keyword}`,
       `(식약처_가공) ${keyword}`,
       ...this.getPreferredShineMuscatNameCandidates(keyword),
+      ...this.getPreferredSteamedCornNameCandidates(keyword),
     ];
     const exactParentheticalPatterns = [
       `${keyword}(%`,
@@ -1244,6 +1266,10 @@ export class HomeService {
     );
     const basePagedMenuList = uniqueMenuList.slice(0, limit);
     const sortedPagedMenuList = [...basePagedMenuList].sort((left, right) => {
+      const leftPreferredSteamedCorn =
+        this.isPreferredSteamedCornSearchResult(left, keyword) ? 0 : 1;
+      const rightPreferredSteamedCorn =
+        this.isPreferredSteamedCornSearchResult(right, keyword) ? 0 : 1;
       const leftPreferred = this.isPreferredShineMuscatSearchResult(
         left,
         keyword,
@@ -1271,6 +1297,10 @@ export class HomeService {
         canonicalName
           ? 0
           : 1;
+
+      if (leftPreferredSteamedCorn !== rightPreferredSteamedCorn) {
+        return leftPreferredSteamedCorn - rightPreferredSteamedCorn;
+      }
 
       if (leftPreferred !== rightPreferred) {
         return leftPreferred - rightPreferred;
