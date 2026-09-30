@@ -49,6 +49,30 @@ describe('HomeService menu search priority', () => {
     ).toEqual([]);
   });
 
+  it('prioritizes refined salt only for generic salt searches', () => {
+    const refinedSalt = {
+      id: 219056,
+      name: '(식약처_가공) 정제염',
+    };
+    const seasonedSalt = {
+      id: 100023,
+      name: '(식약처_가공) 맛소금(정제염)',
+    };
+
+    expect(
+      service.isPreferredRefinedSaltSearchResult(refinedSalt, '소금'),
+    ).toBe(true);
+    expect(
+      service.isPreferredRefinedSaltSearchResult(seasonedSalt, '소금'),
+    ).toBe(false);
+    expect(
+      service.isPreferredRefinedSaltSearchResult(refinedSalt, '맛소금'),
+    ).toBe(false);
+    expect(
+      service.getPreferredRefinedSaltNameCandidates('소금 양념장'),
+    ).toContain('(식약처_가공) 정제염');
+  });
+
   it('normalizes workout names for exact search matching', () => {
     expect(service.normalizeWorkoutExactSearchName('  Bench Press ')).toBe(
       'benchpress',

@@ -394,17 +394,64 @@ export const prioritizeGenericPlainRiceCandidate = <T extends { name: string }>(
   );
 };
 
-export const prioritizeGenericFoodImageCandidate = <T extends { name: string }>(
+export const PREFERRED_REFINED_SALT_MENU_ID = 219056;
+
+const GENERIC_PLAIN_SALT_NAMES = new Set([
+  '소금',
+  '정제염',
+  '식염',
+  '소금장',
+  '소금양념',
+  '소금양념장',
+  '찍어먹는소금',
+  '찍어먹는소금장',
+  '찍어먹는소금양념',
+  '찍어먹는소금양념장',
+]);
+
+export const isGenericPlainSaltName = (menuName: string): boolean =>
+  GENERIC_PLAIN_SALT_NAMES.has(normalizeMenuSearchName(menuName));
+
+export const isPreferredGenericRefinedSaltMenu = (
+  recognizedFoodName: string,
+  candidate: { id?: number; name: string },
+): boolean =>
+  isGenericPlainSaltName(recognizedFoodName) &&
+  candidate.id === PREFERRED_REFINED_SALT_MENU_ID;
+
+export const prioritizeGenericRefinedSaltCandidate = <
+  T extends { id?: number; name: string },
+>(
+  recognizedFoodName: string,
+  candidates: T[],
+): T[] => {
+  if (!isGenericPlainSaltName(recognizedFoodName)) {
+    return candidates;
+  }
+
+  return [...candidates].sort(
+    (left, right) =>
+      Number(isPreferredGenericRefinedSaltMenu(recognizedFoodName, right)) -
+      Number(isPreferredGenericRefinedSaltMenu(recognizedFoodName, left)),
+  );
+};
+
+export const prioritizeGenericFoodImageCandidate = <
+  T extends { id?: number; name: string },
+>(
   recognizedFoodName: string,
   candidates: T[],
 ): T[] =>
-  prioritizeGenericPlainRiceCandidate(
+  prioritizeGenericRefinedSaltCandidate(
     recognizedFoodName,
-    prioritizeGenericFriedEggCandidate(recognizedFoodName, candidates),
+    prioritizeGenericPlainRiceCandidate(
+      recognizedFoodName,
+      prioritizeGenericFriedEggCandidate(recognizedFoodName, candidates),
+    ),
   );
 
 export const findPreferredGenericFoodImageCandidate = <
-  T extends { name: string },
+  T extends { id?: number; name: string },
 >(
   recognizedFoodName: string,
   candidates: T[],
@@ -412,5 +459,6 @@ export const findPreferredGenericFoodImageCandidate = <
   prioritizeGenericFoodImageCandidate(recognizedFoodName, candidates).find(
     (candidate) =>
       isPreferredGenericFriedEggMenu(recognizedFoodName, candidate.name) ||
-      isPreferredGenericPlainRiceMenu(recognizedFoodName, candidate.name),
+      isPreferredGenericPlainRiceMenu(recognizedFoodName, candidate.name) ||
+      isPreferredGenericRefinedSaltMenu(recognizedFoodName, candidate),
   );

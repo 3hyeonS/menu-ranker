@@ -61,9 +61,12 @@ import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
   findPreferredGenericFoodImageCandidate,
+  isGenericPlainSaltName,
   isPreferredGenericFriedEggMenu,
   isPreferredGenericPlainRiceMenu,
+  isPreferredGenericRefinedSaltMenu,
   normalizeMenuSearchName,
+  PREFERRED_REFINED_SALT_MENU_ID,
   prioritizeGenericFoodImageCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
@@ -574,6 +577,7 @@ type FoodImageCandidateGroup = {
   foodIndex: number;
   foodName: string;
   candidates: MenuRecognitionCandidate[];
+  preferredCandidateId?: number;
 };
 
 type MenuBoardRecognitionResult = {
@@ -5369,13 +5373,17 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
 - image_summary에 음식명으로 언급한 항목은 가능한 한 detected_foods에도 포함해
 - 식판, 도시락, 한상차림처럼 여러 음식이 함께 있으면 밥, 국/찌개, 고기/생선/계란 반찬, 채소 반찬, 김치/절임류, 소스처럼 보이는 작은 반찬도 가능한 한 개별 음식으로 분리해서 detected_foods에 넣어
+- 고기나 채소를 찍어 먹는 흰 결정 형태의 소금이 별도 종지에 보이면 food_name을 "소금"으로 detected_foods에 포함해. 액체 기름장이나 다른 양념장은 소금으로 단정하지 마
 - 음식명이 완전히 확정되지 않더라도 사진에서 음식 종류가 충분히 보이면 가장 가까운 일반 음식명으로 반환해
 - 사진 속에서 같은 메뉴로 보이는 음식이 여러 개 있어도 detected_foods에는 1개만 반환해
 - 같은 메뉴가 여러 개 보이면 가장 선명하거나 대표적인 1개의 위치만 반환해
 - food_name에는 사진 속 음식의 가장 구체적인 이름을 넣되, 브랜드명은 제외해. 예: 펩시 콜라 -> food_name은 "콜라", brand는 "펩시"
 - 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣어. 불확실하면 null로 반환해
 - 브랜드가 확실히 보이는 포장식품/음료는 food_name과 brand를 함께 반환해야 DB 매칭이 정확해져
+- 포장에 제품명이 선명하게 읽히면 일반 식품명으로 줄이지 말고 제품명을 food_name에 그대로 넣어. 예: "요거톡 스타볼"을 "요거트"로 축약하지 마
+- intro_message나 image_summary에서 구체적인 제품명을 식별했다면 detected_foods의 food_name에도 반드시 같은 제품명을 사용해
 - 각 음식이 사진에 보이는 전체 양을 estimated_quantity로 추정해. 고형 음식은 g, 음료·국물처럼 액체는 ml 단위를 사용해
+- 소금의 estimated_quantity는 종지에 담긴 전체 양이 아니라 실제로 찍어 먹을 것으로 보이는 섭취량을 g 단위로 보수적으로 추정해
 - 같은 음식이 여러 조각 보이면 한 조각이 아니라 사진에 보이는 전체 양을 합산해서 추정해
 - 접시, 수저, 포장 용량처럼 크기를 판단할 단서가 있으면 적극 활용하고, 단서가 부족하면 일반적인 1인분 크기를 기준으로 보수적으로 추정해
 - quantity_confidence는 음식 양 추정의 신뢰도를 0~1로 반환해. 음식명 인식 confidence와 별도로 판단해
@@ -5480,6 +5488,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         predictions,
         menus,
         foodImageContext,
+        imageSummary,
         timing,
       );
     this.logFoodImageCandidateGroups(candidateGroups);
@@ -5702,12 +5711,14 @@ ${JSON.stringify(
     prediction: FoodImagePrediction,
     menus: MenuRecognitionCandidate[],
     foodIndex?: number,
+    preferredMenu?: MenuRecognitionCandidate,
   ): RecognizedFoodImageMenu | null {
-    const preferredMenu = prediction.brand
+    const preferredGenericMenu = prediction.brand
       ? undefined
       : findPreferredGenericFoodImageCandidate(prediction.foodName, menus);
     const matchedMenu =
       preferredMenu ??
+      preferredGenericMenu ??
       this.findBestRecognitionCandidate(
         prediction.foodName,
         menus,
@@ -5736,10 +5747,33 @@ ${JSON.stringify(
     menus: MenuRecognitionCandidate[],
     rematchedFoods: RecognizedFoodImageMenu[],
   ): RecognizedFoodImageMenu[] {
+    const candidateGroupMap = new Map(
+      candidateGroups.map((group) => [group.foodIndex, group]),
+    );
+    const matchPredictionWithGroup = (
+      prediction: FoodImagePrediction,
+      foodIndex: number,
+    ): RecognizedFoodImageMenu | null => {
+      const group = candidateGroupMap.get(foodIndex);
+      const groupCandidates = group?.candidates ?? menus;
+      const preferredMenu = group?.preferredCandidateId
+        ? groupCandidates.find(
+            (candidate) => candidate.id === group.preferredCandidateId,
+          )
+        : undefined;
+
+      return this.matchFoodImagePredictionLocally(
+        prediction,
+        groupCandidates,
+        foodIndex,
+        preferredMenu,
+      );
+    };
+
     if (rematchedFoods.length === 0) {
       return predictions
         .map((prediction, foodIndex) =>
-          this.matchFoodImagePredictionLocally(prediction, menus, foodIndex),
+          matchPredictionWithGroup(prediction, foodIndex),
         )
         .filter((food): food is RecognizedFoodImageMenu => food !== null);
     }
@@ -5749,22 +5783,13 @@ ${JSON.stringify(
         .map((food) => food.foodIndex)
         .filter((foodIndex): foodIndex is number => foodIndex !== undefined),
     );
-    const candidateGroupMap = new Map(
-      candidateGroups.map((group) => [group.foodIndex, group]),
-    );
     const fallbackFoods = predictions
       .map((prediction, foodIndex) => {
         if (rematchedFoodIndexes.has(foodIndex)) {
           return null;
         }
 
-        const groupCandidates =
-          candidateGroupMap.get(foodIndex)?.candidates ?? menus;
-        return this.matchFoodImagePredictionLocally(
-          prediction,
-          groupCandidates,
-          foodIndex,
-        );
+        return matchPredictionWithGroup(prediction, foodIndex);
       })
       .filter((food): food is RecognizedFoodImageMenu => food !== null);
 
@@ -5893,8 +5918,17 @@ ${JSON.stringify(
       MenuBoardRecognitionResult,
       'inferredBrand' | 'inferredCategory'
     >,
+    imageSummary: string | null,
     timing?: ChatTimingLogger,
   ): Promise<FoodImageCandidateGroup[]> {
+    const preferredRefinedSaltMenus = predictions.some(
+      (prediction) =>
+        !prediction.brand && isGenericPlainSaltName(prediction.foodName),
+    )
+      ? await this.getRecognitionCandidatesByIds(userId, [
+          PREFERRED_REFINED_SALT_MENU_ID,
+        ])
+      : [];
     const groups = await this.getFoodImageVectorCandidateGroupsByPrediction(
       userId,
       predictions,
@@ -5932,22 +5966,36 @@ ${JSON.stringify(
               this.getFoodImagePerFoodVectorCandidateLimit(),
             )
           : [];
+        const summaryProductMenus = this.findFoodImageSummaryProductCandidates(
+          prediction,
+          menus,
+          imageSummary,
+          this.getFoodImagePerFoodVectorCandidateLimit(),
+        );
         const preferredMenus = prediction.brand
           ? []
-          : menus.filter(
+          : [...preferredRefinedSaltMenus, ...menus].filter(
               (menu) =>
                 isPreferredGenericFriedEggMenu(
                   prediction.foodName,
                   menu.name,
                 ) ||
-                isPreferredGenericPlainRiceMenu(prediction.foodName, menu.name),
+                isPreferredGenericPlainRiceMenu(
+                  prediction.foodName,
+                  menu.name,
+                ) ||
+                isPreferredGenericRefinedSaltMenu(prediction.foodName, menu),
             );
 
         return {
           ...group,
+          ...(summaryProductMenus[0]
+            ? { preferredCandidateId: summaryProductMenus[0].id }
+            : {}),
           candidates: prioritizeGenericFoodImageCandidate(
             prediction.foodName,
             this.mergeRecognitionCandidatesById([
+              ...summaryProductMenus,
               ...brandMenus,
               ...preferredMenus,
               ...group.candidates,
@@ -5956,6 +6004,47 @@ ${JSON.stringify(
         };
       })
       .filter((group) => group.candidates.length > 0);
+  }
+
+  private findFoodImageSummaryProductCandidates(
+    prediction: FoodImagePrediction,
+    menus: MenuRecognitionCandidate[],
+    imageSummary: string | null,
+    limit: number,
+  ): MenuRecognitionCandidate[] {
+    const summary = this.normalizeCompactText(imageSummary ?? '');
+    const predictionBrand = this.normalizeCompactText(prediction.brand ?? '');
+
+    if (!summary || !predictionBrand) {
+      return [];
+    }
+
+    return menus
+      .filter((menu) => {
+        const menuBrand = this.normalizeCompactText(menu.brand ?? '');
+        const menuName = this.normalizeCompactText(
+          stripPublicMenuSourcePrefix(menu.name),
+        );
+        const brandMatches =
+          menuBrand.length > 0 &&
+          (menuBrand.includes(predictionBrand) ||
+            predictionBrand.includes(menuBrand));
+
+        return (
+          brandMatches && menuName.length >= 3 && summary.includes(menuName)
+        );
+      })
+      .sort((left, right) => {
+        const leftLength = this.normalizeCompactText(
+          stripPublicMenuSourcePrefix(left.name),
+        ).length;
+        const rightLength = this.normalizeCompactText(
+          stripPublicMenuSourcePrefix(right.name),
+        ).length;
+
+        return rightLength - leftLength || left.id - right.id;
+      })
+      .slice(0, limit);
   }
 
   private findFoodImageBrandCandidates(
@@ -6167,6 +6256,7 @@ ${JSON.stringify(
             menuBrand: candidate.brand,
             menuCategory: candidate.category,
           })),
+          preferredCandidateId: group.preferredCandidateId ?? null,
         })),
       }),
     );
@@ -6606,6 +6696,7 @@ ${JSON.stringify(candidates)}
     }
     const candidateMap = new Map<number, MenuRecognitionCandidate>();
     const candidateIdsByFoodIndex = new Map<number, Set<number>>();
+    const preferredCandidateIdsByFoodIndex = new Map<number, number>();
 
     candidateGroups.forEach((group) => {
       const candidateIds = new Set<number>();
@@ -6614,6 +6705,12 @@ ${JSON.stringify(candidates)}
         candidateIds.add(candidate.id);
       });
       candidateIdsByFoodIndex.set(group.foodIndex, candidateIds);
+      if (group.preferredCandidateId !== undefined) {
+        preferredCandidateIdsByFoodIndex.set(
+          group.foodIndex,
+          group.preferredCandidateId,
+        );
+      }
     });
 
     const prompt = `
@@ -6632,6 +6729,8 @@ ${JSON.stringify(candidates)}
 - "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
 - food_name이 일반적인 "밥", "흰밥", "쌀밥", "백미밥"이고 포장이나 브랜드 단서가 없으면 "(식약처_음식) 밥"을 우선해
 - "따끈한 흰쌀밥 득템" 같은 상품 메뉴는 해당 포장이나 브랜드가 사진에서 명확할 때만 선택해
+- food_name이 일반적인 "소금", "정제염", "식염", "소금장", "소금 양념장"이면 "(식약처_가공) 정제염"(menu_id 219056)을 우선해
+- 맛소금, 죽염, 트러플소금처럼 종류가 명시된 경우에는 정제염으로 강제하지 마
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 음식에 보이면 가장 대표적인 food_index 하나만 같은 menu_id에 매칭해
 
@@ -6684,6 +6783,7 @@ ${JSON.stringify(
             predictions,
             candidateMap,
             candidateIdsByFoodIndex,
+            preferredCandidateIdsByFoodIndex,
           ),
         )
         .filter((food): food is RecognizedFoodImageMenu => food !== null);
@@ -6727,6 +6827,7 @@ ${JSON.stringify(
     predictions: FoodImagePrediction[],
     candidateMap: Map<number, MenuRecognitionCandidate>,
     candidateIdsByFoodIndex: Map<number, Set<number>>,
+    preferredCandidateIdsByFoodIndex: Map<number, number> = new Map(),
   ): RecognizedFoodImageMenu | null {
     if (!value || typeof value !== 'object') {
       return null;
@@ -6750,6 +6851,11 @@ ${JSON.stringify(
     }
 
     const prediction = predictions[foodIndex];
+    const summaryPreferredMenuId =
+      preferredCandidateIdsByFoodIndex.get(foodIndex);
+    const summaryPreferredMenu = summaryPreferredMenuId
+      ? candidateMap.get(summaryPreferredMenuId)
+      : undefined;
     const preferredMenu = prediction.brand
       ? undefined
       : findPreferredGenericFoodImageCandidate(
@@ -6760,7 +6866,8 @@ ${JSON.stringify(
               (candidate): candidate is MenuRecognitionCandidate => !!candidate,
             ),
         );
-    const matchedMenu = preferredMenu ?? candidateMap.get(menuId)!;
+    const matchedMenu =
+      summaryPreferredMenu ?? preferredMenu ?? candidateMap.get(menuId)!;
     if (!this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)) {
       return null;
     }
@@ -8164,6 +8271,14 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     timing?: ChatTimingLogger,
     options: GenericMenuCandidateMatchOptions = {},
   ): Promise<Array<{ inputMenuName: string; menu: MenuEntity }>> {
+    const preferredRefinedSaltMenu = genericCandidates.some((candidate) =>
+      isGenericPlainSaltName(candidate.name),
+    )
+      ? ((
+          await this.getMenusByIds(userId, [PREFERRED_REFINED_SALT_MENU_ID])
+        )[0] ?? null)
+      : null;
+
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
       const candidateMenus = await this.getAllCandidateMenus(userId);
 
@@ -8173,10 +8288,13 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
       return genericCandidates
         .map((candidate) => {
-          const menu = this.findMostSimilarGenericCandidateMenu(
-            candidate,
-            candidateMenus,
-          );
+          const menu =
+            isGenericPlainSaltName(candidate.name) && preferredRefinedSaltMenu
+              ? preferredRefinedSaltMenu
+              : this.findMostSimilarGenericCandidateMenu(
+                  candidate,
+                  candidateMenus,
+                );
 
           return menu
             ? {
@@ -8216,6 +8334,31 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       })),
       this.getGeminiGenericMenuVectorConcurrency(),
       async ({ candidate, candidateIndex }) => {
+        if (
+          isGenericPlainSaltName(candidate.name) &&
+          preferredRefinedSaltMenu
+        ) {
+          matchLogs.push({
+            candidateIndex,
+            candidate: {
+              name: candidate.name,
+              brand: candidate.brand,
+              category: candidate.category,
+            },
+            source: 'keyword_fallback',
+            menuId: preferredRefinedSaltMenu.id,
+            menuName: stripPublicMenuSourcePrefix(
+              preferredRefinedSaltMenu.name,
+            ),
+            menuBrand: preferredRefinedSaltMenu.brand ?? null,
+          });
+
+          return {
+            inputMenuName: candidate.name,
+            menu: preferredRefinedSaltMenu,
+          };
+        }
+
         let forcedVectorFallbackMenu: MenuEntity | null = null;
         const brandFilters = this.hasBrandIntent(intent)
           ? this.getGenericCandidateVectorBrands(
@@ -13728,7 +13871,9 @@ ${storedContext}`,
     const normalizedName = this.normalizeGenericMenuCandidateName(rawName);
     const eggNormalizedName =
       this.normalizeStandaloneEggMealRecordName(normalizedName);
-    const name = this.normalizeGenericCornMealRecordName(eggNormalizedName);
+    const cornNormalizedName =
+      this.normalizeGenericCornMealRecordName(eggNormalizedName);
+    const name = this.normalizeGenericSaltMealRecordName(cornNormalizedName);
     const quantity =
       this.asNullableNumber(source.quantity_g) ??
       this.asNullableNumber(source.quantityG) ??
@@ -13777,6 +13922,16 @@ ${storedContext}`,
     return /^(?:옥수수|찐옥수수|삶은옥수수)$/.test(compactName)
       ? '찐옥수수'
       : name;
+  }
+
+  private normalizeGenericSaltMealRecordName(
+    name: string | null,
+  ): string | null {
+    if (!name) {
+      return null;
+    }
+
+    return isGenericPlainSaltName(name) ? '정제염' : name;
   }
 
   private isValidGenericMenuCandidateName(name: string): boolean {

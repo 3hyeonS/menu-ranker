@@ -62,9 +62,12 @@ import {
   canonicalizeMenuSearchName,
   findPreferredGenericFoodImageCandidate,
   isGenericPlainRiceName,
+  isGenericPlainSaltName,
   isPreferredGenericFriedEggMenu,
   isPreferredGenericPlainRiceMenu,
+  isPreferredGenericRefinedSaltMenu,
   normalizeMenuSearchName,
+  PREFERRED_REFINED_SALT_MENU_ID,
   prioritizeGenericFoodImageCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
@@ -822,6 +825,21 @@ export class HomeService {
     return ['찐옥수수', '(식약처_음식) 찐옥수수'];
   }
 
+  private isPreferredRefinedSaltSearchResult(
+    menu: MenuEntity,
+    keyword: string,
+  ): boolean {
+    return isPreferredGenericRefinedSaltMenu(keyword, menu);
+  }
+
+  private getPreferredRefinedSaltNameCandidates(keyword: string): string[] {
+    if (!isGenericPlainSaltName(keyword)) {
+      return [];
+    }
+
+    return ['정제염', '(식약처_가공) 정제염'];
+  }
+
   private hasAnyKeyword(text: string, keywords: string[]): boolean {
     return keywords.some((keyword) => text.includes(keyword));
   }
@@ -1123,6 +1141,7 @@ export class HomeService {
       `(식약처_가공) ${keyword}`,
       ...this.getPreferredShineMuscatNameCandidates(keyword),
       ...this.getPreferredSteamedCornNameCandidates(keyword),
+      ...this.getPreferredRefinedSaltNameCandidates(keyword),
     ];
     const exactParentheticalPatterns = [
       `${keyword}(%`,
@@ -1233,7 +1252,12 @@ export class HomeService {
                 });
               }),
             )
-            .orderBy('menu.id', 'ASC')
+            .orderBy(
+              isGenericPlainSaltName(keyword)
+                ? `CASE WHEN menu.id = ${PREFERRED_REFINED_SALT_MENU_ID} THEN 0 ELSE 1 END`
+                : 'menu.id',
+              'ASC',
+            )
             .take(rawFetchLimit)
             .getMany()
         : [];
@@ -1266,10 +1290,30 @@ export class HomeService {
     );
     const basePagedMenuList = uniqueMenuList.slice(0, limit);
     const sortedPagedMenuList = [...basePagedMenuList].sort((left, right) => {
-      const leftPreferredSteamedCorn =
-        this.isPreferredSteamedCornSearchResult(left, keyword) ? 0 : 1;
-      const rightPreferredSteamedCorn =
-        this.isPreferredSteamedCornSearchResult(right, keyword) ? 0 : 1;
+      const leftPreferredRefinedSalt = this.isPreferredRefinedSaltSearchResult(
+        left,
+        keyword,
+      )
+        ? 0
+        : 1;
+      const rightPreferredRefinedSalt = this.isPreferredRefinedSaltSearchResult(
+        right,
+        keyword,
+      )
+        ? 0
+        : 1;
+      const leftPreferredSteamedCorn = this.isPreferredSteamedCornSearchResult(
+        left,
+        keyword,
+      )
+        ? 0
+        : 1;
+      const rightPreferredSteamedCorn = this.isPreferredSteamedCornSearchResult(
+        right,
+        keyword,
+      )
+        ? 0
+        : 1;
       const leftPreferred = this.isPreferredShineMuscatSearchResult(
         left,
         keyword,
@@ -1297,6 +1341,10 @@ export class HomeService {
         canonicalName
           ? 0
           : 1;
+
+      if (leftPreferredRefinedSalt !== rightPreferredRefinedSalt) {
+        return leftPreferredRefinedSalt - rightPreferredRefinedSalt;
+      }
 
       if (leftPreferredSteamedCorn !== rightPreferredSteamedCorn) {
         return leftPreferredSteamedCorn - rightPreferredSteamedCorn;
@@ -1599,9 +1647,12 @@ export class HomeService {
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 - 음식명은 알 수 있는 범위에서 최대한 구체적으로 작성하되 브랜드명은 제외해
 - 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣고 불확실하면 null로 반환해
+- 포장에 제품명이 선명하게 읽히면 일반 식품명으로 줄이지 말고 제품명을 food_name에 그대로 넣어. 예: "요거톡 스타볼"을 "요거트"로 축약하지 마
 - 정확한 메뉴명을 모르더라도 "양념된 구운 돼지고기", "숯불에 구운 고기", "구운 마늘"처럼 보이는 특징을 detected_foods에 넣어
 - visual_description에는 주요 식재료, 조리 방식, 양념 여부, 보이는 구성 요소를 1~3문장으로 설명해
 - 식판, 도시락, 한상차림은 밥, 국/찌개, 고기·생선·계란 반찬, 채소 반찬, 김치·절임류, 소스를 가능한 한 개별 음식으로 분리해
+- 고기나 채소를 찍어 먹는 흰 결정 형태의 소금이 별도 종지에 보이면 "소금"으로 detected_foods에 포함해. 액체 기름장이나 다른 양념장은 소금으로 단정하지 마
+- 소금의 estimated_quantity는 종지에 담긴 전체 양이 아니라 실제로 찍어 먹을 것으로 보이는 섭취량을 g 단위로 보수적으로 추정해
 - 같은 음식이 여러 개 보여도 detected_foods에는 중복 없이 한 번만 넣고 사진에 보이는 전체 양을 합산해
 - 각 음식의 실제 전체 양을 estimated_quantity로 추정해. 고형 음식은 g, 음료·국물은 ml 단위를 사용해
 - 접시, 수저, 포장 용량처럼 크기 단서가 있으면 활용하고, 부족하면 일반적인 1인분 크기를 기준으로 보수적으로 추정해
@@ -1920,6 +1971,12 @@ failure_reason enum:
           limit,
         )
       : [];
+    const preferredRefinedSaltMenus =
+      !prediction.brand && isGenericPlainSaltName(foodName)
+        ? await this.getFoodImageRecognitionMenusByIds(userId, [
+            PREFERRED_REFINED_SALT_MENU_ID,
+          ])
+        : [];
     let vectorMenus: HomeFoodImageRecognitionCandidate[] = [];
 
     if (this.isVectorSearchEnabled() && this.menuVectorService) {
@@ -1954,10 +2011,11 @@ failure_reason enum:
 
     const preferredMenus = prediction.brand
       ? []
-      : [...keywordMenus, ...vectorMenus].filter(
+      : [...preferredRefinedSaltMenus, ...keywordMenus, ...vectorMenus].filter(
           (menu) =>
             isPreferredGenericFriedEggMenu(foodName, menu.name) ||
-            isPreferredGenericPlainRiceMenu(foodName, menu.name),
+            isPreferredGenericPlainRiceMenu(foodName, menu.name) ||
+            isPreferredGenericRefinedSaltMenu(foodName, menu),
         );
 
     return prioritizeGenericFoodImageCandidate(
@@ -2255,6 +2313,8 @@ failure_reason enum:
 - "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
 - food_name이 일반적인 "밥", "흰밥", "쌀밥", "백미밥"이고 포장이나 브랜드 단서가 없으면 "(식약처_음식) 밥"을 우선해
 - "따끈한 흰쌀밥 득템" 같은 상품 메뉴는 해당 포장이나 브랜드가 사진에서 명확할 때만 선택해
+- food_name이 일반적인 "소금", "정제염", "식염", "소금장", "소금 양념장"이면 "(식약처_가공) 정제염"(menu_id 219056)을 우선해
+- 맛소금, 죽염, 트러플소금처럼 종류가 명시된 경우에는 정제염으로 강제하지 마
 - 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
 - 같은 메뉴가 여러 위치에 보여도 같은 menu_id는 한 번만 반환해
 
@@ -4926,9 +4986,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const equipmentOriginalDetail = dto.equipment_original_detail?.trim();
     const workoutSearchPlan = this.getWorkoutSearchPlan(input);
     const resolvedInput = workoutSearchPlan.containsInput;
-    const normalizedContainsInput = this.normalizeWorkoutExactSearchName(
-      resolvedInput,
-    );
+    const normalizedContainsInput =
+      this.normalizeWorkoutExactSearchName(resolvedInput);
     const normalizedExactInput = this.normalizeWorkoutExactSearchName(
       workoutSearchPlan.preferredExact,
     );

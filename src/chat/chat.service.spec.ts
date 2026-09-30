@@ -1458,6 +1458,34 @@ describe('ChatService conversation memory', () => {
     ).toBe('옥수수찹쌀 도넛');
   });
 
+  it.each(['소금', '정제염', '식염', '소금장', '소금 양념장'])(
+    'normalizes generic salt meal record (%s) to refined salt',
+    (name) => {
+      const service = createService() as any;
+
+      expect(
+        service.normalizeMealRecordParsedItem({
+          name,
+          quantity_g: 1,
+        }).name,
+      ).toBe('정제염');
+    },
+  );
+
+  it.each(['맛소금', '죽염', '트러플소금'])(
+    'does not normalize a specific salt (%s) to refined salt',
+    (name) => {
+      const service = createService() as any;
+
+      expect(
+        service.normalizeMealRecordParsedItem({
+          name,
+          quantity_g: 1,
+        }).name,
+      ).toBe(name);
+    },
+  );
+
   it('normalizes egg and fried-egg aliases in SQL menu-name matching', () => {
     const service = createService() as any;
     const expression = service.buildNormalizedMenuNameSqlExpression('menu');
@@ -1526,6 +1554,90 @@ describe('ChatService conversation memory', () => {
     );
 
     expect(result.map((menu: { id: number }) => menu.id)).toEqual([3, 2]);
+  });
+
+  it('uses an exact branded product name found in the image summary', () => {
+    const service = createService() as any;
+    const product = {
+      id: 198298,
+      name: '(식약처_가공) 요거톡 스타볼',
+      brand: '풀무원다논',
+      category: '유가공품류',
+    };
+
+    const result = service.findFoodImageSummaryProductCandidates(
+      {
+        foodName: '요거트',
+        brand: '풀무원다논',
+        confidence: 0.98,
+        position: { x: 0.5, y: 0.5 },
+        estimatedQuantity: 265,
+        estimatedQuantityUnit: 'g',
+        quantityConfidence: 0.95,
+      },
+      [
+        {
+          id: 47391,
+          name: '(식약처_가공) 그릭시그니처요거트',
+          brand: '풀무원다논',
+          category: '유가공품류',
+        },
+        product,
+      ],
+      "풀무원다논의 요거트 제품인 '요거톡 스타볼' 2개입 패키지 사진이야.",
+      8,
+    );
+
+    expect(result).toEqual([product]);
+  });
+
+  it('keeps the exact image-summary product when Gemini rematching returns no match', () => {
+    const service = createService() as any;
+    const prediction = {
+      foodName: '요거트',
+      brand: '풀무원다논',
+      confidence: 0.98,
+      position: { x: 0.5, y: 0.5 },
+      estimatedQuantity: 265,
+      estimatedQuantityUnit: 'g',
+      quantityConfidence: 0.95,
+    };
+    const genericYogurt = {
+      id: 47391,
+      name: '(식약처_가공) 그릭시그니처요거트',
+      brand: '풀무원다논',
+      category: '유가공품류',
+      unit: 0,
+    };
+    const exactProduct = {
+      id: 198298,
+      name: '(식약처_가공) 요거톡 스타볼',
+      brand: '풀무원다논',
+      category: '유가공품류',
+      unit: 0,
+    };
+
+    const result = service.mergeFoodImageRematchesWithLocalFallback(
+      [prediction],
+      [
+        {
+          foodIndex: 0,
+          foodName: '요거트',
+          candidates: [exactProduct, genericYogurt],
+          preferredCandidateId: 198298,
+        },
+      ],
+      [genericYogurt, exactProduct],
+      [],
+    );
+
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        id: 198298,
+        name: '(식약처_가공) 요거톡 스타볼',
+        estimatedQuantity: 265,
+      }),
+    );
   });
 
   it('locally fills only foods omitted from a partial Gemini image rematch', () => {
