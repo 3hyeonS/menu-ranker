@@ -95,7 +95,9 @@ async function bootstrap() {
   // app.use(cookieParser());
 
   // const whitelist = ['http://localhost:3000/'];
-  app.enableCors();
+  app.enableCors({
+    exposedHeaders: ['x-request-id'],
+  });
 
   await app.listen(process.env.PORT ?? 3000);
 }
