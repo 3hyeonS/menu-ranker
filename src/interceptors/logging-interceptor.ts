@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Observable } from 'rxjs';
+import { runWithRequestAbortSignal } from '../utils/request-abort.util';
 
 type RequestLogEvent =
   | 'request.started'
@@ -54,6 +55,7 @@ export class LoggingInterceptor implements NestInterceptor {
 
     let finished = false;
     let abortLogged = false;
+    const abortController = new AbortController();
 
     const getUserId = (): number | string | null => {
       const userId = req.user?.id ?? req.user?.userId ?? req.user?.sub;
@@ -91,6 +93,7 @@ export class LoggingInterceptor implements NestInterceptor {
       }
 
       abortLogged = true;
+      abortController.abort(new Error(`Client disconnected (${source})`));
       logRequest('request.aborted', {
         durationMs: Date.now() - startedAt,
         source,
@@ -128,6 +131,10 @@ export class LoggingInterceptor implements NestInterceptor {
 
     logRequest('request.started');
 
-    return next.handle();
+    return new Observable((subscriber) =>
+      runWithRequestAbortSignal(abortController.signal, () =>
+        next.handle().subscribe(subscriber),
+      ),
+    );
   }
 }

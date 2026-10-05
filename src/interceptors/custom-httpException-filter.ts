@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import { isRequestCancellationError } from '../utils/request-abort.util';
 
 @Catch()
 export class CustomHttpExceptionFilter implements ExceptionFilter {
@@ -12,6 +13,16 @@ export class CustomHttpExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse();
     const request = ctx.getRequest();
+
+    // 클라이언트가 연결을 끊은 요청에는 더 이상 오류 응답을 쓰지 않는다.
+    if (
+      isRequestCancellationError(exception) ||
+      request?.aborted === true ||
+      response?.destroyed === true ||
+      response?.writableEnded === true
+    ) {
+      return;
+    }
 
     // 상태 코드 결정
     const status =

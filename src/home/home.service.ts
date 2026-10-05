@@ -44,6 +44,11 @@ import {
   roundNullableToOneDecimal,
   roundToOneDecimal,
 } from '../utils/number.util';
+import {
+  getRequestAbortSignal,
+  isRequestCancellationError,
+  throwIfRequestAborted,
+} from '../utils/request-abort.util';
 import { getRecordedWeightMultiplier } from '../utils/recorded-nutrition.util';
 import { BrandAddEntity } from './entity/brand-add.entity';
 import {
@@ -1610,6 +1615,7 @@ export class HomeService {
     }
 
     try {
+      throwIfRequestAborted();
       const foodImageDescription = await this.describeFoodImage(file);
       const perFoodRecognized = await this.recognizeFoodImageByPerFoodRematch(
         user.id,
@@ -1625,11 +1631,16 @@ export class HomeService {
 
       const imageUrl = await this.uploadRecognizedFoodImage(user, file);
 
+      throwIfRequestAborted();
+
       return new FoodImageRecognitionResponseDto({
         ...perFoodRecognized,
         image_url: imageUrl,
       });
     } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
       await this.uploadFailedFoodImageRecognitionIfPossible(user, file, error);
       throw error;
     }
@@ -2373,6 +2384,9 @@ ${JSON.stringify(
         candidateIdsByFoodIndex,
       );
     } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
       console.warn('[HOME] food image Gemini rematch failed', {
         message: error instanceof Error ? error.message : String(error),
       });
@@ -4140,8 +4154,12 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
 
       try {
+        throwIfRequestAborted();
         return await this.postGeminiImageJson(prompt, file, apiKey, baseUrl);
       } catch (error) {
+        if (isRequestCancellationError(error)) {
+          throw error;
+        }
         if (
           index === attempts.length - 1 ||
           !this.shouldRetryGeminiWithFallback(error)
@@ -4160,6 +4178,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     apiKey: string,
     baseUrl: string,
   ): Promise<any> {
+    throwIfRequestAborted();
     const response = await firstValueFrom(
       this.httpService.post(
         `${baseUrl}?key=${apiKey}`,
@@ -4188,9 +4207,12 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
             'Content-Type': 'application/json',
           },
           timeout: 30000,
+          signal: getRequestAbortSignal(),
         },
       ),
     );
+
+    throwIfRequestAborted();
 
     const text = response.data?.candidates?.[0]?.content?.parts
       ?.map((part) => part.text ?? '')
@@ -4205,6 +4227,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   }
 
   private shouldRetryGeminiWithFallback(error: unknown): boolean {
+    if (isRequestCancellationError(error)) {
+      return false;
+    }
     const geminiError = error as {
       code?: string;
       response?: {
@@ -4243,6 +4268,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     user: UserEntity,
     file: Express.Multer.File,
   ): Promise<string> {
+    throwIfRequestAborted();
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomString = Math.random().toString(36).substring(2, 12);
     const fileExtension = this.getImageExtension(file.mimetype);
@@ -4255,7 +4281,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
         Body: file.buffer,
         ContentType: file.mimetype,
       }),
+      { abortSignal: getRequestAbortSignal() },
     );
+
+    throwIfRequestAborted();
 
     return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
   }
@@ -4265,6 +4294,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     file: Express.Multer.File,
     error: unknown,
   ): Promise<void> {
+    if (isRequestCancellationError(error)) {
+      return;
+    }
+
     try {
       const imageUrl = await this.uploadFailedFoodImageRecognition(user, file);
 
@@ -4312,6 +4345,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     user: UserEntity,
     file: Express.Multer.File,
   ): Promise<string> {
+    throwIfRequestAborted();
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomString = Math.random().toString(36).substring(2, 12);
     const fileExtension = this.getImageExtension(file.mimetype);
@@ -4324,7 +4358,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
         Body: file.buffer,
         ContentType: file.mimetype,
       }),
+      { abortSignal: getRequestAbortSignal() },
     );
+
+    throwIfRequestAborted();
 
     return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
   }

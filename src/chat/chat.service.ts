@@ -71,6 +71,11 @@ import {
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
+import {
+  getRequestAbortSignal,
+  isRequestCancellationError,
+  throwIfRequestAborted,
+} from '../utils/request-abort.util';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -781,6 +786,9 @@ export class ChatService {
   }
 
   private logGeminiError(context: string, error: unknown): void {
+    if (isRequestCancellationError(error)) {
+      return;
+    }
     const geminiError = error as {
       message?: string;
       code?: string;
@@ -810,6 +818,9 @@ export class ChatService {
   }
 
   private shouldRetryGeminiWithFallback(error: unknown): boolean {
+    if (isRequestCancellationError(error)) {
+      return false;
+    }
     const geminiError = error as {
       code?: string;
       response?: {
@@ -1475,6 +1486,7 @@ ${JSON.stringify({
         chatContext,
         timing,
       );
+      throwIfRequestAborted();
       const recognizedFoods = foodImageRecognition.foods;
       timing.mark('food_image_recognition_completed', {
         recognizedFoodCount: recognizedFoods.length,
@@ -1547,6 +1559,9 @@ ${JSON.stringify({
         });
         timing.mark('food_image_pure_intro_completed');
       } catch (error) {
+        if (isRequestCancellationError(error)) {
+          throw error;
+        }
         this.logGeminiError('food-image-pure-intro', error);
         timing.mark('food_image_pure_intro_failed_using_existing_intro');
       }
@@ -1562,6 +1577,7 @@ ${JSON.stringify({
       );
       timing.mark('image_uploaded');
 
+      throwIfRequestAborted();
       const savedHistory = await this.saveNewChatHistory(
         this.chatHistoryRepository.create({
           input_text: '음식 사진 기반 피드백',
@@ -2593,6 +2609,7 @@ ${JSON.stringify({
   private async saveNewChatHistory(
     history: ChatHistoryEntity,
   ): Promise<ChatHistoryEntity> {
+    throwIfRequestAborted();
     const savedHistory = await this.chatHistoryRepository.save(history);
     const userId = savedHistory.user?.id;
 
@@ -5473,6 +5490,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         imageDimensions,
         timing,
       );
+      throwIfRequestAborted();
     }
 
     timing?.mark('food_image_predictions_normalized', {
@@ -5491,6 +5509,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         imageSummary,
         timing,
       );
+    throwIfRequestAborted();
     this.logFoodImageCandidateGroups(candidateGroups);
     const rematchCandidatePool = this.mergeRecognitionCandidatesById(
       candidateGroups.flatMap((group) => group.candidates),
@@ -5506,6 +5525,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       candidateGroups,
       timing,
     );
+    throwIfRequestAborted();
     timing?.mark('food_image_gemini_rematch_completed', {
       rematchedCount: rematchedFoods.length,
     });
@@ -5698,6 +5718,9 @@ ${JSON.stringify(
 
       return repairedPredictions;
     } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
       console.warn('[CHAT] food image position repair failed', {
         message: error instanceof Error ? error.message : String(error),
       });
@@ -6673,7 +6696,10 @@ ${JSON.stringify(candidates)}
       )
         .map((id) => candidateMap.get(id)!)
         .slice(0, 30);
-    } catch {
+    } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
       timing?.mark('menu_board_gemini_rematch_failed', {
         candidateCount: candidates.length,
       });
@@ -6789,7 +6815,10 @@ ${JSON.stringify(
         .filter((food): food is RecognizedFoodImageMenu => food !== null);
 
       return this.deduplicateRecognizedFoodImageMenus(recognizedFoods);
-    } catch {
+    } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
       timing?.mark('food_image_gemini_rematch_failed', {
         predictionCount: predictions.length,
         groupCount: candidateGroups.length,
@@ -13278,6 +13307,7 @@ ${JSON.stringify(candidates)}
       const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
 
       try {
+        throwIfRequestAborted();
         const response = await firstValueFrom(
           this.httpService.post(
             `${baseUrl}?key=${apiKey}`,
@@ -13387,9 +13417,12 @@ ${storedContext}`,
                 'Content-Type': 'application/json',
               },
               timeout: this.getGeminiTextTimeoutMs(),
+              signal: getRequestAbortSignal(),
             },
           ),
         );
+
+        throwIfRequestAborted();
 
         const text = response.data?.candidates?.[0]?.content?.parts
           ?.map((part) => part.text ?? '')
@@ -13402,6 +13435,9 @@ ${storedContext}`,
 
         return text;
       } catch (error) {
+        if (isRequestCancellationError(error)) {
+          throw error;
+        }
         this.logGeminiError(
           index === 0 ? 'pure-chat' : `pure-chat-fallback:${model}`,
           error,
@@ -13467,6 +13503,7 @@ ${storedContext}`,
       const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
 
       try {
+        throwIfRequestAborted();
         const response = await firstValueFrom(
           this.httpService.post(
             `${baseUrl}?key=${apiKey}`,
@@ -13494,9 +13531,12 @@ ${storedContext}`,
                 'Content-Type': 'application/json',
               },
               timeout: options.timeoutMs ?? this.getGeminiTextTimeoutMs(),
+              signal: getRequestAbortSignal(),
             },
           ),
         );
+
+        throwIfRequestAborted();
 
         const text = response.data?.candidates?.[0]?.content?.parts
           ?.map((part) => part.text ?? '')
@@ -13509,6 +13549,9 @@ ${storedContext}`,
 
         return JSON.parse(this.stripCodeFence(text));
       } catch (error) {
+        if (isRequestCancellationError(error)) {
+          throw error;
+        }
         this.logGeminiError(
           index === 0
             ? (options.context ?? 'text-json')
@@ -13594,8 +13637,12 @@ ${storedContext}`,
       const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
 
       try {
+        throwIfRequestAborted();
         return await this.postGeminiImageJson(prompt, file, apiKey, baseUrl);
       } catch (error) {
+        if (isRequestCancellationError(error)) {
+          throw error;
+        }
         this.logGeminiError(
           index === 0 ? 'image-json' : `image-json-fallback:${model}`,
           error,
@@ -13622,6 +13669,7 @@ ${storedContext}`,
     baseUrl: string,
   ): Promise<any> {
     try {
+      throwIfRequestAborted();
       const response = await firstValueFrom(
         this.httpService.post(
           `${baseUrl}?key=${apiKey}`,
@@ -13653,9 +13701,12 @@ ${storedContext}`,
               'Content-Type': 'application/json',
             },
             timeout: 30000,
+            signal: getRequestAbortSignal(),
           },
         ),
       );
+
+      throwIfRequestAborted();
 
       const text = response.data?.candidates?.[0]?.content?.parts
         ?.map((part) => part.text ?? '')
@@ -13680,6 +13731,7 @@ ${storedContext}`,
       | 'food-image-feedback'
       | 'nutrition-label-feedback',
   ): Promise<string> {
+    throwIfRequestAborted();
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const randomString = Math.random().toString(36).substring(2, 12);
     const fileExtension = this.getImageExtension(file.mimetype);
@@ -13692,7 +13744,10 @@ ${storedContext}`,
         Body: file.buffer,
         ContentType: file.mimetype,
       }),
+      { abortSignal: getRequestAbortSignal() },
     );
+
+    throwIfRequestAborted();
 
     return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
   }
@@ -13703,6 +13758,10 @@ ${storedContext}`,
     imageType: 'food-image-feedback' | 'nutrition-label-feedback',
     error: unknown,
   ): Promise<void> {
+    if (isRequestCancellationError(error)) {
+      return;
+    }
+
     try {
       const imageUrl = await this.uploadFailedChatImage(user, file, imageType);
 

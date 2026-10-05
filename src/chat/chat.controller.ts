@@ -42,6 +42,7 @@ import { ChatNutritionLabelFeedbackResponseDto } from './dto/response-dto/chat-n
 import { ChatNutritionLabelMenuRegisterResponseDto } from './dto/response-dto/chat-nutrition-label-menu-register-response-dto';
 import { ChatMealRecordParseResponseDto } from './dto/response-dto/chat-meal-record-parse-response-dto';
 import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu-search-response-dto';
+import { isRequestCancellationError } from '../utils/request-abort.util';
 
 @ApiTags('채팅')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -56,6 +57,10 @@ export class ChatController {
     error: unknown,
     extra: Record<string, unknown> = {},
   ): void {
+    if (isRequestCancellationError(error)) {
+      return;
+    }
+
     const maybeError = error as {
       name?: string;
       message?: string;

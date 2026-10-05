@@ -2,6 +2,7 @@ import { CallHandler, ExecutionContext } from '@nestjs/common';
 import { EventEmitter } from 'events';
 import { of } from 'rxjs';
 import { LoggingInterceptor } from './logging-interceptor';
+import { getRequestAbortSignal } from '../utils/request-abort.util';
 
 describe('LoggingInterceptor', () => {
   let consoleLogSpy: jest.SpyInstance;
@@ -84,5 +85,26 @@ describe('LoggingInterceptor', () => {
       userId: 101,
       source: 'request.aborted',
     });
+  });
+
+  it('aborts the request-scoped signal when the client disconnects', () => {
+    const { req, context } = createHttpContext();
+    const interceptor = new LoggingInterceptor();
+    let signal: AbortSignal | undefined;
+    const next = {
+      handle: () => {
+        signal = getRequestAbortSignal();
+        return of({ ok: true });
+      },
+    } as CallHandler;
+
+    interceptor.intercept(context, next).subscribe();
+
+    expect(signal).toBeDefined();
+    expect(signal?.aborted).toBe(false);
+
+    req.emit('aborted');
+
+    expect(signal?.aborted).toBe(true);
   });
 });
