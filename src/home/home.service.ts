@@ -80,7 +80,12 @@ import {
   SUGAR_ALTERNATIVE_KEYWORDS,
   SUGAR_ALTERNATIVE_PROMPT_SECTION,
 } from '../utils/nutrition-label.util';
-import { FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES } from '../utils/food-image-recognition.util';
+import {
+  FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
+  FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
+  isFoodImageBrandMatch,
+  isFoodImageSummaryMenuMatch,
+} from '../utils/food-image-recognition.util';
 import { FolderEntity } from './entity/folder.entity';
 import { FolderMenuEntity } from './entity/folder-menu.entity';
 import { UpsertFolderRequestDto } from './dto/request-dto/upsert-folder-request-dto';
@@ -156,42 +161,6 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
 const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
-const FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS = [
-  '볶음밥',
-  '비빔밥',
-  '덮밥',
-  '국밥',
-  '주먹밥',
-  '김밥',
-  '초밥',
-  '샤브샤브',
-  '파스타',
-  '스파게티',
-  '짜장면',
-  '자장면',
-  '짬뽕',
-  '냉면',
-  '국수',
-  '라면',
-  '우동',
-  '찌개',
-  '전골',
-  '샐러드',
-  '스테이크',
-  '돈가스',
-  '돈까스',
-  '카츠',
-  '피자',
-  '버거',
-  '만두',
-  '튀김',
-  '구이',
-  '조림',
-  '볶음',
-  '무침',
-  '찜',
-  '탕',
-] as const;
 
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
@@ -2050,8 +2019,11 @@ failure_reason enum:
       }
     }
 
+    const compatibleVectorMenus = vectorMenus.filter((menu) =>
+      this.isHomeFoodImageDishTypeCompatible(foodName, menu),
+    );
     const localMenus =
-      vectorMenus.length === 0
+      compatibleVectorMenus.length === 0
         ? this.findTopHomeFoodImageLocalCandidates(prediction, allMenus, limit)
         : [];
     const preferredMenus = prediction.brand
@@ -2063,22 +2035,27 @@ failure_reason enum:
             isPreferredGenericRefinedSaltMenu(foodName, menu),
         );
 
+    const candidates = prioritizeGenericFoodImageCandidate(
+      foodName,
+      this.mergeFoodImageRecognitionCandidates([
+        ...summaryProductMenus,
+        ...brandMenus,
+        ...preferredMenus,
+        ...compatibleVectorMenus,
+        ...localMenus,
+      ]).filter((candidate) =>
+        this.isHomeFoodImageDishTypeCompatible(foodName, candidate),
+      ),
+    ).slice(0, limit);
+    const summaryPreferredCandidate = summaryProductMenus.find((menu) =>
+      candidates.some((candidate) => candidate.id === menu.id),
+    );
+
     return {
-      ...(summaryProductMenus[0]
-        ? { preferredCandidateId: summaryProductMenus[0].id }
+      ...(summaryPreferredCandidate
+        ? { preferredCandidateId: summaryPreferredCandidate.id }
         : {}),
-      candidates: prioritizeGenericFoodImageCandidate(
-        foodName,
-        this.mergeFoodImageRecognitionCandidates([
-          ...summaryProductMenus,
-          ...brandMenus,
-          ...preferredMenus,
-          ...vectorMenus,
-          ...localMenus,
-        ]).filter((candidate) =>
-          this.isHomeFoodImageDishTypeCompatible(foodName, candidate),
-        ),
-      ).slice(0, limit),
+      candidates,
     };
   }
 
@@ -2115,10 +2092,8 @@ failure_reason enum:
     visualDescription: string | null,
     limit: number,
   ): HomeFoodImageRecognitionCandidate[] {
-    const summary = this.normalizeCompactSearchText(visualDescription ?? '');
-    const predictionBrand = this.normalizeCompactSearchText(
-      prediction.brand ?? '',
-    );
+    const summary = visualDescription ?? '';
+    const predictionBrand = prediction.brand ?? '';
 
     if (!summary || !predictionBrand) {
       return [];
@@ -2126,17 +2101,13 @@ failure_reason enum:
 
     return menus
       .filter((menu) => {
-        const menuBrand = this.normalizeCompactSearchText(menu.brand ?? '');
-        const menuName = this.normalizeCompactSearchText(
-          stripPublicMenuSourcePrefix(menu.name),
-        );
-        const brandMatches =
-          menuBrand.length > 0 &&
-          (menuBrand.includes(predictionBrand) ||
-            predictionBrand.includes(menuBrand));
-
         return (
-          brandMatches && menuName.length >= 3 && summary.includes(menuName)
+          isFoodImageBrandMatch(predictionBrand, menu.brand ?? '') &&
+          isFoodImageSummaryMenuMatch(
+            summary,
+            stripPublicMenuSourcePrefix(menu.name),
+            prediction.foodName,
+          )
         );
       })
       .sort((left, right) => {
@@ -2157,7 +2128,7 @@ failure_reason enum:
     menus: HomeFoodImageRecognitionCandidate[],
     limit: number,
   ): HomeFoodImageRecognitionCandidate[] {
-    const brand = this.normalizeCompactSearchText(prediction.brand ?? '');
+    const brand = prediction.brand ?? '';
 
     if (!brand) {
       return [];
@@ -2165,10 +2136,15 @@ failure_reason enum:
 
     return menus
       .filter((menu) => {
-        const menuBrand = this.normalizeCompactSearchText(menu.brand ?? '');
-        const menuName = this.normalizeCompactSearchText(menu.name);
+        const compactBrand = this.normalizeCompactSearchText(brand);
+        const compactMenuName = this.normalizeCompactSearchText(
+          stripPublicMenuSourcePrefix(menu.name),
+        );
 
-        return menuBrand.includes(brand) || menuName.includes(brand);
+        return (
+          isFoodImageBrandMatch(brand, menu.brand ?? '') ||
+          compactMenuName.startsWith(compactBrand)
+        );
       })
       .map((menu) => ({
         menu,

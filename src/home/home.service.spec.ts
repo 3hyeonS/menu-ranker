@@ -317,6 +317,96 @@ describe('HomeService menu search priority', () => {
     }
   });
 
+  it('does not prefer a beverage named 프라이 for BHC fried chicken', () => {
+    const beverage = {
+      id: 270166,
+      name: '(식약처_가공) 프라이',
+      brand: 'BRAUEREI SCHLOSS EGGENBERG STOHR GMBH & CO KG',
+      category: '음료류',
+      weight: 330,
+      unit: 1,
+    };
+
+    expect(
+      service.findHomeFoodImageSummaryProductCandidates(
+        { foodName: '후라이드 치킨', brand: 'bhc' },
+        [beverage],
+        '후라이드 치킨과 펩시 콜라, 스프라이트가 있다.',
+        10,
+      ),
+    ).toEqual([]);
+    expect(
+      service.isHomeFoodImageDishTypeCompatible('후라이드 치킨', beverage),
+    ).toBe(false);
+  });
+
+  it('keeps a real fried chicken candidate compatible', () => {
+    expect(
+      service.isHomeFoodImageDishTypeCompatible('후라이드 치킨', {
+        id: 1,
+        name: '(식약처_음식) 후라이드치킨',
+        brand: null,
+        category: '닭튀김',
+      }),
+    ).toBe(true);
+  });
+
+  it('falls back to a chicken candidate when vector search returns the 프라이 beverage', async () => {
+    const previousVectorSearchEnabled = process.env.VECTOR_SEARCH_ENABLED;
+    process.env.VECTOR_SEARCH_ENABLED = 'true';
+
+    const beverage = {
+      id: 270166,
+      name: '(식약처_가공) 프라이',
+      brand: 'BRAUEREI SCHLOSS EGGENBERG STOHR GMBH & CO KG',
+      category: '음료류',
+      weight: 330,
+      unit: 1,
+    };
+    const chicken = {
+      id: 100,
+      name: '(식약처_음식) 후라이드치킨',
+      brand: 'BHC',
+      category: '닭튀김',
+      weight: 100,
+      unit: 0,
+    };
+
+    service.menuVectorService = {
+      searchMenusByText: jest.fn().mockResolvedValue([{ menuId: 270166 }]),
+    };
+    service.getFoodImageRecognitionMenusByIds = jest
+      .fn()
+      .mockResolvedValue([beverage]);
+
+    try {
+      const result = await service.getFoodImageCandidatesForSingleFood(
+        107,
+        {
+          foodName: '후라이드 치킨',
+          brand: 'bhc',
+          confidence: 0.98,
+          estimatedQuantity: 600,
+          estimatedQuantityUnit: 'g',
+          quantityConfidence: 0.8,
+        },
+        '후라이드 치킨과 펩시 콜라, 스프라이트가 있다.',
+        [beverage, chicken],
+      );
+
+      expect(result.preferredCandidateId).toBe(100);
+      expect(result.candidates.map((candidate) => candidate.id)).toEqual([
+        100,
+      ]);
+    } finally {
+      if (previousVectorSearchEnabled === undefined) {
+        delete process.env.VECTOR_SEARCH_ENABLED;
+      } else {
+        process.env.VECTOR_SEARCH_ENABLED = previousVectorSearchEnabled;
+      }
+    }
+  });
+
   it('fills a food omitted from a partial home image rematch', () => {
     const predictions = [
       { foodName: '수육', brand: null, estimatedQuantity: 150 },

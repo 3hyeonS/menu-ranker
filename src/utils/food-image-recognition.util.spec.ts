@@ -1,4 +1,9 @@
-import { FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES } from './food-image-recognition.util';
+import {
+  FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
+  FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
+  isFoodImageBrandMatch,
+  isFoodImageSummaryMenuMatch,
+} from './food-image-recognition.util';
 
 describe('food image recognition prompt rules', () => {
   it('keeps a one-bowl bibimbap as one completed dish', () => {
@@ -14,5 +19,42 @@ describe('food image recognition prompt rules', () => {
     expect(FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES).toContain(
       '완성 요리와 별도로 담긴 국, 음료, 포장 제품, 반찬, 소스',
     );
+  });
+});
+
+describe('food image candidate safeguards', () => {
+  it('does not confuse BHC with the legal suffix GMBH & CO', () => {
+    expect(
+      isFoodImageBrandMatch(
+        'BHC',
+        'BRAUEREI SCHLOSS EGGENBERG STOHR GMBH & CO KG',
+      ),
+    ).toBe(false);
+    expect(isFoodImageBrandMatch('BHC', 'bhc')).toBe(true);
+  });
+
+  it('does not find 프라이 inside 스프라이트 for a fried chicken item', () => {
+    expect(
+      isFoodImageSummaryMenuMatch(
+        '후라이드 치킨과 펩시 콜라, 스프라이트가 있다.',
+        '프라이',
+        '후라이드 치킨',
+      ),
+    ).toBe(false);
+    expect(
+      isFoodImageSummaryMenuMatch(
+        '후라이드 치킨과 펩시 콜라가 있다.',
+        '후라이드 치킨',
+        '후라이드 치킨',
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps chicken and chicken radish as strict dish types', () => {
+    expect(FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS).toContain('치킨');
+    expect(FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS).toContain('치킨무');
+    expect(
+      FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS.indexOf('치킨무'),
+    ).toBeLessThan(FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS.indexOf('치킨'));
   });
 });

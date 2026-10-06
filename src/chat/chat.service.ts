@@ -71,7 +71,12 @@ import {
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
-import { FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES } from '../utils/food-image-recognition.util';
+import {
+  FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
+  FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
+  isFoodImageBrandMatch,
+  isFoodImageSummaryMenuMatch,
+} from '../utils/food-image-recognition.util';
 import {
   getRequestAbortSignal,
   isRequestCancellationError,
@@ -131,42 +136,6 @@ const CHAT_USER_FACT_PROVENANCE_RULES = `
 - 사용자가 메뉴 추천이나 분석을 요청했다는 사실만으로 그 추천 내용을 장기 선호나 목표로 만들지 마.
 - 음식의 영양 특성을 보고 사용자의 평소 습관이나 목표를 새로 추론하지 마.
 `.trim();
-const FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS = [
-  '볶음밥',
-  '비빔밥',
-  '덮밥',
-  '국밥',
-  '주먹밥',
-  '김밥',
-  '초밥',
-  '샤브샤브',
-  '파스타',
-  '스파게티',
-  '짜장면',
-  '자장면',
-  '짬뽕',
-  '냉면',
-  '국수',
-  '라면',
-  '우동',
-  '찌개',
-  '전골',
-  '샐러드',
-  '스테이크',
-  '돈가스',
-  '돈까스',
-  '카츠',
-  '피자',
-  '버거',
-  '만두',
-  '튀김',
-  '구이',
-  '조림',
-  '볶음',
-  '무침',
-  '찜',
-  '탕',
-] as const;
 const CHAT_RESPONSE_SYSTEM_INSTRUCTION = `
 당신은 스마트하고 냉철한 식단 및 운동 코치입니다. 다음 규칙을 엄격히 준수하세요.
 
@@ -6011,20 +5980,30 @@ ${JSON.stringify(
                 isPreferredGenericRefinedSaltMenu(prediction.foodName, menu),
             );
 
+        const candidates = prioritizeGenericFoodImageCandidate(
+          prediction.foodName,
+          this.mergeRecognitionCandidatesById([
+            ...summaryProductMenus,
+            ...brandMenus,
+            ...preferredMenus,
+            ...group.candidates,
+          ]).filter((candidate) =>
+            this.isFoodImageDishTypeCompatible(
+              prediction.foodName,
+              candidate,
+            ),
+          ),
+        ).slice(0, this.getFoodImagePerFoodVectorCandidateLimit());
+        const summaryPreferredCandidate = summaryProductMenus.find((menu) =>
+          candidates.some((candidate) => candidate.id === menu.id),
+        );
+
         return {
           ...group,
-          ...(summaryProductMenus[0]
-            ? { preferredCandidateId: summaryProductMenus[0].id }
+          ...(summaryPreferredCandidate
+            ? { preferredCandidateId: summaryPreferredCandidate.id }
             : {}),
-          candidates: prioritizeGenericFoodImageCandidate(
-            prediction.foodName,
-            this.mergeRecognitionCandidatesById([
-              ...summaryProductMenus,
-              ...brandMenus,
-              ...preferredMenus,
-              ...group.candidates,
-            ]),
-          ).slice(0, this.getFoodImagePerFoodVectorCandidateLimit()),
+          candidates,
         };
       })
       .filter((group) => group.candidates.length > 0);
@@ -6036,8 +6015,8 @@ ${JSON.stringify(
     imageSummary: string | null,
     limit: number,
   ): MenuRecognitionCandidate[] {
-    const summary = this.normalizeCompactText(imageSummary ?? '');
-    const predictionBrand = this.normalizeCompactText(prediction.brand ?? '');
+    const summary = imageSummary ?? '';
+    const predictionBrand = prediction.brand ?? '';
 
     if (!summary || !predictionBrand) {
       return [];
@@ -6045,17 +6024,13 @@ ${JSON.stringify(
 
     return menus
       .filter((menu) => {
-        const menuBrand = this.normalizeCompactText(menu.brand ?? '');
-        const menuName = this.normalizeCompactText(
-          stripPublicMenuSourcePrefix(menu.name),
-        );
-        const brandMatches =
-          menuBrand.length > 0 &&
-          (menuBrand.includes(predictionBrand) ||
-            predictionBrand.includes(menuBrand));
-
         return (
-          brandMatches && menuName.length >= 3 && summary.includes(menuName)
+          isFoodImageBrandMatch(predictionBrand, menu.brand ?? '') &&
+          isFoodImageSummaryMenuMatch(
+            summary,
+            stripPublicMenuSourcePrefix(menu.name),
+            prediction.foodName,
+          )
         );
       })
       .sort((left, right) => {
@@ -6076,7 +6051,7 @@ ${JSON.stringify(
     menus: MenuRecognitionCandidate[],
     limit: number,
   ): MenuRecognitionCandidate[] {
-    const brand = this.normalizeCompactText(prediction.brand ?? '');
+    const brand = prediction.brand ?? '';
 
     if (!brand) {
       return [];
@@ -6084,10 +6059,15 @@ ${JSON.stringify(
 
     return menus
       .filter((menu) => {
-        const menuBrand = this.normalizeCompactText(menu.brand ?? '');
-        const menuName = this.normalizeCompactText(menu.name);
+        const compactBrand = this.normalizeCompactText(brand);
+        const compactMenuName = this.normalizeCompactText(
+          stripPublicMenuSourcePrefix(menu.name),
+        );
 
-        return menuBrand.includes(brand) || menuName.includes(brand);
+        return (
+          isFoodImageBrandMatch(brand, menu.brand ?? '') ||
+          compactMenuName.startsWith(compactBrand)
+        );
       })
       .map((menu) => ({
         menu,
