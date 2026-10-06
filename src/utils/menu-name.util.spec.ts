@@ -1,7 +1,10 @@
 import {
   canonicalizeMenuSearchName,
+  isGenericSweetPotatoCandidateCompatible,
+  isGenericSweetPotatoName,
   isGenericPlainSaltName,
   isPreferredGenericRefinedSaltMenu,
+  isPreferredGenericSweetPotatoMenu,
   prioritizeGenericFoodImageCandidate,
 } from './menu-name.util';
 
@@ -53,5 +56,51 @@ describe('generic refined salt matching', () => {
       219056,
     );
     expect(isPreferredGenericRefinedSaltMenu('소금', candidates[1])).toBe(true);
+  });
+});
+
+describe('generic sweet potato matching', () => {
+  it.each(['고구마', '찐고구마', '삶은 고구마', '군고구마'])(
+    'recognizes %s as a generic sweet potato',
+    (name) => {
+      expect(isGenericSweetPotatoName(name)).toBe(true);
+    },
+  );
+
+  it.each(['고구마미음', '고구마밥', '고구마피자'])(
+    'does not treat %s as a generic sweet potato',
+    (name) => {
+      expect(isGenericSweetPotatoName(name)).toBe(false);
+    },
+  );
+
+  it('prioritizes the public steamed sweet potato menu', () => {
+    const candidates = [
+      { id: 37047, name: '(식약처_가공) 고구마미음' },
+      { id: 1929, name: '(식약처_음식) 찐고구마' },
+      { id: 1932, name: '(식약처_음식) 고구마밥' },
+    ];
+
+    expect(
+      prioritizeGenericFoodImageCandidate('고구마', candidates)[0].id,
+    ).toBe(1929);
+    expect(
+      isPreferredGenericSweetPotatoMenu('고구마', candidates[1].name),
+    ).toBe(true);
+  });
+
+  it('rejects sweet potato porridge for a generic sweet potato recognition', () => {
+    expect(
+      isGenericSweetPotatoCandidateCompatible(
+        '고구마',
+        '(식약처_가공) 고구마미음',
+      ),
+    ).toBe(false);
+    expect(
+      isGenericSweetPotatoCandidateCompatible(
+        '고구마미음',
+        '(식약처_가공) 고구마미음',
+      ),
+    ).toBe(true);
   });
 });

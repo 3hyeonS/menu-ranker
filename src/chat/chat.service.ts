@@ -62,9 +62,11 @@ import {
   canonicalizeMenuSearchName,
   findPreferredGenericFoodImageCandidate,
   isGenericPlainSaltName,
+  isGenericSweetPotatoCandidateCompatible,
   isPreferredGenericFriedEggMenu,
   isPreferredGenericPlainRiceMenu,
   isPreferredGenericRefinedSaltMenu,
+  isPreferredGenericSweetPotatoMenu,
   normalizeMenuSearchName,
   PREFERRED_REFINED_SALT_MENU_ID,
   prioritizeGenericFoodImageCandidate,
@@ -5977,6 +5979,10 @@ ${JSON.stringify(
                   prediction.foodName,
                   menu.name,
                 ) ||
+                isPreferredGenericSweetPotatoMenu(
+                  prediction.foodName,
+                  menu.name,
+                ) ||
                 isPreferredGenericRefinedSaltMenu(prediction.foodName, menu),
             );
 
@@ -5988,10 +5994,7 @@ ${JSON.stringify(
             ...preferredMenus,
             ...group.candidates,
           ]).filter((candidate) =>
-            this.isFoodImageDishTypeCompatible(
-              prediction.foodName,
-              candidate,
-            ),
+            this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
           ),
         ).slice(0, this.getFoodImagePerFoodVectorCandidateLimit());
         const summaryPreferredCandidate = summaryProductMenus.find((menu) =>
@@ -6227,6 +6230,10 @@ ${JSON.stringify(
     foodName: string,
     menu: MenuRecognitionCandidate,
   ): boolean {
+    if (!isGenericSweetPotatoCandidateCompatible(foodName, menu.name)) {
+      return false;
+    }
+
     const requiredDishType = this.getFoodImageStrictDishTypeToken(foodName);
 
     if (!requiredDishType) {

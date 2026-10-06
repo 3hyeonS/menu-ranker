@@ -49,6 +49,27 @@ describe('HomeService menu search priority', () => {
     ).toEqual([]);
   });
 
+  it('prioritizes the public steamed sweet potato for generic sweet potato searches', () => {
+    const steamedSweetPotato = { name: '(식약처_음식) 찐고구마' };
+    const sweetPotatoPorridge = { name: '(식약처_가공) 고구마미음' };
+
+    expect(
+      service.isPreferredSteamedSweetPotatoSearchResult(
+        steamedSweetPotato,
+        '고구마',
+      ),
+    ).toBe(true);
+    expect(
+      service.isPreferredSteamedSweetPotatoSearchResult(
+        sweetPotatoPorridge,
+        '고구마',
+      ),
+    ).toBe(false);
+    expect(
+      service.getPreferredSteamedSweetPotatoNameCandidates('삶은 고구마'),
+    ).toContain('(식약처_음식) 찐고구마');
+  });
+
   it('prioritizes refined salt only for generic salt searches', () => {
     const refinedSalt = {
       id: 219056,
@@ -347,6 +368,25 @@ describe('HomeService menu search priority', () => {
         name: '(식약처_음식) 후라이드치킨',
         brand: null,
         category: '닭튀김',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects sweet potato porridge for a generic sweet potato photo', () => {
+    expect(
+      service.isHomeFoodImageDishTypeCompatible('고구마', {
+        id: 37047,
+        name: '(식약처_가공) 고구마미음',
+        brand: null,
+        category: '즉석조리식품',
+      }),
+    ).toBe(false);
+    expect(
+      service.isHomeFoodImageDishTypeCompatible('고구마미음', {
+        id: 37047,
+        name: '(식약처_가공) 고구마미음',
+        brand: null,
+        category: '즉석조리식품',
       }),
     ).toBe(true);
   });

@@ -176,6 +176,7 @@ const MENU_SEARCH_ALIAS_GROUPS: Array<{
       '고구마',
       '군고구마',
       '찐고구마',
+      '삶은고구마',
       '생고구마',
       '밤고구마',
       '호박고구마',
@@ -397,6 +398,47 @@ export const prioritizeGenericPlainRiceCandidate = <T extends { name: string }>(
   );
 };
 
+const GENERIC_SWEET_POTATO_CANONICAL_NAME =
+  canonicalizeMenuSearchName('고구마');
+
+export const isGenericSweetPotatoName = (menuName: string): boolean =>
+  canonicalizeMenuSearchName(menuName) === GENERIC_SWEET_POTATO_CANONICAL_NAME;
+
+export const isPreferredGenericSweetPotatoMenu = (
+  recognizedFoodName: string,
+  candidateMenuName: string,
+): boolean =>
+  isGenericSweetPotatoName(recognizedFoodName) &&
+  /^\s*\(식약처_음식\)\s*/.test(candidateMenuName) &&
+  normalizeMenuSearchName(candidateMenuName) ===
+    normalizeMenuSearchName('찐고구마');
+
+export const isGenericSweetPotatoCandidateCompatible = (
+  recognizedFoodName: string,
+  candidateMenuName: string,
+): boolean =>
+  !isGenericSweetPotatoName(recognizedFoodName) ||
+  !normalizeMenuSearchName(candidateMenuName).includes('미음');
+
+export const prioritizeGenericSweetPotatoCandidate = <
+  T extends { name: string },
+>(
+  recognizedFoodName: string,
+  candidates: T[],
+): T[] => {
+  if (!isGenericSweetPotatoName(recognizedFoodName)) {
+    return candidates;
+  }
+
+  return [...candidates].sort(
+    (left, right) =>
+      Number(
+        isPreferredGenericSweetPotatoMenu(recognizedFoodName, right.name),
+      ) -
+      Number(isPreferredGenericSweetPotatoMenu(recognizedFoodName, left.name)),
+  );
+};
+
 export const PREFERRED_REFINED_SALT_MENU_ID = 219056;
 
 const GENERIC_PLAIN_SALT_NAMES = new Set([
@@ -447,9 +489,12 @@ export const prioritizeGenericFoodImageCandidate = <
 ): T[] =>
   prioritizeGenericRefinedSaltCandidate(
     recognizedFoodName,
-    prioritizeGenericPlainRiceCandidate(
+    prioritizeGenericSweetPotatoCandidate(
       recognizedFoodName,
-      prioritizeGenericFriedEggCandidate(recognizedFoodName, candidates),
+      prioritizeGenericPlainRiceCandidate(
+        recognizedFoodName,
+        prioritizeGenericFriedEggCandidate(recognizedFoodName, candidates),
+      ),
     ),
   );
 
@@ -463,5 +508,6 @@ export const findPreferredGenericFoodImageCandidate = <
     (candidate) =>
       isPreferredGenericFriedEggMenu(recognizedFoodName, candidate.name) ||
       isPreferredGenericPlainRiceMenu(recognizedFoodName, candidate.name) ||
+      isPreferredGenericSweetPotatoMenu(recognizedFoodName, candidate.name) ||
       isPreferredGenericRefinedSaltMenu(recognizedFoodName, candidate),
   );

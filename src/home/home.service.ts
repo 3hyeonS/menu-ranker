@@ -68,9 +68,12 @@ import {
   findPreferredGenericFoodImageCandidate,
   isGenericPlainRiceName,
   isGenericPlainSaltName,
+  isGenericSweetPotatoCandidateCompatible,
+  isGenericSweetPotatoName,
   isPreferredGenericFriedEggMenu,
   isPreferredGenericPlainRiceMenu,
   isPreferredGenericRefinedSaltMenu,
+  isPreferredGenericSweetPotatoMenu,
   normalizeMenuSearchName,
   PREFERRED_REFINED_SALT_MENU_ID,
   prioritizeGenericFoodImageCandidate,
@@ -801,6 +804,23 @@ export class HomeService {
     return ['찐옥수수', '(식약처_음식) 찐옥수수'];
   }
 
+  private isPreferredSteamedSweetPotatoSearchResult(
+    menu: MenuEntity,
+    keyword: string,
+  ): boolean {
+    return isPreferredGenericSweetPotatoMenu(keyword, menu.name);
+  }
+
+  private getPreferredSteamedSweetPotatoNameCandidates(
+    keyword: string,
+  ): string[] {
+    if (!isGenericSweetPotatoName(keyword)) {
+      return [];
+    }
+
+    return ['찐고구마', '(식약처_음식) 찐고구마'];
+  }
+
   private isPreferredRefinedSaltSearchResult(
     menu: MenuEntity,
     keyword: string,
@@ -1117,6 +1137,7 @@ export class HomeService {
       `(식약처_가공) ${keyword}`,
       ...this.getPreferredShineMuscatNameCandidates(keyword),
       ...this.getPreferredSteamedCornNameCandidates(keyword),
+      ...this.getPreferredSteamedSweetPotatoNameCandidates(keyword),
       ...this.getPreferredRefinedSaltNameCandidates(keyword),
     ];
     const exactParentheticalPatterns = [
@@ -1290,6 +1311,10 @@ export class HomeService {
       )
         ? 0
         : 1;
+      const leftPreferredSteamedSweetPotato =
+        this.isPreferredSteamedSweetPotatoSearchResult(left, keyword) ? 0 : 1;
+      const rightPreferredSteamedSweetPotato =
+        this.isPreferredSteamedSweetPotatoSearchResult(right, keyword) ? 0 : 1;
       const leftPreferred = this.isPreferredShineMuscatSearchResult(
         left,
         keyword,
@@ -1324,6 +1349,14 @@ export class HomeService {
 
       if (leftPreferredSteamedCorn !== rightPreferredSteamedCorn) {
         return leftPreferredSteamedCorn - rightPreferredSteamedCorn;
+      }
+
+      if (
+        leftPreferredSteamedSweetPotato !== rightPreferredSteamedSweetPotato
+      ) {
+        return (
+          leftPreferredSteamedSweetPotato - rightPreferredSteamedSweetPotato
+        );
       }
 
       if (leftPreferred !== rightPreferred) {
@@ -2032,6 +2065,7 @@ failure_reason enum:
           (menu) =>
             isPreferredGenericFriedEggMenu(foodName, menu.name) ||
             isPreferredGenericPlainRiceMenu(foodName, menu.name) ||
+            isPreferredGenericSweetPotatoMenu(foodName, menu.name) ||
             isPreferredGenericRefinedSaltMenu(foodName, menu),
         );
 
@@ -2390,6 +2424,10 @@ failure_reason enum:
     foodName: string,
     menu: HomeFoodImageRecognitionCandidate,
   ): boolean {
+    if (!isGenericSweetPotatoCandidateCompatible(foodName, menu.name)) {
+      return false;
+    }
+
     const requiredDishType = this.getHomeFoodImageStrictDishTypeToken(foodName);
     if (!requiredDishType) {
       return true;
