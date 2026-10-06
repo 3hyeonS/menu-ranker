@@ -19,7 +19,10 @@ const MENU_SEARCH_ALIAS_GROUPS: Array<{
     canonical: '구운달걀',
     aliases: ['구운계란', '맥반석계란', '훈제계란', '훈제달걀', '구운달걀'],
   },
-  { canonical: '밥', aliases: ['쌀밥', '흰밥', '백미밥', '이밥', '밥'] },
+  {
+    canonical: '밥',
+    aliases: ['쌀밥', '흰밥', '흰쌀밥', '백미밥', '이밥', '밥'],
+  },
   {
     canonical: '현미밥',
     aliases: ['현미밥', '100%현미밥', '발아현미밥'],

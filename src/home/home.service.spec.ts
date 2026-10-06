@@ -260,6 +260,63 @@ describe('HomeService menu search priority', () => {
     ).toEqual({ menu_ids: [10], menu_quantities: [180] });
   });
 
+  it('keeps the public plain-rice menu in home image candidates even when vector search returns a product rice', async () => {
+    const previousVectorSearchEnabled = process.env.VECTOR_SEARCH_ENABLED;
+    process.env.VECTOR_SEARCH_ENABLED = 'true';
+
+    const plainRice = {
+      id: 10,
+      name: '(식약처_음식) 밥',
+      brand: null,
+      category: '밥류',
+      weight: 200,
+      unit: 0,
+    };
+    const productRice = {
+      id: 11,
+      name: '덕수파스타 필라프 흰쌀밥',
+      brand: '엄지식품',
+      category: '즉석밥',
+      weight: 100,
+      unit: 0,
+    };
+
+    service.menuVectorService = {
+      searchMenusByText: jest.fn().mockResolvedValue([{ menuId: 11 }]),
+    };
+    service.getFoodImageRecognitionMenusByIds = jest
+      .fn()
+      .mockImplementation(async (_userId: number, ids: number[]) =>
+        ids.includes(11) ? [productRice] : [],
+      );
+
+    try {
+      const result = await service.getFoodImageCandidatesForSingleFood(
+        50,
+        {
+          foodName: '흰쌀밥',
+          brand: null,
+          confidence: 0.9,
+          estimatedQuantity: 150,
+          estimatedQuantityUnit: 'g',
+          quantityConfidence: 0.7,
+        },
+        '라면 옆에 흰밥이 담겨 있다.',
+        [productRice, plainRice],
+      );
+
+      expect(result.candidates.map((candidate) => candidate.id)).toEqual([
+        10, 11,
+      ]);
+    } finally {
+      if (previousVectorSearchEnabled === undefined) {
+        delete process.env.VECTOR_SEARCH_ENABLED;
+      } else {
+        process.env.VECTOR_SEARCH_ENABLED = previousVectorSearchEnabled;
+      }
+    }
+  });
+
   it('fills a food omitted from a partial home image rematch', () => {
     const predictions = [
       { foodName: '수육', brand: null, estimatedQuantity: 150 },
