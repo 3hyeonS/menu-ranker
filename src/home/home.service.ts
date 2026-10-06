@@ -80,6 +80,7 @@ import {
   SUGAR_ALTERNATIVE_KEYWORDS,
   SUGAR_ALTERNATIVE_PROMPT_SECTION,
 } from '../utils/nutrition-label.util';
+import { FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES } from '../utils/food-image-recognition.util';
 import { FolderEntity } from './entity/folder.entity';
 import { FolderMenuEntity } from './entity/folder-menu.entity';
 import { UpsertFolderRequestDto } from './dto/request-dto/upsert-folder-request-dto';
@@ -1653,7 +1654,7 @@ export class HomeService {
     visualDescription: string | null;
   }> {
     const prompt = `
-음식 사진을 보고, 사진에 실제로 포함된 음식명과 시각적 특징을 JSON object로 반환해.
+음식 사진을 보고, 사진 내용을 image_summary로 요약하고 사진에 실제로 포함된 음식명을 detected_foods로 반환해.
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
@@ -1661,8 +1662,9 @@ export class HomeService {
 - 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣고 불확실하면 null로 반환해
 - 포장에 제품명이 선명하게 읽히면 일반 식품명으로 줄이지 말고 제품명을 food_name에 그대로 넣어. 예: "요거톡 스타볼"을 "요거트"로 축약하지 마
 - 정확한 메뉴명을 모르더라도 "양념된 구운 돼지고기", "숯불에 구운 고기", "구운 마늘"처럼 보이는 특징을 detected_foods에 넣어
-- visual_description에는 주요 식재료, 조리 방식, 양념 여부, 보이는 구성 요소를 1~3문장으로 설명해
-- 식판, 도시락, 한상차림은 밥, 국/찌개, 고기·생선·계란 반찬, 채소 반찬, 김치·절임류, 소스를 가능한 한 개별 음식으로 분리해
+- image_summary에는 주요 식재료, 조리 방식, 양념 여부, 보이는 구성 요소를 1~2문장으로 설명해
+- image_summary에 음식명으로 언급한 항목은 가능한 한 detected_foods에도 포함해
+${FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES}
 - 고기나 채소를 찍어 먹는 흰 결정 형태의 소금이 별도 종지에 보이면 "소금"으로 detected_foods에 포함해. 액체 기름장이나 다른 양념장은 소금으로 단정하지 마
 - 소금의 estimated_quantity는 종지에 담긴 전체 양이 아니라 실제로 찍어 먹을 것으로 보이는 섭취량을 g 단위로 보수적으로 추정해
 - 같은 음식이 여러 개 보여도 detected_foods에는 중복 없이 한 번만 넣고 사진에 보이는 전체 양을 합산해
@@ -1688,7 +1690,7 @@ export class HomeService {
       "quantity_confidence": 0.65
     }
   ],
-  "visual_description": "불판 위에 양념된 고기와 소금구이처럼 보이는 고기, 구운 마늘이 함께 보입니다."
+  "image_summary": "불판 위에 양념된 고기와 소금구이처럼 보이는 고기, 구운 마늘이 함께 보입니다."
 }
 
 failure_reason enum:
@@ -1724,10 +1726,10 @@ failure_reason enum:
       .filter((food): food is HomeFoodImagePrediction => food !== null)
       .slice(0, 10);
 
+    const summaryValue = data?.image_summary ?? data?.visual_description;
     const visualDescription =
-      typeof data?.visual_description === 'string' &&
-      data.visual_description.trim().length > 0
-        ? data.visual_description.trim()
+      typeof summaryValue === 'string' && summaryValue.trim().length > 0
+        ? summaryValue.trim()
         : null;
 
     if (foods.length === 0) {

@@ -71,6 +71,7 @@ import {
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
+import { FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES } from '../utils/food-image-recognition.util';
 import {
   getRequestAbortSignal,
   isRequestCancellationError,
@@ -5389,7 +5390,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 - intro_message에는 칼로리, 탄수화물 g, 단백질 g, 지방 g, 나트륨 mg, 비율 % 같은 구체적인 영양 수치를 절대 쓰지 마
 - 영양 설명이 필요하면 "단백질을 챙기기 좋아", "부담이 적어", "지방이 높은 편이야"처럼 정성적으로만 말해
 - image_summary에 음식명으로 언급한 항목은 가능한 한 detected_foods에도 포함해
-- 식판, 도시락, 한상차림처럼 여러 음식이 함께 있으면 밥, 국/찌개, 고기/생선/계란 반찬, 채소 반찬, 김치/절임류, 소스처럼 보이는 작은 반찬도 가능한 한 개별 음식으로 분리해서 detected_foods에 넣어
+${FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES}
 - 고기나 채소를 찍어 먹는 흰 결정 형태의 소금이 별도 종지에 보이면 food_name을 "소금"으로 detected_foods에 포함해. 액체 기름장이나 다른 양념장은 소금으로 단정하지 마
 - 음식명이 완전히 확정되지 않더라도 사진에서 음식 종류가 충분히 보이면 가장 가까운 일반 음식명으로 반환해
 - 사진 속에서 같은 메뉴로 보이는 음식이 여러 개 있어도 detected_foods에는 1개만 반환해
