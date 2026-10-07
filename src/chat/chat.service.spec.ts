@@ -582,7 +582,7 @@ describe('ChatService conversation memory', () => {
       '2026-09-12 식사 피드백을 알려줘',
       chatContext,
       userInfo,
-      expect.stringContaining('"score":36'),
+      expect.stringContaining('"total_score":36'),
     );
     expect(callGemini.mock.calls[0][3]).toContain('"name":"밥"');
     expect(callGemini.mock.calls[0][3]).toContain(
@@ -598,11 +598,16 @@ describe('ChatService conversation memory', () => {
       'selected_date의 식사만 분석해',
     );
     expect(callGemini.mock.calls[0][3]).toContain(
-      '사용자에게 보여주는 답변에서는 "매크로", "macro", "macro_balance_score" 같은 내부 용어를 절대 사용하지 마',
+      '사용자에게는 종합 점수만 알려줘',
     );
     expect(callGemini.mock.calls[0][3]).toContain(
       '탄수화물·단백질·지방의 균형',
     );
+    expect(callGemini.mock.calls[0][3]).not.toContain('"calorie_score"');
+    expect(callGemini.mock.calls[0][3]).not.toContain(
+      '"macro_balance_score"',
+    );
+    expect(callGemini.mock.calls[0][3]).not.toContain('"max_score"');
     expect(response).toEqual({
       chat_category: 'general',
       intro_message: '선택 날짜 식사 피드백',

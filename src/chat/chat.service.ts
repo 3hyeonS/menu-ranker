@@ -5155,20 +5155,60 @@ ${JSON.stringify(menstrualContext)}
   private buildMealFeedbackRequestContext(
     scoreContext: MealFeedbackScoreContext,
   ): string {
+    const feedbackContext = {
+      selected_date: scoreContext.selected_date,
+      total_score: scoreContext.score,
+      calorie_intake: {
+        consumed_calories: scoreContext.calorie_score.consumed_calories,
+        base_target_calories:
+          scoreContext.calorie_score.base_target_calories,
+        exercise_burned_calories:
+          scoreContext.calorie_score.exercise_burned_calories,
+        exercise_calories_reflected_in_target:
+          scoreContext.calorie_score.exercise_calories_reflected_in_target,
+        adjusted_target_calories:
+          scoreContext.calorie_score.adjusted_target_calories,
+        difference_rate_percent:
+          scoreContext.calorie_score.difference_rate_percent,
+      },
+      consumed_nutrition: scoreContext.consumed_nutrition,
+      nutrition_balance: {
+        total_nutrient_calories:
+          scoreContext.macro_balance_score.total_macro_calories,
+        items: Object.fromEntries(
+          Object.entries(scoreContext.macro_balance_score.items).map(
+            ([nutrient, item]) => [
+              nutrient,
+              {
+                consumed_grams: item.consumed_grams,
+                actual_ratio_percent: item.actual_ratio_percent,
+                target_ratio_percent: item.target_ratio_percent,
+                difference_percent_points: item.difference_percent_points,
+                grade: item.grade,
+              },
+            ],
+          ),
+        ),
+      },
+      recorded_meal_slots: scoreContext.recorded_meal_slots,
+      meal_records: scoreContext.meal_records,
+    };
+
     return `선택 날짜 식사 피드백 기능 전용 요청이야.
 
 서버가 DB 식사 기록과 사용자 목표로 확정한 분석 데이터:
-${JSON.stringify(scoreContext)}
+${JSON.stringify(feedbackContext)}
 
 [식사 피드백 생성 규칙]
 - selected_date의 식사만 분석해. 최근 다른 날짜의 식사 기록이나 과거 대화를 이 날짜의 섭취 내역에 섞지 마.
-- score, calorie_score, macro_balance_score는 서비스 정책에 따라 서버가 계산한 확정값이야. 다시 계산하거나 다른 점수로 바꾸지 마.
-- 총점은 calorie_score 50점과 macro_balance_score 50점의 합이야.
+- total_score는 서비스 정책에 따라 서버가 계산한 사용자 화면용 종합 점수야. 다시 계산하거나 다른 점수로 바꾸지 마.
+- 사용자에게는 종합 점수만 알려줘. 내부 배점 구조, 평가 항목별 점수, 각 항목의 만점 또는 점수 계산식을 공개하거나 추측하지 마.
+- "칼로리 점수", "영양소 균형 점수", "탄수화물 점수", "단백질 점수", "지방 점수"처럼 종합 점수를 세부 점수로 나누어 표현하지 마.
 - 감량 목표라면 adjusted_target_calories는 운동 소모 칼로리를 더하지 않은 base_target_calories와 같아.
 - 유지 또는 증량 목표라면 adjusted_target_calories에는 선택 날짜의 exercise_burned_calories가 더해져 있어.
 - exercise_calories_reflected_in_target를 확인해서 운동 소모 칼로리의 목표 반영 여부를 정확히 설명하고, 감량 목표에서 운동 칼로리만큼 더 먹어도 된다고 안내하지 마.
-- 매크로 실제 비율은 탄수화물과 단백질은 1g당 4kcal, 지방은 1g당 9kcal로 환산한 뒤 세 매크로 열량 합계에서 차지하는 비율이야.
-- 사용자에게 보여주는 답변에서는 "매크로", "macro", "macro_balance_score" 같은 내부 용어를 절대 사용하지 마. 대신 "탄수화물·단백질·지방의 균형" 또는 "영양소 균형"처럼 이해하기 쉬운 한국어로 설명해.
+- 영양소 실제 비율은 탄수화물과 단백질은 1g당 4kcal, 지방은 1g당 9kcal로 환산한 뒤 세 영양소 열량 합계에서 차지하는 비율이야.
+- 사용자에게 보여주는 답변에서는 "매크로"나 영문 필드명 같은 내부 용어를 절대 사용하지 마. 대신 "탄수화물·단백질·지방의 균형" 또는 "영양소 균형"처럼 이해하기 쉬운 한국어로 설명해.
 - 당류·식이섬유·나트륨은 종합 점수에 직접 포함되지 않으므로 별도의 영양 조언 근거로만 사용해.
 - 어떤 음식이 각 탄수화물·단백질·지방 섭취와 점수에 크게 기여했는지 meal_records의 메뉴별 consumed_nutrition을 근거로 구체적으로 설명해.
 - 점수를 제한하는 영양소와 그 원인이 된 기록을 먼저 짚고, 기록된 식사의 구성이나 양을 어떻게 바꾸면 점수를 높일 수 있는지 실행 가능한 방법을 제시해.
