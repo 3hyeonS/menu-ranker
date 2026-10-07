@@ -84,7 +84,10 @@ import {
   SUGAR_ALTERNATIVE_PROMPT_SECTION,
 } from '../utils/nutrition-label.util';
 import {
+  calculateFoodImageCandidateScore,
+  FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES,
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
+  FOOD_IMAGE_REMATCH_PROMPT_RULES,
   FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
   isFoodImageBrandMatch,
   isFoodImageSummaryMenuMatch,
@@ -1660,6 +1663,7 @@ export class HomeService {
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+${FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES}
 - 음식명은 알 수 있는 범위에서 최대한 구체적으로 작성하되 브랜드명은 제외해
 - 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣고 불확실하면 null로 반환해
 - 포장에 제품명이 선명하게 읽히면 일반 식품명으로 줄이지 말고 제품명을 food_name에 그대로 넣어. 예: "요거톡 스타볼"을 "요거트"로 축약하지 마
@@ -2226,34 +2230,12 @@ failure_reason enum:
     prediction: HomeFoodImagePrediction,
     menu: HomeFoodImageRecognitionCandidate,
   ): number {
-    const input = this.normalizeCompactSearchText(prediction.foodName);
-    const menuName = this.normalizeCompactSearchText(menu.name);
-    const brand = this.normalizeCompactSearchText(menu.brand ?? '');
-    const category = this.normalizeCompactSearchText(menu.category ?? '');
-    const searchable = `${menuName}${brand}${category}`;
-    let score = 0;
-
-    if (menuName === input) {
-      score = 100;
-    } else if (menuName.includes(input) || input.includes(menuName)) {
-      score = 84;
-    } else if (searchable.includes(input)) {
-      score = 74;
-    } else if (
-      category &&
-      (input.includes(category) || category.includes(input))
-    ) {
-      score = 68;
-    }
-
-    const recognizedBrand = this.normalizeCompactSearchText(
-      prediction.brand ?? '',
+    return calculateFoodImageCandidateScore(
+      prediction.foodName,
+      menu,
+      prediction.brand,
+      null,
     );
-    if (recognizedBrand && brand.includes(recognizedBrand)) {
-      score += 20;
-    }
-
-    return score;
   }
 
   private async searchFoodImageCandidateMenusByKeyword(
@@ -2475,6 +2457,7 @@ failure_reason enum:
 - 각 food_index는 자기 candidate_menus 안에 있는 menu_id 중에서만 골라
 - 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
 - 후보 목록에 없는 menu_id는 절대 반환하지 마
+${FOOD_IMAGE_REMATCH_PROMPT_RULES}
 - 사진의 시각 정보, food_name, 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - detected_foods.brand가 null이 아니면 사진에서 읽힌 브랜드이므로 같은 브랜드의 후보를 우선해
 - food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥과 김치볶음, 참치김밥과 참치샐러드는 서로 다른 음식이야
@@ -2814,25 +2797,25 @@ ${JSON.stringify(
   }
 
   private getFoodImageVectorCandidateLimit(): number {
-    const parsed = Number(process.env.FOOD_IMAGE_VECTOR_CANDIDATE_LIMIT ?? 100);
+    const parsed = Number(process.env.FOOD_IMAGE_VECTOR_CANDIDATE_LIMIT ?? 50);
 
     if (!Number.isFinite(parsed)) {
-      return 100;
+      return 50;
     }
 
-    return Math.max(10, Math.min(Math.floor(parsed), 500));
+    return Math.max(10, Math.min(Math.floor(parsed), 100));
   }
 
   private getFoodImagePerFoodVectorCandidateLimit(): number {
     const parsed = Number(
-      process.env.FOOD_IMAGE_PER_FOOD_VECTOR_CANDIDATE_LIMIT ?? 10,
+      process.env.FOOD_IMAGE_PER_FOOD_VECTOR_CANDIDATE_LIMIT ?? 8,
     );
 
     if (!Number.isFinite(parsed)) {
-      return 10;
+      return 8;
     }
 
-    return Math.max(3, Math.min(Math.floor(parsed), 30));
+    return Math.max(3, Math.min(Math.floor(parsed), 20));
   }
 
   // 영양성분표 사진 인식

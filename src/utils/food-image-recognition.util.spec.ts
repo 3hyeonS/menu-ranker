@@ -1,4 +1,6 @@
 import {
+  calculateFoodImageCandidateScore,
+  FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES,
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
   FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
   isFoodImageBrandMatch,
@@ -20,9 +22,49 @@ describe('food image recognition prompt rules', () => {
       '완성 요리와 별도로 담긴 국, 음료, 포장 제품, 반찬, 소스',
     );
   });
+
+  it('shares product, grouping, quantity, and omission rules across flows', () => {
+    expect(FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES).toContain(
+      'DB 후보를 의식하지 말고',
+    );
+    expect(FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES).toContain(
+      '비빔밥은 "비빔밥" 하나로 반환',
+    );
+    expect(FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES).toContain(
+      'detected_foods에도 포함해 누락되지 않게',
+    );
+    expect(FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES).toContain(
+      'estimated_quantity',
+    );
+  });
 });
 
 describe('food image candidate safeguards', () => {
+  it('ranks the same-brand iced cafe latte above unrelated drinks', () => {
+    const cafeLatteScore = calculateFoodImageCandidateScore(
+      '아이스 카페라떼',
+      {
+        name: '(식약처_가공) 카페 라떼 아이스(ICED) (Tall) 커피',
+        brand: '스타벅스',
+        category: '커피류',
+      },
+      '스타벅스',
+      null,
+    );
+    const unrelatedDrinkScore = calculateFoodImageCandidateScore(
+      '아이스 카페라떼',
+      {
+        name: '기운내라임 병음료',
+        brand: '스타벅스',
+        category: '음료류',
+      },
+      '스타벅스',
+      null,
+    );
+
+    expect(cafeLatteScore).toBeGreaterThan(unrelatedDrinkScore);
+  });
+
   it('does not confuse BHC with the legal suffix GMBH & CO', () => {
     expect(
       isFoodImageBrandMatch(

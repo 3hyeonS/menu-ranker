@@ -74,7 +74,10 @@ import {
 } from '../utils/menu-name.util';
 import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
 import {
+  calculateFoodImageCandidateScore,
+  FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES,
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
+  FOOD_IMAGE_REMATCH_PROMPT_RULES,
   FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
   isFoodImageBrandMatch,
   isFoodImageSummaryMenuMatch,
@@ -5344,6 +5347,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
 
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
+${FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES}
 - intro_message는 사진 속 음식과 사용자 식사 피드백 맥락을 보고 가장 자연스럽다고 느끼는 답변을 먼저 작성해
 - intro_message 작성 시 DB 매칭 가능성, 메뉴 카드 노출 가능성, 후보 추출 가능성을 의식하지 마
 - image_summary는 이후 대화에서 원본 사진 없이도 맥락을 이해할 수 있게 사진 속 음식 구성, 식사 형태, 눈에 띄는 특징을 1~2문장으로 요약해
@@ -6736,6 +6740,7 @@ ${JSON.stringify(candidates)}
 - 각 food_index는 자기 candidate_menus 안에 있는 menu_id 중에서만 골라
 - 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
 - 후보 목록에 없는 메뉴 id는 절대 반환하지 마
+${FOOD_IMAGE_REMATCH_PROMPT_RULES}
 - 음식 사진의 시각 정보, 1차 food_name, 해당 food_index의 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - detected_foods.brand가 null이 아니면 이미지에서 읽힌 브랜드/라벨이므로 후보 메뉴의 브랜드/메뉴명과 강하게 비교해 같은 브랜드 제품을 우선해
 - detected_foods.food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥 -> 김치볶음은 불일치, 참치김밥 -> 참치샐러드는 불일치, 된장찌개 -> 된장국은 불일치
@@ -7017,60 +7022,12 @@ ${JSON.stringify(
     inferredBrand: string | null,
     inferredCategory: string | null,
   ): number {
-    const input = this.normalizeCompactText(inputName);
-    const menuName = this.normalizeCompactText(menu.name);
-    const brand = this.normalizeCompactText(menu.brand ?? '');
-    const category = this.normalizeCompactText(menu.category ?? '');
-    const searchable = `${menuName}${brand}${category}`;
-
-    if (!input) {
-      return 0;
-    }
-
-    let score = 0;
-
-    if (menuName === input) {
-      score = 100;
-    } else if (menuName.includes(input) || input.includes(menuName)) {
-      score = 84;
-    } else if (searchable.includes(input)) {
-      score = 74;
-    } else if (
-      category &&
-      (input.includes(category) || category.includes(input))
-    ) {
-      score = 68;
-    } else {
-      score = this.calculateCharacterDiceScore(input, menuName) * 72;
-    }
-
-    const inferredBrandText = this.normalizeCompactText(inferredBrand ?? '');
-    const inferredCategoryText = this.normalizeCompactText(
-      inferredCategory ?? '',
+    return calculateFoodImageCandidateScore(
+      inputName,
+      menu,
+      inferredBrand,
+      inferredCategory,
     );
-
-    if (inferredBrandText && brand && brand.includes(inferredBrandText)) {
-      score += 6;
-    }
-    if (
-      inferredCategoryText &&
-      category &&
-      category.includes(inferredCategoryText)
-    ) {
-      score += 4;
-    }
-
-    if (
-      this.isLikelyStandaloneIngredient(inputName) &&
-      menuName === input &&
-      !['샌드위치', '버거', '샐러드'].some((dishCategory) =>
-        category.includes(dishCategory),
-      )
-    ) {
-      score -= 45;
-    }
-
-    return Math.min(score, 100);
   }
 
   private normalizeCompactText(value: string): string {
