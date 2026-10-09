@@ -230,8 +230,12 @@ export const isFoodImageBrandMatch = (
 };
 
 /**
- * 짧은 메뉴명은 스프라이트 안의 "프라이" 같은 우연한 부분 일치가 많으므로
- * 인식된 개별 음식명과도 직접 연결되는 경우에만 허용한다.
+ * 사진 전체 요약에 등장한 다른 음식이 현재 개별 음식의 우선 후보로
+ * 섞이지 않도록, 후보 메뉴명이 인식된 개별 음식명과도 직접 연결될 때만
+ * summary 우선 후보로 허용한다.
+ *
+ * 예: "버거, 감자튀김, 콜라" 요약을 콜라 그룹에 대해 검사할 때,
+ * 같은 브랜드의 버거가 콜라를 덮어쓰지 못해야 한다.
  */
 export const isFoodImageSummaryMenuMatch = (
   imageSummary: string,
@@ -246,9 +250,5 @@ export const isFoodImageSummaryMenuMatch = (
     return false;
   }
 
-  return (
-    candidate.length >= 4 ||
-    recognized.includes(candidate) ||
-    candidate.includes(recognized)
-  );
+  return recognized.includes(candidate) || candidate.includes(recognized);
 };

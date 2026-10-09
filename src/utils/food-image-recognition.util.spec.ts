@@ -92,6 +92,26 @@ describe('food image candidate safeguards', () => {
     ).toBe(true);
   });
 
+  it('does not reuse another same-brand food from the image summary', () => {
+    const summary =
+      '쟁반 위에 화이트갈릭싸이버거, 치즈감자튀김, 그리고 콜라가 놓여 있다.';
+
+    expect(
+      isFoodImageSummaryMenuMatch(
+        summary,
+        '화이트갈릭싸이버거',
+        '콜라',
+      ),
+    ).toBe(false);
+    expect(
+      isFoodImageSummaryMenuMatch(
+        summary,
+        '화이트갈릭싸이버거',
+        '화이트갈릭싸이버거',
+      ),
+    ).toBe(true);
+  });
+
   it('keeps chicken and chicken radish as strict dish types', () => {
     expect(FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS).toContain('치킨');
     expect(FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS).toContain('치킨무');
