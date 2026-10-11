@@ -3,8 +3,8 @@ import {
   FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES,
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
   FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
+  isExactFoodImageProductMatch,
   isFoodImageBrandMatch,
-  isFoodImageSummaryMenuMatch,
 } from './food-image-recognition.util';
 
 describe('food image recognition prompt rules', () => {
@@ -36,6 +36,7 @@ describe('food image recognition prompt rules', () => {
     expect(FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES).toContain(
       'estimated_quantity',
     );
+    expect(FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES).toContain('product_name');
   });
 });
 
@@ -75,39 +76,40 @@ describe('food image candidate safeguards', () => {
     expect(isFoodImageBrandMatch('BHC', 'bhc')).toBe(true);
   });
 
-  it('does not find 프라이 inside 스프라이트 for a fried chicken item', () => {
+  it('requires both an exact product name and an exact brand', () => {
     expect(
-      isFoodImageSummaryMenuMatch(
-        '후라이드 치킨과 펩시 콜라, 스프라이트가 있다.',
-        '프라이',
-        '후라이드 치킨',
-      ),
-    ).toBe(false);
-    expect(
-      isFoodImageSummaryMenuMatch(
-        '후라이드 치킨과 펩시 콜라가 있다.',
-        '후라이드 치킨',
-        '후라이드 치킨',
+      isExactFoodImageProductMatch(
+        '요거톡 스타볼',
+        '풀무원 다논',
+        '요거톡스타볼',
+        '풀무원다논',
       ),
     ).toBe(true);
+    expect(
+      isExactFoodImageProductMatch(
+        '요거톡 스타볼',
+        '풀무원다논',
+        '그릭시그니처요거트',
+        '풀무원다논',
+      ),
+    ).toBe(false);
   });
 
-  it('does not reuse another same-brand food from the image summary', () => {
-    const summary =
-      '쟁반 위에 화이트갈릭싸이버거, 치즈감자튀김, 그리고 콜라가 놓여 있다.';
-
+  it('does not accept an exact product name from another brand', () => {
     expect(
-      isFoodImageSummaryMenuMatch(
-        summary,
+      isExactFoodImageProductMatch(
         '화이트갈릭싸이버거',
-        '콜라',
+        '맘스터치',
+        '화이트갈릭싸이버거',
+        '다른브랜드',
       ),
     ).toBe(false);
     expect(
-      isFoodImageSummaryMenuMatch(
-        summary,
+      isExactFoodImageProductMatch(
         '화이트갈릭싸이버거',
+        '맘스터치',
         '화이트갈릭싸이버거',
+        '맘스터치',
       ),
     ).toBe(true);
   });

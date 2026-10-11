@@ -21,6 +21,24 @@ describe('ChatService conversation memory', () => {
       httpService as never,
     );
 
+  it('returns zero when chat nutrition-label weight cannot be recognized', () => {
+    const service = createService() as any;
+
+    expect(
+      service.normalizeNutritionLabelRecognition({
+        unit: null,
+        weight: null,
+        calories: 120,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        unit: 0,
+        weight: 0,
+        calories: 120,
+      }),
+    );
+  });
+
   it('returns Gemini text without running the legacy recommendation pipeline', async () => {
     const service = createService() as any;
     const context = {
@@ -1514,6 +1532,7 @@ describe('ChatService conversation memory', () => {
 
     expect(result).toEqual({
       foodName: '밥',
+      productName: null,
       brand: null,
       confidence: 0.9,
       position: { x: 0.5, y: 0.4 },
@@ -1561,7 +1580,7 @@ describe('ChatService conversation memory', () => {
     expect(result.map((menu: { id: number }) => menu.id)).toEqual([3, 2]);
   });
 
-  it('uses an exact branded product name found in the image summary', () => {
+  it('uses the exact branded product name recognized for that food', () => {
     const service = createService() as any;
     const product = {
       id: 198298,
@@ -1570,9 +1589,10 @@ describe('ChatService conversation memory', () => {
       category: '유가공품류',
     };
 
-    const result = service.findFoodImageSummaryProductCandidates(
+    const result = service.findFoodImageExactProductCandidates(
       {
         foodName: '요거트',
+        productName: '요거톡 스타볼',
         brand: '풀무원다논',
         confidence: 0.98,
         position: { x: 0.5, y: 0.5 },
@@ -1589,17 +1609,17 @@ describe('ChatService conversation memory', () => {
         },
         product,
       ],
-      "풀무원다논의 요거트 제품인 '요거톡 스타볼' 2개입 패키지 사진이야.",
       8,
     );
 
     expect(result).toEqual([product]);
   });
 
-  it('keeps the exact image-summary product when Gemini rematching returns no match', () => {
+  it('keeps the exact per-food product when Gemini rematching returns no match', () => {
     const service = createService() as any;
     const prediction = {
       foodName: '요거트',
+      productName: '요거톡 스타볼',
       brand: '풀무원다논',
       confidence: 0.98,
       position: { x: 0.5, y: 0.5 },

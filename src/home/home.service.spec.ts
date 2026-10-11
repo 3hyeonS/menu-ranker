@@ -3,6 +3,22 @@ import { HomeService } from './home.service';
 describe('HomeService menu search priority', () => {
   const service = Object.create(HomeService.prototype) as any;
 
+  it('returns zero when nutrition-label weight cannot be recognized', () => {
+    expect(
+      service.normalizeNutritionLabelRecognition({
+        unit: null,
+        weight: null,
+        calories: 120,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        unit: 0,
+        weight: 0,
+        calories: 120,
+      }),
+    );
+  });
+
   it('prioritizes 포도(샤인머스캣) only for a 샤인머스캣 search', () => {
     const grape = { name: '(식약처_음식) 포도(샤인머스캣)' };
     const jelly = { name: '코코로 구미 젤리 샤인머스캣맛' };
@@ -322,7 +338,6 @@ describe('HomeService menu search priority', () => {
           estimatedQuantityUnit: 'g',
           quantityConfidence: 0.7,
         },
-        '라면 옆에 흰밥이 담겨 있다.',
         [productRice, plainRice],
       );
 
@@ -349,16 +364,52 @@ describe('HomeService menu search priority', () => {
     };
 
     expect(
-      service.findHomeFoodImageSummaryProductCandidates(
-        { foodName: '후라이드 치킨', brand: 'bhc' },
+      service.findHomeFoodImageExactProductCandidates(
+        {
+          foodName: '후라이드 치킨',
+          productName: null,
+          brand: 'bhc',
+        },
         [beverage],
-        '후라이드 치킨과 펩시 콜라, 스프라이트가 있다.',
         10,
       ),
     ).toEqual([]);
     expect(
       service.isHomeFoodImageDishTypeCompatible('후라이드 치킨', beverage),
     ).toBe(false);
+  });
+
+  it('prioritizes an exact per-food brand and product match', () => {
+    const exactProduct = {
+      id: 198298,
+      name: '(식약처_가공) 요거톡 스타볼',
+      brand: '풀무원다논',
+      category: '유가공품류',
+      weight: 532,
+      unit: 0,
+    };
+
+    expect(
+      service.findHomeFoodImageExactProductCandidates(
+        {
+          foodName: '요거트',
+          productName: '요거톡 스타볼',
+          brand: '풀무원 다논',
+        },
+        [
+          {
+            id: 47391,
+            name: '(식약처_가공) 그릭시그니처요거트',
+            brand: '풀무원다논',
+            category: '유가공품류',
+            weight: 264,
+            unit: 0,
+          },
+          exactProduct,
+        ],
+        10,
+      ),
+    ).toEqual([exactProduct]);
   });
 
   it('keeps a real fried chicken candidate compatible', () => {
@@ -430,11 +481,10 @@ describe('HomeService menu search priority', () => {
           estimatedQuantityUnit: 'g',
           quantityConfidence: 0.8,
         },
-        '후라이드 치킨과 펩시 콜라, 스프라이트가 있다.',
         [beverage, chicken],
       );
 
-      expect(result.preferredCandidateId).toBe(100);
+      expect(result.preferredCandidateId).toBeUndefined();
       expect(result.candidates.map((candidate) => candidate.id)).toEqual([
         100,
       ]);
@@ -496,6 +546,7 @@ describe('HomeService menu search priority', () => {
       }),
     ).toEqual({
       foodName: '밥',
+      productName: null,
       brand: null,
       confidence: 0.91,
       estimatedQuantity: 183.3,

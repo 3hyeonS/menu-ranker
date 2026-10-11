@@ -9,9 +9,10 @@ export const FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES = `
 
 export const FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES = `
 - 사진 속 음식은 DB 후보를 의식하지 말고 시각적으로 보이는 실제 음식 기준으로 먼저 판독해.
-- food_name에는 가장 구체적인 음식명이나 제품명을 넣되 브랜드명은 제외하고, 브랜드는 brand에 따로 넣어.
-- 포장·용기·로고에서 제품명과 브랜드를 확실히 읽을 수 있으면 일반 음식명으로 줄이지 말고 그대로 사용해.
-- 제품명이 불확실해도 음식 종류가 보이면 가장 가까운 일반 음식명으로 반환하고 임의의 상품명을 만들지 마.
+- food_name에는 제품명과 구분되는 일반 음식명이나 완성 요리명을 넣어. 예: "요거톡 스타볼"은 "요거트", "카페라떼 아이스"는 "카페라떼".
+- 포장·용기·로고에서 정확한 제품명을 확실히 읽을 수 있으면 브랜드를 제외한 제품명을 product_name에 그대로 넣어.
+- 브랜드는 brand에 따로 넣고, 제품명이 불확실하거나 일반 음식이면 product_name은 null로 반환해.
+- 보이지 않는 브랜드나 제품명을 추측해서 만들지 마.
 - image_summary에 음식으로 언급한 항목은 detected_foods에도 포함해 누락되지 않게 해.
 ${FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES}
 - 같은 음식이 여러 개 보이면 detected_foods에는 한 번만 넣고 사진에 보이는 전체 양을 합산해.
@@ -229,26 +230,24 @@ export const isFoodImageBrandMatch = (
   );
 };
 
-/**
- * 사진 전체 요약에 등장한 다른 음식이 현재 개별 음식의 우선 후보로
- * 섞이지 않도록, 후보 메뉴명이 인식된 개별 음식명과도 직접 연결될 때만
- * summary 우선 후보로 허용한다.
- *
- * 예: "버거, 감자튀김, 콜라" 요약을 콜라 그룹에 대해 검사할 때,
- * 같은 브랜드의 버거가 콜라를 덮어쓰지 못해야 한다.
- */
-export const isFoodImageSummaryMenuMatch = (
-  imageSummary: string,
+/** 음식별로 인식한 브랜드와 제품명이 DB 후보와 모두 정확히 일치하는지 검사한다. */
+export const isExactFoodImageProductMatch = (
+  recognizedProductName: string | null | undefined,
+  recognizedBrand: string | null | undefined,
   candidateMenuName: string,
-  recognizedFoodName: string,
+  candidateBrand: string | null | undefined,
 ): boolean => {
-  const summary = normalizeFoodImageMatchText(imageSummary);
+  const product = normalizeFoodImageMatchText(recognizedProductName ?? '');
+  const brand = normalizeFoodImageMatchText(recognizedBrand ?? '');
   const candidate = normalizeFoodImageMatchText(candidateMenuName);
-  const recognized = normalizeFoodImageMatchText(recognizedFoodName);
+  const candidateBrandNormalized = normalizeFoodImageMatchText(
+    candidateBrand ?? '',
+  );
 
-  if (!summary || !candidate || !summary.includes(candidate)) {
-    return false;
-  }
-
-  return recognized.includes(candidate) || candidate.includes(recognized);
+  return (
+    product.length > 0 &&
+    brand.length > 0 &&
+    product === candidate &&
+    brand === candidateBrandNormalized
+  );
 };

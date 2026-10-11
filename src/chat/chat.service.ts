@@ -79,8 +79,8 @@ import {
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
   FOOD_IMAGE_REMATCH_PROMPT_RULES,
   FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
+  isExactFoodImageProductMatch,
   isFoodImageBrandMatch,
-  isFoodImageSummaryMenuMatch,
 } from '../utils/food-image-recognition.util';
 import {
   getRequestAbortSignal,
@@ -583,6 +583,7 @@ type FoodImageDimensions = {
 
 type FoodImagePrediction = {
   foodName: string;
+  productName?: string | null;
   brand: string | null;
   confidence: number | null;
   position: FoodImagePosition;
@@ -5324,7 +5325,7 @@ ${JSON.stringify(feedbackContext)}
 - 제품명/음식명과 브랜드명은 자동 등록에 사용하지 않으니 반환하지 마
 - 영양성분표에 없는 값은 null로 반환해
 - unit은 g 기준이면 0, ml 기준이면 1로 반환해
-- weight와 calories는 반드시 숫자로 반환해. 1회 제공량 또는 표기 기준량을 우선 사용해
+- weight와 calories는 숫자로 반환해. 1회 제공량 또는 표기 기준량을 우선 사용하고, 중량을 확인할 수 없으면 weight는 0으로 반환해
 
 ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
@@ -5410,11 +5411,11 @@ ${FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES}
 - 음식명이 완전히 확정되지 않더라도 사진에서 음식 종류가 충분히 보이면 가장 가까운 일반 음식명으로 반환해
 - 사진 속에서 같은 메뉴로 보이는 음식이 여러 개 있어도 detected_foods에는 1개만 반환해
 - 같은 메뉴가 여러 개 보이면 가장 선명하거나 대표적인 1개의 위치만 반환해
-- food_name에는 사진 속 음식의 가장 구체적인 이름을 넣되, 브랜드명은 제외해. 예: 펩시 콜라 -> food_name은 "콜라", brand는 "펩시"
+- food_name에는 제품명과 구분되는 일반 음식명이나 완성 요리명을 넣어. 예: 펩시 콜라 -> food_name은 "콜라", brand는 "펩시"
 - 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣어. 불확실하면 null로 반환해
 - 브랜드가 확실히 보이는 포장식품/음료는 food_name과 brand를 함께 반환해야 DB 매칭이 정확해져
-- 포장에 제품명이 선명하게 읽히면 일반 식품명으로 줄이지 말고 제품명을 food_name에 그대로 넣어. 예: "요거톡 스타볼"을 "요거트"로 축약하지 마
-- intro_message나 image_summary에서 구체적인 제품명을 식별했다면 detected_foods의 food_name에도 반드시 같은 제품명을 사용해
+- 포장에 제품명이 선명하게 읽히면 브랜드를 제외한 정확한 제품명을 product_name에 넣어. 예: food_name은 "요거트", product_name은 "요거톡 스타볼"
+- 제품명이 불확실하거나 일반 음식이면 product_name은 null로 반환해
 - 각 음식이 사진에 보이는 전체 양을 estimated_quantity로 추정해. 고형 음식은 g, 음료·국물처럼 액체는 ml 단위를 사용해
 - 소금의 estimated_quantity는 종지에 담긴 전체 양이 아니라 실제로 찍어 먹을 것으로 보이는 섭취량을 g 단위로 보수적으로 추정해
 - 같은 음식이 여러 조각 보이면 한 조각이 아니라 사진에 보이는 전체 양을 합산해서 추정해
@@ -5437,8 +5438,9 @@ ${FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES}
   "failure_reason": null,
   "detected_foods": [
     {
-      "food_name": "싸이버거",
-      "brand": null,
+      "food_name": "버거",
+      "product_name": "싸이버거",
+      "brand": "맘스터치",
       "confidence": 0.86,
       "estimated_quantity": 230,
       "quantity_unit": "g",
@@ -5490,6 +5492,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       imageSummary,
       foods: predictions.map((prediction) => ({
         foodName: prediction.foodName,
+        productName: prediction.productName,
         brand: prediction.brand,
         confidence: prediction.confidence,
         position: prediction.position,
@@ -5522,7 +5525,6 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
         predictions,
         menus,
         foodImageContext,
-        imageSummary,
         timing,
       );
     throwIfRequestAborted();
@@ -5592,6 +5594,8 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     const item = value as Record<string, unknown>;
     const foodName = this.asNonEmptyString(item.food_name);
+    const productName =
+      this.asNonEmptyString(item.product_name)?.slice(0, 160) ?? null;
     const brand = this.asNonEmptyString(item.brand)?.slice(0, 80) ?? null;
     const rawEstimatedQuantity = this.asNullableNumber(
       item.estimated_quantity ?? item.quantity,
@@ -5619,6 +5623,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
 
     return {
       foodName,
+      productName,
       brand,
       confidence:
         confidence === null ? null : this.roundNormalizedCoordinate(confidence),
@@ -5673,6 +5678,7 @@ ${JSON.stringify(
   predictions.map((prediction, index) => ({
     index,
     food_name: prediction.foodName,
+    product_name: prediction.productName ?? null,
     brand: prediction.brand,
   })),
 )}
@@ -5957,7 +5963,6 @@ ${JSON.stringify(
       MenuBoardRecognitionResult,
       'inferredBrand' | 'inferredCategory'
     >,
-    imageSummary: string | null,
     timing?: ChatTimingLogger,
   ): Promise<FoodImageCandidateGroup[]> {
     const preferredRefinedSaltMenus = predictions.some(
@@ -6005,10 +6010,9 @@ ${JSON.stringify(
               this.getFoodImagePerFoodVectorCandidateLimit(),
             )
           : [];
-        const summaryProductMenus = this.findFoodImageSummaryProductCandidates(
+        const exactProductMenus = this.findFoodImageExactProductCandidates(
           prediction,
           menus,
-          imageSummary,
           this.getFoodImagePerFoodVectorCandidateLimit(),
         );
         const preferredMenus = prediction.brand
@@ -6033,7 +6037,7 @@ ${JSON.stringify(
         const candidates = prioritizeGenericFoodImageCandidate(
           prediction.foodName,
           this.mergeRecognitionCandidatesById([
-            ...summaryProductMenus,
+            ...exactProductMenus,
             ...brandMenus,
             ...preferredMenus,
             ...group.candidates,
@@ -6041,14 +6045,14 @@ ${JSON.stringify(
             this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
           ),
         ).slice(0, this.getFoodImagePerFoodVectorCandidateLimit());
-        const summaryPreferredCandidate = summaryProductMenus.find((menu) =>
+        const exactPreferredCandidate = exactProductMenus.find((menu) =>
           candidates.some((candidate) => candidate.id === menu.id),
         );
 
         return {
           ...group,
-          ...(summaryPreferredCandidate
-            ? { preferredCandidateId: summaryPreferredCandidate.id }
+          ...(exactPreferredCandidate
+            ? { preferredCandidateId: exactPreferredCandidate.id }
             : {}),
           candidates,
         };
@@ -6056,30 +6060,24 @@ ${JSON.stringify(
       .filter((group) => group.candidates.length > 0);
   }
 
-  private findFoodImageSummaryProductCandidates(
+  private findFoodImageExactProductCandidates(
     prediction: FoodImagePrediction,
     menus: MenuRecognitionCandidate[],
-    imageSummary: string | null,
     limit: number,
   ): MenuRecognitionCandidate[] {
-    const summary = imageSummary ?? '';
-    const predictionBrand = prediction.brand ?? '';
-
-    if (!summary || !predictionBrand) {
+    if (!prediction.productName || !prediction.brand) {
       return [];
     }
 
     return menus
-      .filter((menu) => {
-        return (
-          isFoodImageBrandMatch(predictionBrand, menu.brand ?? '') &&
-          isFoodImageSummaryMenuMatch(
-            summary,
-            stripPublicMenuSourcePrefix(menu.name),
-            prediction.foodName,
-          )
-        );
-      })
+      .filter((menu) =>
+        isExactFoodImageProductMatch(
+          prediction.productName,
+          prediction.brand,
+          stripPublicMenuSourcePrefix(menu.name),
+          menu.brand,
+        ),
+      )
       .sort((left, right) => {
         const leftLength = this.normalizeCompactText(
           stripPublicMenuSourcePrefix(left.name),
@@ -6240,12 +6238,16 @@ ${JSON.stringify(
     const brandLine = prediction.brand
       ? `이미지에서 읽힌 브랜드/라벨: ${prediction.brand}`
       : '이미지에서 읽힌 브랜드/라벨: 없음';
+    const productLine = prediction.productName
+      ? `이미지에서 읽힌 정확한 제품명: ${prediction.productName}`
+      : '이미지에서 읽힌 정확한 제품명: 없음';
     const searchIntent = prediction.brand
-      ? `${prediction.brand} ${prediction.foodName}`
+      ? `${prediction.brand} ${prediction.productName ?? prediction.foodName}`
       : prediction.foodName;
 
     return [
       `음식 사진에서 인식된 음식명: ${prediction.foodName}`,
+      productLine,
       brandLine,
       `검색 의도: ${searchIntent}`,
       this.getFoodImageStrictDishTypeToken(prediction.foodName)
@@ -6783,6 +6785,7 @@ ${JSON.stringify(candidates)}
 ${FOOD_IMAGE_REMATCH_PROMPT_RULES}
 - 음식 사진의 시각 정보, 1차 food_name, 해당 food_index의 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - detected_foods.brand가 null이 아니면 이미지에서 읽힌 브랜드/라벨이므로 후보 메뉴의 브랜드/메뉴명과 강하게 비교해 같은 브랜드 제품을 우선해
+- detected_foods.product_name과 brand가 모두 있고 둘이 후보 메뉴의 제품명과 브랜드에 정확히 일치하면 해당 후보를 최우선으로 선택해
 - detected_foods.food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥 -> 김치볶음은 불일치, 참치김밥 -> 참치샐러드는 불일치, 된장찌개 -> 된장국은 불일치
 - food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
 - "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
@@ -6798,6 +6801,7 @@ ${JSON.stringify(
   predictions.map((prediction, index) => ({
     index,
     food_name: prediction.foodName,
+    product_name: prediction.productName ?? null,
     brand: prediction.brand,
     confidence: prediction.confidence,
   })),
@@ -6913,10 +6917,10 @@ ${JSON.stringify(
     }
 
     const prediction = predictions[foodIndex];
-    const summaryPreferredMenuId =
+    const exactProductMenuId =
       preferredCandidateIdsByFoodIndex.get(foodIndex);
-    const summaryPreferredMenu = summaryPreferredMenuId
-      ? candidateMap.get(summaryPreferredMenuId)
+    const exactProductMenu = exactProductMenuId
+      ? candidateMap.get(exactProductMenuId)
       : undefined;
     const preferredMenu = prediction.brand
       ? undefined
@@ -6929,7 +6933,7 @@ ${JSON.stringify(
             ),
         );
     const matchedMenu =
-      summaryPreferredMenu ?? preferredMenu ?? candidateMap.get(menuId)!;
+      exactProductMenu ?? preferredMenu ?? candidateMap.get(menuId)!;
     if (!this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)) {
       return null;
     }
@@ -14002,11 +14006,20 @@ ${storedContext}`,
     value: any,
   ): NutritionLabelRecognitionValue {
     const weightRaw = value?.weight;
-    const unit = this.asNutritionUnit(value?.unit, weightRaw);
+    const weight = this.asNullableNumber(weightRaw) ?? 0;
+    let unit = 0;
+
+    try {
+      unit = this.asNutritionUnit(value?.unit, weightRaw);
+    } catch (error) {
+      if (weight > 0) {
+        throw error;
+      }
+    }
 
     return {
       unit,
-      weight: this.asRequiredNutritionNumber(weightRaw, 'weight'),
+      weight: roundToOneDecimal(weight),
       calories: this.asRequiredNutritionNumber(value?.calories, 'calories'),
       carbs: roundNullableToOneDecimal(this.asNullableNumber(value?.carbs)),
       sugars: roundNullableToOneDecimal(this.asNullableNumber(value?.sugars)),

@@ -89,8 +89,8 @@ import {
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
   FOOD_IMAGE_REMATCH_PROMPT_RULES,
   FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
+  isExactFoodImageProductMatch,
   isFoodImageBrandMatch,
-  isFoodImageSummaryMenuMatch,
 } from '../utils/food-image-recognition.util';
 import { FolderEntity } from './entity/folder.entity';
 import { FolderMenuEntity } from './entity/folder-menu.entity';
@@ -182,6 +182,7 @@ type HomeFoodImageRecognitionCandidate = {
 
 type HomeFoodImagePrediction = {
   foodName: string;
+  productName?: string | null;
   brand: string | null;
   confidence: number | null;
   estimatedQuantity: number | null;
@@ -1664,9 +1665,10 @@ export class HomeService {
 규칙:
 - 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
 ${FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES}
-- 음식명은 알 수 있는 범위에서 최대한 구체적으로 작성하되 브랜드명은 제외해
+- food_name에는 제품명과 구분되는 일반 음식명이나 완성 요리명을 넣고 브랜드명은 제외해
 - 병/캔/포장/로고/라벨에서 브랜드를 확실히 읽을 수 있으면 brand에 넣고 불확실하면 null로 반환해
-- 포장에 제품명이 선명하게 읽히면 일반 식품명으로 줄이지 말고 제품명을 food_name에 그대로 넣어. 예: "요거톡 스타볼"을 "요거트"로 축약하지 마
+- 포장에 제품명이 선명하게 읽히면 브랜드를 제외한 정확한 제품명을 product_name에 넣어. 예: food_name은 "요거트", product_name은 "요거톡 스타볼"
+- 제품명이 불확실하거나 일반 음식이면 product_name은 null로 반환해
 - 정확한 메뉴명을 모르더라도 "양념된 구운 돼지고기", "숯불에 구운 고기", "구운 마늘"처럼 보이는 특징을 detected_foods에 넣어
 - image_summary에는 주요 식재료, 조리 방식, 양념 여부, 보이는 구성 요소를 1~2문장으로 설명해
 - image_summary에 음식명으로 언급한 항목은 가능한 한 detected_foods에도 포함해
@@ -1689,6 +1691,7 @@ ${FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES}
   "detected_foods": [
     {
       "food_name": "양념된 구운 고기",
+      "product_name": null,
       "brand": null,
       "confidence": 0.86,
       "estimated_quantity": 180,
@@ -1750,6 +1753,7 @@ failure_reason enum:
         visualDescription,
         foods: foods.map((food) => ({
           foodName: food.foodName,
+          productName: food.productName,
           brand: food.brand,
           confidence: food.confidence,
           estimatedQuantity: food.estimatedQuantity,
@@ -1776,6 +1780,11 @@ failure_reason enum:
     const item = value as Record<string, unknown>;
     const foodName =
       typeof item.food_name === 'string' ? item.food_name.trim() : '';
+    const productName =
+      typeof item.product_name === 'string' &&
+      item.product_name.trim().length > 0
+        ? item.product_name.trim().slice(0, 160)
+        : null;
     const rawUnit =
       typeof (item.quantity_unit ?? item.estimated_quantity_unit) === 'string'
         ? String(
@@ -1792,6 +1801,7 @@ failure_reason enum:
 
     return {
       foodName,
+      productName,
       brand:
         typeof item.brand === 'string' && item.brand.trim().length > 0
           ? item.brand.trim().slice(0, 80)
@@ -1937,7 +1947,6 @@ failure_reason enum:
           await this.getFoodImageCandidatesForSingleFood(
             userId,
             prediction,
-            description.visualDescription,
             allMenus,
           );
 
@@ -1957,6 +1966,7 @@ failure_reason enum:
       JSON.stringify({
         foods: predictions.map((prediction) => ({
           foodName: prediction.foodName,
+          productName: prediction.productName,
           brand: prediction.brand,
           estimatedQuantity: prediction.estimatedQuantity,
           estimatedQuantityUnit: prediction.estimatedQuantityUnit,
@@ -2009,7 +2019,6 @@ failure_reason enum:
   private async getFoodImageCandidatesForSingleFood(
     userId: number,
     prediction: HomeFoodImagePrediction,
-    visualDescription: string | null,
     allMenus: HomeFoodImageRecognitionCandidate[],
   ): Promise<{
     candidates: HomeFoodImageRecognitionCandidate[];
@@ -2020,10 +2029,9 @@ failure_reason enum:
     const brandMenus = prediction.brand
       ? this.findHomeFoodImageBrandCandidates(prediction, allMenus, limit)
       : [];
-    const summaryProductMenus = this.findHomeFoodImageSummaryProductCandidates(
+    const exactProductMenus = this.findHomeFoodImageExactProductCandidates(
       prediction,
       allMenus,
-      visualDescription,
       limit,
     );
     const preferredRefinedSaltMenus =
@@ -2076,7 +2084,7 @@ failure_reason enum:
     const candidates = prioritizeGenericFoodImageCandidate(
       foodName,
       this.mergeFoodImageRecognitionCandidates([
-        ...summaryProductMenus,
+        ...exactProductMenus,
         ...brandMenus,
         ...preferredMenus,
         ...compatibleVectorMenus,
@@ -2085,13 +2093,13 @@ failure_reason enum:
         this.isHomeFoodImageDishTypeCompatible(foodName, candidate),
       ),
     ).slice(0, limit);
-    const summaryPreferredCandidate = summaryProductMenus.find((menu) =>
+    const exactPreferredCandidate = exactProductMenus.find((menu) =>
       candidates.some((candidate) => candidate.id === menu.id),
     );
 
     return {
-      ...(summaryPreferredCandidate
-        ? { preferredCandidateId: summaryPreferredCandidate.id }
+      ...(exactPreferredCandidate
+        ? { preferredCandidateId: exactPreferredCandidate.id }
         : {}),
       candidates,
     };
@@ -2103,8 +2111,11 @@ failure_reason enum:
     const brandLine = prediction.brand
       ? `이미지에서 읽힌 브랜드/라벨: ${prediction.brand}`
       : '이미지에서 읽힌 브랜드/라벨: 없음';
+    const productLine = prediction.productName
+      ? `이미지에서 읽힌 정확한 제품명: ${prediction.productName}`
+      : '이미지에서 읽힌 정확한 제품명: 없음';
     const searchIntent = prediction.brand
-      ? `${prediction.brand} ${prediction.foodName}`
+      ? `${prediction.brand} ${prediction.productName ?? prediction.foodName}`
       : prediction.foodName;
     const strictDishType = this.getHomeFoodImageStrictDishTypeToken(
       prediction.foodName,
@@ -2112,6 +2123,7 @@ failure_reason enum:
 
     return [
       `음식 사진에서 인식된 음식명: ${prediction.foodName}`,
+      productLine,
       brandLine,
       `검색 의도: ${searchIntent}`,
       strictDishType
@@ -2124,30 +2136,24 @@ failure_reason enum:
     ].join('\n');
   }
 
-  private findHomeFoodImageSummaryProductCandidates(
+  private findHomeFoodImageExactProductCandidates(
     prediction: HomeFoodImagePrediction,
     menus: HomeFoodImageRecognitionCandidate[],
-    visualDescription: string | null,
     limit: number,
   ): HomeFoodImageRecognitionCandidate[] {
-    const summary = visualDescription ?? '';
-    const predictionBrand = prediction.brand ?? '';
-
-    if (!summary || !predictionBrand) {
+    if (!prediction.productName || !prediction.brand) {
       return [];
     }
 
     return menus
-      .filter((menu) => {
-        return (
-          isFoodImageBrandMatch(predictionBrand, menu.brand ?? '') &&
-          isFoodImageSummaryMenuMatch(
-            summary,
-            stripPublicMenuSourcePrefix(menu.name),
-            prediction.foodName,
-          )
-        );
-      })
+      .filter((menu) =>
+        isExactFoodImageProductMatch(
+          prediction.productName,
+          prediction.brand,
+          stripPublicMenuSourcePrefix(menu.name),
+          menu.brand,
+        ),
+      )
       .sort((left, right) => {
         const leftLength = this.normalizeCompactSearchText(
           stripPublicMenuSourcePrefix(left.name),
@@ -2460,6 +2466,7 @@ failure_reason enum:
 ${FOOD_IMAGE_REMATCH_PROMPT_RULES}
 - 사진의 시각 정보, food_name, 후보 메뉴명/브랜드/카테고리를 함께 비교해
 - detected_foods.brand가 null이 아니면 사진에서 읽힌 브랜드이므로 같은 브랜드의 후보를 우선해
+- detected_foods.product_name과 brand가 모두 있고 둘이 후보 메뉴의 제품명과 브랜드에 정확히 일치하면 해당 후보를 최우선으로 선택해
 - food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥과 김치볶음, 참치김밥과 참치샐러드는 서로 다른 음식이야
 - food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
 - "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
@@ -2475,6 +2482,7 @@ ${JSON.stringify(
   predictions.map((prediction, index) => ({
     index,
     food_name: prediction.foodName,
+    product_name: prediction.productName ?? null,
     brand: prediction.brand,
     confidence: prediction.confidence,
     estimated_quantity: prediction.estimatedQuantity,
@@ -2566,10 +2574,10 @@ ${JSON.stringify(
       }
 
       const prediction = predictions[foodIndex];
-      const summaryPreferredMenuId =
+      const exactProductMenuId =
         preferredCandidateIdsByFoodIndex.get(foodIndex);
-      const summaryPreferredMenu = summaryPreferredMenuId
-        ? candidateMap.get(summaryPreferredMenuId)
+      const exactProductMenu = exactProductMenuId
+        ? candidateMap.get(exactProductMenuId)
         : undefined;
       const groupCandidates = Array.from(
         candidateIdsByFoodIndex.get(foodIndex) ?? [],
@@ -2586,7 +2594,7 @@ ${JSON.stringify(
             groupCandidates,
           );
       const candidate =
-        summaryPreferredMenu ?? preferredCandidate ?? candidateMap.get(menuId);
+        exactProductMenu ?? preferredCandidate ?? candidateMap.get(menuId);
 
       if (
         !candidate ||
@@ -2618,7 +2626,7 @@ ${JSON.stringify(
 
         const group = groupsByIndex.get(foodIndex);
         const candidates = group?.candidates ?? [];
-        const summaryPreferredCandidate = group?.preferredCandidateId
+        const exactProductCandidate = group?.preferredCandidateId
           ? candidates.find(
               (candidate) => candidate.id === group.preferredCandidateId,
             )
@@ -2630,7 +2638,7 @@ ${JSON.stringify(
               candidates,
             );
         const candidate =
-          summaryPreferredCandidate ?? preferredCandidate ?? candidates[0];
+          exactProductCandidate ?? preferredCandidate ?? candidates[0];
 
         if (
           !candidate ||
@@ -2843,6 +2851,7 @@ ${JSON.stringify(
 - sodium, caffeine, potassium, cholesterol 은 mg
 - unit 은 g 이면 0, ml 이면 1
 - weight 는 1회 제공량 또는 총 내용량의 수치만 넣기
+- 중량을 확인할 수 없으면 weight 는 0으로 넣기
 - 추정하지 말고 보이는 정보만 사용
 
 ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
@@ -4133,11 +4142,20 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     value: any,
   ): NutritionLabelRecognition {
     const weightRaw = value?.weight;
-    const inferredUnit = this.asUnit(value?.unit, weightRaw);
+    const weight = this.asNullableNumber(weightRaw) ?? 0;
+    let inferredUnit = 0;
+
+    try {
+      inferredUnit = this.asUnit(value?.unit, weightRaw);
+    } catch (error) {
+      if (weight > 0) {
+        throw error;
+      }
+    }
 
     const normalized = this.normalizeMenuFloatValues({
       unit: inferredUnit,
-      weight: this.asRequiredNumber(weightRaw, 'weight'),
+      weight,
       calories: this.asRequiredNumber(value?.calories, 'calories'),
       carbs: this.asNullableNumber(value?.carbs),
       sugars: this.asNullableNumber(value?.sugars),
