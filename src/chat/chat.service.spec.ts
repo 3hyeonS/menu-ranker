@@ -1615,6 +1615,41 @@ describe('ChatService conversation memory', () => {
     expect(result).toEqual([product]);
   });
 
+  it('uses an exact product name before vector candidates when the brand is abbreviated', () => {
+    const service = createService() as any;
+    const amazingOat = {
+      id: 200001,
+      name: '(식약처_가공) 어메이징 오트 언스위트',
+      brand: '매일유업',
+      category: '음료류',
+    };
+
+    const result = service.findFoodImageExactProductCandidates(
+      {
+        foodName: '오트 음료',
+        productName: '어메이징 오트 언스위트',
+        brand: '매일',
+        confidence: 0.99,
+        position: { x: 0.5, y: 0.5 },
+        estimatedQuantity: 190,
+        estimatedQuantityUnit: 'ml',
+        quantityConfidence: 0.95,
+      },
+      [
+        {
+          id: 102432,
+          name: '(식약처_가공) 매일견과음료',
+          brand: null,
+          category: '음료류',
+        },
+        amazingOat,
+      ],
+      8,
+    );
+
+    expect(result).toEqual([amazingOat]);
+  });
+
   it('keeps the exact per-food product when Gemini rematching returns no match', () => {
     const service = createService() as any;
     const prediction = {

@@ -89,7 +89,6 @@ import {
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
   FOOD_IMAGE_REMATCH_PROMPT_RULES,
   FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
-  isExactFoodImageProductMatch,
   isFoodImageBrandMatch,
 } from '../utils/food-image-recognition.util';
 import { FolderEntity } from './entity/folder.entity';
@@ -2141,20 +2140,47 @@ failure_reason enum:
     menus: HomeFoodImageRecognitionCandidate[],
     limit: number,
   ): HomeFoodImageRecognitionCandidate[] {
-    if (!prediction.productName || !prediction.brand) {
+    if (!prediction.productName) {
       return [];
     }
 
+    const productName = this.normalizeCompactSearchText(
+      prediction.productName,
+    );
+    const recognizedBrand = this.normalizeCompactSearchText(
+      prediction.brand ?? '',
+    );
+    const getBrandRank = (
+      menu: HomeFoodImageRecognitionCandidate,
+    ): number => {
+      const candidateBrand = this.normalizeCompactSearchText(menu.brand ?? '');
+
+      if (!recognizedBrand || !candidateBrand) {
+        return 0;
+      }
+      if (recognizedBrand === candidateBrand) {
+        return 2;
+      }
+
+      return recognizedBrand.includes(candidateBrand) ||
+        candidateBrand.includes(recognizedBrand)
+        ? 1
+        : 0;
+    };
+
     return menus
-      .filter((menu) =>
-        isExactFoodImageProductMatch(
-          prediction.productName,
-          prediction.brand,
-          stripPublicMenuSourcePrefix(menu.name),
-          menu.brand,
-        ),
+      .filter(
+        (menu) =>
+          this.normalizeCompactSearchText(
+            stripPublicMenuSourcePrefix(menu.name),
+          ) === productName,
       )
       .sort((left, right) => {
+        const brandRankDifference = getBrandRank(right) - getBrandRank(left);
+        if (brandRankDifference !== 0) {
+          return brandRankDifference;
+        }
+
         const leftLength = this.normalizeCompactSearchText(
           stripPublicMenuSourcePrefix(left.name),
         ).length;

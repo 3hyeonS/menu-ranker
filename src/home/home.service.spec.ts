@@ -412,6 +412,39 @@ describe('HomeService menu search priority', () => {
     ).toEqual([exactProduct]);
   });
 
+  it('prioritizes an exact product name when the recognized brand is abbreviated', () => {
+    const amazingOat = {
+      id: 200001,
+      name: '(식약처_가공) 어메이징 오트 언스위트',
+      brand: '매일유업',
+      category: '음료류',
+      weight: 190,
+      unit: 1,
+    };
+
+    expect(
+      service.findHomeFoodImageExactProductCandidates(
+        {
+          foodName: '오트 음료',
+          productName: '어메이징 오트 언스위트',
+          brand: '매일',
+        },
+        [
+          {
+            id: 102432,
+            name: '(식약처_가공) 매일견과음료',
+            brand: null,
+            category: '음료류',
+            weight: 190,
+            unit: 1,
+          },
+          amazingOat,
+        ],
+        10,
+      ),
+    ).toEqual([amazingOat]);
+  });
+
   it('keeps a real fried chicken candidate compatible', () => {
     expect(
       service.isHomeFoodImageDishTypeCompatible('후라이드 치킨', {
