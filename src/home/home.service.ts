@@ -5225,8 +5225,15 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const resolvedInput = workoutSearchPlan.containsInput;
     const normalizedContainsInput =
       this.normalizeWorkoutExactSearchName(resolvedInput);
-    const normalizedExactInput = this.normalizeWorkoutExactSearchName(
-      workoutSearchPlan.preferredExact,
+    const normalizedExactInputs = Array.from(
+      new Set(
+        [
+          workoutSearchPlan.preferredExact,
+          ...this.getWorkoutAdditionalExactNames(input),
+        ]
+          .map((name) => this.normalizeWorkoutExactSearchName(name))
+          .filter((name) => name.length > 0),
+      ),
     );
     const normalizedWorkoutNameExpression =
       "LOWER(REPLACE(workout.name, ' ', ''))";
@@ -5268,18 +5275,29 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
     const isFirstPage = dto.cursor === null || dto.cursor === undefined;
     const exactWorkouts =
-      isFirstPage && normalizedExactInput
-        ? await query
-            .clone()
-            .andWhere(
-              `${normalizedWorkoutNameExpression} = :normalizedExactInput`,
-              {
-                normalizedExactInput,
-              },
-            )
-            .orderBy('workout.id', 'ASC')
-            .take(limit)
-            .getMany()
+      isFirstPage && normalizedExactInputs.length > 0
+        ? (
+            await query
+              .clone()
+              .andWhere(
+                `${normalizedWorkoutNameExpression} IN (:...normalizedExactInputs)`,
+                {
+                  normalizedExactInputs,
+                },
+              )
+              .orderBy('workout.id', 'ASC')
+              .getMany()
+          )
+            .sort((a, b) => {
+              const aPriority = normalizedExactInputs.indexOf(
+                this.normalizeWorkoutExactSearchName(a.name),
+              );
+              const bPriority = normalizedExactInputs.indexOf(
+                this.normalizeWorkoutExactSearchName(b.name),
+              );
+              return aPriority - bPriority || a.id - b.id;
+            })
+            .slice(0, limit)
         : [];
     const remainingLimit = Math.max(limit - exactWorkouts.length, 0);
 
@@ -5289,11 +5307,11 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       });
     }
 
-    if (normalizedExactInput) {
+    if (normalizedExactInputs.length > 0) {
       query.andWhere(
-        `${normalizedWorkoutNameExpression} <> :normalizedExactInput`,
+        `${normalizedWorkoutNameExpression} NOT IN (:...normalizedExactInputs)`,
         {
-          normalizedExactInput,
+          normalizedExactInputs,
         },
       );
     }
@@ -5366,6 +5384,20 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       containsInput: resolvedValue,
       preferredExact: resolvedValue,
     };
+  }
+
+  private getWorkoutAdditionalExactNames(value: string): string[] {
+    const normalizedValue = this.normalizeWorkoutExactSearchName(value);
+
+    if (normalizedValue !== '랫풀다운') {
+      return [];
+    }
+
+    return [
+      '케이블 풀다운',
+      '젠틀 스타일 케이블 풀다운 (프로 랫 바)',
+      '케이블 풀다운 (프로 랫 바)',
+    ];
   }
 
   async getWorkoutDetail(

@@ -176,6 +176,20 @@ describe('HomeService menu search priority', () => {
     expect(service.resolveWorkoutSearchNameAlias('트레드밀')).toBe('트레드밀');
   });
 
+  it('adds cable pulldown variants to lat pulldown searches', () => {
+    ['랫 풀 다운', '랫풀다운', '랫 풀다운'].forEach((searchName) => {
+      expect(service.getWorkoutAdditionalExactNames(searchName)).toEqual([
+        '케이블 풀다운',
+        '젠틀 스타일 케이블 풀다운 (프로 랫 바)',
+        '케이블 풀다운 (프로 랫 바)',
+      ]);
+    });
+
+    expect(service.getWorkoutAdditionalExactNames('케이블 풀다운')).toEqual(
+      [],
+    );
+  });
+
   it('replaces a processed fried-egg image match with the generic food menu', () => {
     const candidates = new Map([
       [
