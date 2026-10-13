@@ -2,13 +2,18 @@ import {
   Body,
   Controller,
   Post,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import {
+  ApiBearerAuth,
   ApiExtraModels,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { UserEntity } from '../auth/entity/user/user.entity';
+import { GetUser } from '../decorators/get-user-decorator';
 import { GenericApiResponse } from '../decorators/generic-api-response-decorator';
 import { ErrorApiResponse } from '../decorators/error-api-response-decorator';
 import { ResponseMsg } from '../decorators/response-message-decorator';
@@ -23,6 +28,8 @@ import { RestaurantService } from './restaurant.service';
 @ApiTags('식당 탭')
 @ApiExtraModels(ResponseDto)
 @UseInterceptors(ResponseTransformInterceptor)
+@ApiBearerAuth('accessToken')
+@UseGuards(AuthGuard())
 @Controller('/restaurant')
 export class RestaurantController {
   constructor(private readonly restaurantService: RestaurantService) {}
@@ -49,7 +56,7 @@ export class RestaurantController {
   }
 
   @ApiOperation({
-    summary: '식당별 개인화 메뉴 추천 (임시 인증 없는 테스트 API)',
+    summary: '식당별 개인화 메뉴 추천',
   })
   @GenericApiResponse({
     status: 201,
@@ -67,7 +74,8 @@ export class RestaurantController {
   @Post('/detail')
   async detail(
     @Body() dto: RestaurantDetailRequestDto,
+    @GetUser() user: UserEntity,
   ): Promise<RestaurantDetailResponseDto> {
-    return await this.restaurantService.getRestaurantDetail(dto);
+    return await this.restaurantService.getRestaurantDetail(dto, user.id);
   }
 }

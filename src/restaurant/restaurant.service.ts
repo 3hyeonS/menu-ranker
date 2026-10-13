@@ -70,6 +70,7 @@ export class RestaurantService {
 
   async getRestaurantDetail(
     dto: RestaurantDetailRequestDto,
+    userId: number,
   ): Promise<RestaurantDetailResponseDto> {
     const restaurant = await this.restaurantRepository.findOne({
       where: { id: dto.restaurant_id },
@@ -86,7 +87,13 @@ export class RestaurantService {
       return { restaurant_name: restaurant.name, menu_list: [] };
     }
 
-    const userId = this.resolveTestUserId(dto.user_id);
+    if (dto.filter == null) {
+      return {
+        restaurant_name: restaurant.name,
+        menu_list: menus.map((menu) => this.toResponse(menu)),
+      };
+    }
+
     let selectedIds: number[] = [];
 
     try {
@@ -116,15 +123,6 @@ export class RestaurantService {
       restaurant_name: restaurant.name,
       menu_list: selectedMenus.map((menu) => this.toResponse(menu)),
     };
-  }
-
-  private resolveTestUserId(requestUserId?: number | null): number | null {
-    if (requestUserId != null) {
-      return requestUserId;
-    }
-
-    const configured = Number(process.env.RESTAURANT_TEST_USER_ID);
-    return Number.isInteger(configured) && configured > 0 ? configured : null;
   }
 
   private selectRecommendedMenus(
