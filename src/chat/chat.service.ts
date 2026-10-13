@@ -2561,6 +2561,112 @@ ${JSON.stringify({
     return userInfo;
   }
 
+  async recommendRestaurantMenuIds(params: {
+    userId: number | null;
+    restaurantName: string;
+    restaurantCategory: string | null;
+    filter: '균형' | '저칼로리' | '단백질' | null;
+    menus: Array<{
+      menu_id: number;
+      menu_name: string;
+      menu_category: string | null;
+      calories: number;
+      carbs: number | null;
+      sugars: number | null;
+      dietary_fiber: number | null;
+      protein: number | null;
+      fat: number | null;
+      saturated_fat: number | null;
+      sodium: number | null;
+      unit: number;
+      weight: number;
+      unit_quantity: string;
+    }>;
+  }): Promise<number[]> {
+    const userInfo =
+      params.userId == null
+        ? null
+        : await this.getRequiredUserInfo(params.userId);
+    const chatContext =
+      params.userId == null
+        ? null
+        : await this.getRecentChatContext(params.userId);
+    const filter = params.filter ?? '전반적인 적합도';
+    const prompt = `
+식당 메뉴 중 사용자에게 적합한 메뉴를 최대 5개 선택하고 JSON object만 반환해.
+마크다운, 설명, 코드펜스는 쓰지 마.
+
+선택 기준:
+- 요청 필터: ${filter}
+- "균형"은 사용자 목표와 탄수화물·단백질·지방 구성을 종합해 선택해.
+- "저칼로리"는 실제 제공량 기준 칼로리가 낮은 주문 가능한 메뉴를 선택해. 소스·토핑·재료만 따로 고르지 마.
+- "단백질"은 실제 제공량의 단백질과 칼로리 대비 단백질을 함께 고려해.
+- 필터가 없으면 사용자 목표와 최근 기록에 전반적으로 적합한 메뉴를 선택해.
+- 사용자 정보나 기록에 없는 내용은 추측하지 마.
+- 반드시 제공된 menu_id만 사용하고, 중복 ID나 새 메뉴를 만들지 마.
+- 영양성분이 null인 항목은 0이 아니라 미제공 데이터야.
+
+식당:
+${JSON.stringify({ name: params.restaurantName, category: params.restaurantCategory })}
+
+사용자 기본 정보:
+${JSON.stringify(
+  userInfo
+    ? {
+        gender: userInfo.gender,
+        birth_year: userInfo.birthYear,
+        height: userInfo.height,
+        weight: userInfo.weight,
+        activity: userInfo.activity,
+        goal: this.goalToLabel(userInfo.goal),
+        target_weight: userInfo.target_weight,
+        target_calories: userInfo.target_calories,
+        target_ratio: this.normalizeTargetRatio(userInfo.target_ratio),
+        diet_management_status: userInfo.diet_management_status,
+        persona_type: userInfo.persona_type,
+        eating_out_freq_weekly: userInfo.eating_out_freq_weekly,
+        job_type: userInfo.job_type,
+        lunch_location: userInfo.lunch_location,
+      }
+    : null,
+)}
+
+최근 기록과 대화 맥락:
+${JSON.stringify(
+  chatContext ? this.toLightweightChatContext(chatContext) : null,
+)}
+
+선택 가능한 메뉴:
+${JSON.stringify(params.menus)}
+
+반환 shape:
+{
+  "menu_ids": [1, 2, 3]
+}
+`.trim();
+
+    const data = await this.callGeminiJson(prompt, {
+      context: 'restaurant-menu-recommendation',
+      systemInstruction:
+        '제공된 사용자 정보와 식당 메뉴 영양성분만 근거로 사용하는 식당 메뉴 선택기야.',
+    });
+    const allowedIds = new Set(params.menus.map((menu) => menu.menu_id));
+    const rawIds = Array.isArray(data?.menu_ids) ? data.menu_ids : [];
+    const validatedIds: number[] = [];
+    for (const rawId of rawIds) {
+      const menuId = Number(rawId);
+      if (
+        Number.isInteger(menuId) &&
+        allowedIds.has(menuId) &&
+        !validatedIds.includes(menuId)
+      ) {
+        validatedIds.push(menuId);
+      }
+    }
+
+    return validatedIds.slice(0, 5);
+  }
+
   async getChatHistory(user: UserEntity): Promise<ChatHistoryResponseDto> {
     // 채팅 기록은 최신 대화가 먼저 보이도록 createdAt 내림차순으로 반환합니다.
     const chatHistoryList = await this.chatHistoryRepository.find({

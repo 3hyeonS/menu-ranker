@@ -2,12 +2,9 @@ import {
   Body,
   Controller,
   Post,
-  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import {
-  ApiBearerAuth,
   ApiExtraModels,
   ApiOperation,
   ApiTags,
@@ -24,9 +21,7 @@ import { RestaurantDetailResponseDto } from './dto/response-dto/restaurant-detai
 import { RestaurantService } from './restaurant.service';
 
 @ApiTags('식당 탭')
-@ApiBearerAuth('accessToken')
 @ApiExtraModels(ResponseDto)
-@UseGuards(AuthGuard())
 @UseInterceptors(ResponseTransformInterceptor)
 @Controller('/restaurant')
 export class RestaurantController {
@@ -53,11 +48,13 @@ export class RestaurantController {
     return await this.restaurantService.searchRestaurants(dto);
   }
 
-  @ApiOperation({ summary: '식당 상세 및 메뉴 조회' })
+  @ApiOperation({
+    summary: '식당별 개인화 메뉴 추천 (임시 인증 없는 테스트 API)',
+  })
   @GenericApiResponse({
     status: 201,
-    description: '식당 상세 조회 성공',
-    message: 'Restaurant detail returned successfully',
+    description: '식당 메뉴 추천 성공',
+    message: 'Restaurant recommendations returned successfully',
     model: RestaurantDetailResponseDto,
   })
   @ErrorApiResponse({
@@ -66,7 +63,7 @@ export class RestaurantController {
     message: 'Restaurant not found',
     error: 'NotFoundException',
   })
-  @ResponseMsg('Restaurant detail returned successfully')
+  @ResponseMsg('Restaurant recommendations returned successfully')
   @Post('/detail')
   async detail(
     @Body() dto: RestaurantDetailRequestDto,

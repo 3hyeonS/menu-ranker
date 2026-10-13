@@ -1,20 +1,17 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { UserEntity } from '../auth/entity/user/user.entity';
-import { JwtStrategy } from '../auth/jwt.startegy';
-import { MenuEntity } from '../home/entity/menu.entity';
+import { ChatModule } from '../chat/chat.module';
+import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
+import { RestaurantEntity } from './entity/restaurant.entity';
 import { RestaurantController } from './restaurant.controller';
 import { RestaurantService } from './restaurant.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([UserEntity, MenuEntity]),
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule,
+    TypeOrmModule.forFeature([RestaurantEntity, RestaurantMenuEntity]),
+    ChatModule,
   ],
   controllers: [RestaurantController],
-  providers: [RestaurantService, JwtStrategy],
+  providers: [RestaurantService],
 })
 export class RestaurantModule {}

@@ -14,7 +14,7 @@ export class RestaurantSummaryResponseDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    description: '해당 식당 메뉴의 대표 카테고리',
+    description: '식당 카테고리',
     example: '피자',
   })
   category: string | null;

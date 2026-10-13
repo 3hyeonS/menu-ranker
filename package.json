@@ -24,6 +24,7 @@
     "db:migration:run": "npm run db:typeorm -- migration:run",
     "db:migration:revert": "npm run db:typeorm -- migration:revert",
     "db:migration:show": "npm run db:typeorm -- migration:show",
+    "restaurant:import": "ts-node -r tsconfig-paths/register scripts/import-restaurant-menus.ts",
     "exercise:thumbnail-images": "node scripts/generate-workout-thumbnails.js",
     "vector:index-menus": "ts-node -r tsconfig-paths/register src/vector/scripts/index-menu-vectors.ts",
     "vector:test-search": "ts-node -r tsconfig-paths/register src/vector/scripts/test-vector-search.ts"
