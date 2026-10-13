@@ -3799,8 +3799,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   ): Record<string, string | undefined> {
     const valueByField: Record<string, string | undefined> = {};
     const mappings: Array<{ field: string; keywords: string[] }> = [
-      { field: 'unit_quantity', keywords: ['중량 단위'] },
-      { field: 'unit', keywords: ['단위량'] },
+      { field: 'unit_quantity', keywords: ['단위량'] },
+      { field: 'unit', keywords: ['중량 단위'] },
       { field: 'sugar_alchol', keywords: SUGAR_ALTERNATIVE_KEYWORDS },
       { field: 'dietary_fiber', keywords: ['식이섬유', '식이 섬유'] },
       { field: 'protein', keywords: ['단백질'] },
@@ -4076,7 +4076,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     return aliases[normalizedKey] ?? value;
   }
 
-  // CSV 중량 단위 변환
+  // CSV 중량 단위(0: g, 1: ml) 변환
   private asCsvUnit(
     value: unknown,
     fallback: unknown,
@@ -4101,24 +4101,26 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     }
   }
 
-  // CSV 단위량 변환
+  // CSV 단위량(잔, 인분, 조각 등) 변환
   private asCsvUnitQuantity(value: unknown, fallback: unknown): string {
     const text = this.asNullableString(value);
 
-    if (text && !Number.isFinite(this.extractNumericValue(text))) {
+    if (text && !this.isCsvUnitCode(text)) {
       return text;
     }
 
     const fallbackText = this.asNullableString(fallback);
 
-    if (
-      fallbackText &&
-      !Number.isFinite(this.extractNumericValue(fallbackText))
-    ) {
+    if (fallbackText && !this.isCsvUnitCode(fallbackText)) {
       return fallbackText;
     }
 
     return '인분';
+  }
+
+  // 중량 단위 코드만 제외하고 `1조각`, `0.5마리`, `5개` 등의 표기는 유지한다.
+  private isCsvUnitCode(value: string): boolean {
+    return /^(?:0|1)(?:\.0+)?$/.test(value.trim());
   }
 
   // 메뉴 영양성분 소수점 값 정규화

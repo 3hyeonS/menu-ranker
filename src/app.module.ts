@@ -9,6 +9,7 @@ import { HomeModule } from './home/home.module';
 import { ChatModule } from './chat/chat.module';
 import { ProfileModule } from './profile/profile.module';
 import { MenstrualModule } from './menstrual/menstrual.module';
+import { RestaurantModule } from './restaurant/restaurant.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { MenstrualModule } from './menstrual/menstrual.module';
     ChatModule,
     ProfileModule,
     MenstrualModule,
+    RestaurantModule,
   ],
   controllers: [AppController],
   providers: [AppService],
