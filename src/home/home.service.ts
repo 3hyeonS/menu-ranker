@@ -3747,7 +3747,9 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   ): WorkoutEntity | null {
     const valueByField = this.mapWorkoutCsvRow(headers, row);
     const name = this.asNullableString(valueByField.name);
-    const workoutType = this.asWorkoutCsvType(valueByField.workout_type);
+    const workoutType = name
+      ? this.resolveWorkoutCsvType(name, valueByField.workout_type)
+      : null;
 
     if (!name || !workoutType) {
       return null;
@@ -3960,6 +3962,17 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     }
 
     return null;
+  }
+
+  private resolveWorkoutCsvType(
+    name: string,
+    value: unknown,
+  ): WorkoutType | null {
+    if (name.includes('플랭크')) {
+      return 'cardio';
+    }
+
+    return this.asWorkoutCsvType(value);
   }
 
   private asWorkoutCsvBodyParts(value: unknown): string[] | null {
@@ -5356,6 +5369,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     const aliases: Record<string, string> = {
       아웃타이: '레버 시티드 힙 애덕션',
       이너타이: '레버 시티드 힙 어덕션',
+      푸쉬업: '푸시업',
+      팔굽혀펴기: '푸시업',
     };
 
     return aliases[normalizedValue] ?? value;
@@ -5390,6 +5405,17 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
   private getWorkoutAdditionalExactNames(value: string): string[] {
     const normalizedValue = this.normalizeWorkoutExactSearchName(value);
+
+    const runningMachineAliases = new Set([
+      '러닝',
+      '러닝머신',
+      '런닝',
+      '런닝머신',
+    ]);
+
+    if (runningMachineAliases.has(normalizedValue)) {
+      return ['달리기 (장비)'];
+    }
 
     if (normalizedValue !== '랫풀다운') {
       return [];

@@ -29,6 +29,7 @@ const cardioEquipmentTerms = [
 ];
 
 const cardioNameTerms = [
+  '플랭크',
   '스텝밀',
   '트레드밀',
   '일립티컬',

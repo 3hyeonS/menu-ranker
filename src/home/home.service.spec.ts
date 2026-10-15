@@ -160,6 +160,27 @@ describe('HomeService menu search priority', () => {
     );
   });
 
+  it('resolves push-up workout search aliases', () => {
+    expect(service.resolveWorkoutSearchNameAlias('푸쉬업')).toBe('푸시업');
+    expect(service.resolveWorkoutSearchNameAlias('팔굽혀펴기')).toBe('푸시업');
+    expect(service.getWorkoutSearchPlan('푸쉬업')).toEqual({
+      containsInput: '푸시업',
+      preferredExact: '푸시업',
+    });
+    expect(service.getWorkoutSearchPlan('팔굽혀펴기')).toEqual({
+      containsInput: '푸시업',
+      preferredExact: '푸시업',
+    });
+  });
+
+  it('classifies workout names containing 플랭크 as cardio', () => {
+    expect(service.resolveWorkoutCsvType('플랭크', 'weight')).toBe('cardio');
+    expect(service.resolveWorkoutCsvType('사이드 플랭크', '근력')).toBe(
+      'cardio',
+    );
+    expect(service.resolveWorkoutCsvType('스쿼트', 'weight')).toBe('weight');
+  });
+
   it('keeps running search text and adds 러닝 as the preferred exact result', () => {
     ['러닝', '러닝머신', '런닝', '런닝머신', '트레드밀'].forEach(
       (searchName) => {
@@ -174,6 +195,14 @@ describe('HomeService menu search priority', () => {
       preferredExact: '러닝',
     });
     expect(service.resolveWorkoutSearchNameAlias('트레드밀')).toBe('트레드밀');
+  });
+
+  it('adds equipment running to running machine searches', () => {
+    ['러닝', '러닝머신', '런닝', '런닝머신'].forEach((searchName) => {
+      expect(service.getWorkoutAdditionalExactNames(searchName)).toEqual([
+        '달리기 (장비)',
+      ]);
+    });
   });
 
   it('adds cable pulldown variants to lat pulldown searches', () => {
