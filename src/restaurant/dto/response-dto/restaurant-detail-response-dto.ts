@@ -13,10 +13,10 @@ export class RestaurantMenuResponseDto {
   @ApiProperty({
     type: Number,
     nullable: true,
-    description: '탄수화물(g)',
-    example: 42.1,
+    description: '당류(g)',
+    example: 6.2,
   })
-  carbs: number | null;
+  sugars: number | null;
 
   @ApiProperty({
     type: Number,
@@ -29,10 +29,10 @@ export class RestaurantMenuResponseDto {
   @ApiProperty({
     type: Number,
     nullable: true,
-    description: '지방(g)',
-    example: 8.4,
+    description: '포화지방(g)',
+    example: 3.1,
   })
-  fat: number | null;
+  sat_fat: number | null;
 
   @ApiProperty({
     type: Number,
