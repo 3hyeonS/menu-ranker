@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 type FoodImageRecognitionInput = {
   menu_ids: number[];
+  menu_names: string[];
   menu_quantities: number[];
   image_url: string;
 };
@@ -15,6 +16,13 @@ export class FoodImageRecognitionResponseDto {
   menu_ids: number[];
 
   @ApiProperty({
+    type: [String],
+    description: '인식된 메뉴명 배열. menu_ids 및 menu_quantities와 같은 순서',
+    example: ['닭가슴살', '현미밥'],
+  })
+  menu_names: string[];
+
+  @ApiProperty({
     type: [Number],
     description:
       '각 메뉴의 인식 중량 배열. 사진에서 인식한 개수/인분 수에 메뉴 weight을 곱한 값',
@@ -25,7 +33,8 @@ export class FoodImageRecognitionResponseDto {
   @ApiProperty({
     type: String,
     description: 'S3에 저장된 이미지 url',
-    example: 'https://bucket.s3.ap-northeast-2.amazonaws.com/meal-recognition/1/20260412/abc123',
+    example:
+      'https://bucket.s3.ap-northeast-2.amazonaws.com/meal-recognition/1/20260412/abc123',
   })
   image_url: string;
 

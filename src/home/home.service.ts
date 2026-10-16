@@ -1930,12 +1930,13 @@ failure_reason enum:
     },
   ): Promise<{
     menu_ids: number[];
+    menu_names: string[];
     menu_quantities: number[];
   }> {
     const predictions = description.foods.slice(0, 10);
 
     if (predictions.length === 0) {
-      return { menu_ids: [], menu_quantities: [] };
+      return { menu_ids: [], menu_names: [], menu_quantities: [] };
     }
 
     const allMenus =
@@ -1985,7 +1986,7 @@ failure_reason enum:
     );
 
     if (groupsWithCandidates.length === 0) {
-      return { menu_ids: [], menu_quantities: [] };
+      return { menu_ids: [], menu_names: [], menu_quantities: [] };
     }
 
     const rematched = await this.rematchHomeFoodImageMenusWithGemini(
@@ -2144,15 +2145,11 @@ failure_reason enum:
       return [];
     }
 
-    const productName = this.normalizeCompactSearchText(
-      prediction.productName,
-    );
+    const productName = this.normalizeCompactSearchText(prediction.productName);
     const recognizedBrand = this.normalizeCompactSearchText(
       prediction.brand ?? '',
     );
-    const getBrandRank = (
-      menu: HomeFoodImageRecognitionCandidate,
-    ): number => {
+    const getBrandRank = (menu: HomeFoodImageRecognitionCandidate): number => {
       const candidateBrand = this.normalizeCompactSearchText(menu.brand ?? '');
 
       if (!recognizedBrand || !candidateBrand) {
@@ -2702,20 +2699,22 @@ ${JSON.stringify(
 
   private toHomeFoodImageRecognitionResult(
     matches: HomeFoodImageMatchedMenu[],
-  ): { menu_ids: number[]; menu_quantities: number[] } {
-    const merged = new Map<number, number>();
+  ): { menu_ids: number[]; menu_names: string[]; menu_quantities: number[] } {
+    const merged = new Map<number, { name: string; quantity: number }>();
     matches.forEach((match) => {
-      merged.set(
-        match.menu.id,
-        roundToOneDecimal(
-          (merged.get(match.menu.id) ?? 0) + match.estimatedQuantity,
+      const previous = merged.get(match.menu.id);
+      merged.set(match.menu.id, {
+        name: match.menu.name,
+        quantity: roundToOneDecimal(
+          (previous?.quantity ?? 0) + match.estimatedQuantity,
         ),
-      );
+      });
     });
 
     return {
       menu_ids: Array.from(merged.keys()),
-      menu_quantities: Array.from(merged.values()),
+      menu_names: Array.from(merged.values(), (menu) => menu.name),
+      menu_quantities: Array.from(merged.values(), (menu) => menu.quantity),
     };
   }
 

@@ -214,9 +214,7 @@ describe('HomeService menu search priority', () => {
       ]);
     });
 
-    expect(service.getWorkoutAdditionalExactNames('케이블 풀다운')).toEqual(
-      [],
-    );
+    expect(service.getWorkoutAdditionalExactNames('케이블 풀다운')).toEqual([]);
   });
 
   it('replaces a processed fried-egg image match with the generic food menu', () => {
@@ -260,7 +258,11 @@ describe('HomeService menu search priority', () => {
           new Map([[0, new Set([1, 3])]]),
         ),
       ),
-    ).toEqual({ menu_ids: [1], menu_quantities: [55] });
+    ).toEqual({
+      menu_ids: [1],
+      menu_names: ['(식약처_음식) 달걀후라이'],
+      menu_quantities: [55],
+    });
   });
 
   it('keeps an explicitly recognized processed fried egg', () => {
@@ -293,7 +295,11 @@ describe('HomeService menu search priority', () => {
           new Map([[0, new Set([2])]]),
         ),
       ),
-    ).toEqual({ menu_ids: [2], menu_quantities: [80] });
+    ).toEqual({
+      menu_ids: [2],
+      menu_names: ['(식약처_가공) 냉동 계란 후라이'],
+      menu_quantities: [80],
+    });
   });
 
   it('replaces a product rice image match with the generic plain rice menu', () => {
@@ -337,7 +343,11 @@ describe('HomeService menu search priority', () => {
           new Map([[0, new Set([10, 11])]]),
         ),
       ),
-    ).toEqual({ menu_ids: [10], menu_quantities: [180] });
+    ).toEqual({
+      menu_ids: [10],
+      menu_names: ['(식약처_음식) 밥'],
+      menu_quantities: [180],
+    });
   });
 
   it('keeps the public plain-rice menu in home image candidates even when vector search returns a product rice', async () => {
@@ -561,9 +571,7 @@ describe('HomeService menu search priority', () => {
       );
 
       expect(result.preferredCandidateId).toBeUndefined();
-      expect(result.candidates.map((candidate) => candidate.id)).toEqual([
-        100,
-      ]);
+      expect(result.candidates.map((candidate) => candidate.id)).toEqual([100]);
     } finally {
       if (previousVectorSearchEnabled === undefined) {
         delete process.env.VECTOR_SEARCH_ENABLED;
@@ -606,6 +614,7 @@ describe('HomeService menu search priority', () => {
 
     expect(service.toHomeFoodImageRecognitionResult(matches)).toEqual({
       menu_ids: [1, 2],
+      menu_names: ['수육', '(식약처_음식) 밥'],
       menu_quantities: [150, 180],
     });
   });
