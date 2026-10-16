@@ -174,6 +174,109 @@ def normalize_chicken_serving(row: dict[str, str]) -> None:
     row["단위량"] = "1조각"
 
 
+def normalize_legacy_basis_quantity(row: dict[str, str]) -> None:
+    """Replace the legacy ``기준량`` placeholder with a concrete serving label.
+
+    Per-100 g source data stays labelled as 100 g unless the menu name or the
+    brand's existing records provide a reliable purchasable-unit label. This
+    avoids presenting a source nutrition basis as one whole serving.
+    """
+    brand = row["브랜드"].strip()
+    category = row["카테고리"].strip()
+    name = row["메뉴"].strip()
+    n = compact(name)
+    quantity = row["단위량"].strip()
+
+    # Preserve the source unit for Compose food/dessert records. Although the
+    # products are solid food, changing this field is outside this cleanup.
+    if brand == "컴포즈커피" and category == "푸드ㆍ디저트":
+        row["중량 단위"] = "1"
+
+    if brand == "BBQ" and (
+        is_beverage(name) or any(word in n for word in ("스프라이트", "레몬보이"))
+    ) and quantity in {"기준량", "100g", "인분"}:
+        row["단위량"] = "잔"
+        return
+
+    unknown_piece_chicken = {
+        ("BHC", "치킨스넥"),
+        ("피자마루", "고추마요 텐더치킨"),
+        ("피자스쿨", "치킨스틱&#038;윙 (치킨스틱&윙)"),
+        ("피자스쿨", "치킨텐더 (치킨텐더)"),
+    }
+    if (brand, name) in unknown_piece_chicken and quantity in {"기준량", "100g", "인분"}:
+        source_weight = float(row["중량"])
+        target_weight = 30
+        scale_nutrition(row, target_weight / source_weight)
+        row["중량"] = str(target_weight)
+        row["단위량"] = "1조각"
+        return
+
+    if quantity not in {"기준량", "100g"}:
+        return
+
+    if brand == "BHC" and "피자" in name:
+        source_weight = float(row["중량"])
+        target_weight = 110
+        scale_nutrition(row, target_weight / source_weight)
+        set_food(row, "피자", "1조각")
+        row["중량"] = str(target_weight)
+        return
+
+    if brand == "네네치킨" and category == "피자":
+        source_weight = float(row["중량"])
+        target_weight = 82 if "(씬)" in name else 113
+        scale_nutrition(row, target_weight / source_weight)
+        row["중량"] = str(target_weight)
+        row["단위량"] = "1조각"
+        return
+
+    # Counts explicitly printed in official menu names are the strongest unit
+    # evidence. Chicken/tender products use 조각; other products use 개.
+    count_match = re.search(r"(?:\(|\s)(\d+)\s*(개|조각|ea)(?:\)|\s|$)", name, re.IGNORECASE)
+    if count_match:
+        count, raw_unit = count_match.groups()
+        unit = "조각" if raw_unit == "조각" else "개"
+        row["단위량"] = f"{count}{unit}"
+        return
+
+    if brand == "컴포즈커피":
+        row["단위량"] = "1조각" if "(조각)" in name else "1개"
+        return
+
+    if brand == "고피자":
+        if category == "피자":
+            if "1인피자세트" in n:
+                row["단위량"] = "인분"
+            elif "소스" in n:
+                row["단위량"] = "1회"
+            else:
+                row["단위량"] = "1조각"
+        elif any(word in n for word in ("소스", "시즈닝", "치즈추가", "무스", "연유")):
+            row["단위량"] = "1회"
+        elif "피클" in n:
+            row["단위량"] = "1개"
+        else:
+            row["단위량"] = "인분"
+        return
+
+    if brand == "피자스쿨" and category == "피자":
+        row["단위량"] = "2조각"
+        return
+
+    if category in {"소스", "추가토핑 ®"} or any(
+        word in n for word in ("소스", "시즈닝", "스프레드", "토핑")
+    ):
+        row["단위량"] = "1회"
+        return
+
+    if category == "피자설기":
+        row["단위량"] = "1개"
+        return
+
+    row["단위량"] = "잔" if is_beverage(name) else "인분"
+
+
 def classify_frank(row: dict[str, str]) -> None:
     if row["카테고리"] != "사이드&음료":
         return
@@ -198,6 +301,9 @@ def classify_popeyes(row: dict[str, str]) -> None:
 
 def classify_salady(row: dict[str, str]) -> None:
     name = row["메뉴"]
+    if name == "스프라이트제로":
+        set_food(row, "수프·스튜")
+        return
     if row["카테고리"] == "포케·비빔밥":
         row["카테고리"] = "비빔밥" if "비빔밥" in name else "포케"
     if is_beverage(name) or row["카테고리"] == "음료":
@@ -548,6 +654,7 @@ def main() -> None:
             set_food(row, "피자")
 
         normalize_chicken_serving(row)
+        normalize_legacy_basis_quantity(row)
 
     # Cross-brand schema invariants. These repair legacy imports where the
     # numeric g/ml flag was written into the opposite semantic slot.
