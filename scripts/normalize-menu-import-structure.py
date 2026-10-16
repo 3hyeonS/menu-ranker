@@ -33,7 +33,7 @@ BRAND_CATEGORY_GROUPS = {
         "프랭크버거", "파파이스",
     },
     "샌드위치/샐러드": {
-        "샐러디", "써브웨이", "서브웨이", "퀴즈노스", "슬로우캘리",
+        "샐러디", "서브웨이", "퀴즈노스", "슬로우캘리",
         "샐러드박스", "샐러리아", "훅트포케", "프레퍼스 다이어트 푸드",
     },
     "카페": {
@@ -348,7 +348,16 @@ def classify_krispy(row: dict[str, str]) -> None:
 def classify_dunkin(row: dict[str, str]) -> None:
     name = row["메뉴"]
     n = compact(name)
-    if is_beverage(name) or row["카테고리"] in {"커피", "티&에이드", "쿨라타", "기타 음료"}:
+    known_beverages = {
+        "ib카라멜마끼아또", "ib카페모카", "디카페인카라멜마끼아또(r)",
+        "디카페인카라멜마끼아또(s)", "디카페인카페모카(r)",
+        "디카페인카페모카(s)", "로우슈거핫초코(r)",
+        "에티오피아(dripcoffee)", "자이언트버킷피치", "초코(r)",
+        "초코(s)", "카라멜마끼아또(r)", "카라멜마끼아또(s)",
+        "카페모카(r)", "카페모카(s)", "케냐(dripcoffee)",
+        "히비스커스애플티",
+    }
+    if n in known_beverages or is_beverage(name) or row["카테고리"] in {"커피", "티&에이드", "쿨라타", "기타 음료"}:
         set_drink(row)
         return
     if row["카테고리"] in {"샐러드", "샐러드·볼"}:
@@ -566,7 +575,7 @@ def subway_component_row(
     row = {field: "" for field in fieldnames}
     row.update({
         "메뉴": name,
-        "브랜드": "써브웨이",
+        "브랜드": "서브웨이",
         "카테고리": category,
         "중량 단위": "0",
         "중량": format_number(float(weight)),

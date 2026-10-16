@@ -21,6 +21,7 @@ import { RestaurantEntity } from './entity/restaurant.entity';
 @Injectable()
 export class RestaurantService {
   private readonly recommendationLimit = 5;
+  private readonly gcovaRecommendationLimit = 2;
 
   constructor(
     @InjectRepository(RestaurantEntity)
@@ -94,6 +95,13 @@ export class RestaurantService {
       };
     }
 
+    const recommendationCandidates = menus.filter((menu) =>
+      this.isRecommendationCandidate(menu, restaurant.category),
+    );
+    if (recommendationCandidates.length === 0) {
+      return { restaurant_name: restaurant.name, menu_list: [] };
+    }
+
     let selectedIds: number[] = [];
 
     try {
@@ -102,21 +110,29 @@ export class RestaurantService {
         restaurantName: restaurant.name,
         restaurantCategory: restaurant.category,
         filter: dto.filter ?? null,
-        menus: menus.map((menu) => this.toRecommendationInput(menu)),
+        menus: recommendationCandidates.map((menu) =>
+          this.toRecommendationInput(menu),
+        ),
       });
     } catch (error) {
-      console.error('[RESTAURANT] Gemini recommendation failed; fallback used', {
-        restaurantId: restaurant.id,
-        userId,
-        filter: dto.filter ?? null,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      console.error(
+        '[RESTAURANT] Gemini recommendation failed; fallback used',
+        {
+          restaurantId: restaurant.id,
+          userId,
+          filter: dto.filter ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
 
     const selectedMenus = this.selectRecommendedMenus(
-      menus,
+      recommendationCandidates,
       selectedIds,
       dto.filter ?? null,
+      restaurant.name === '지코바치킨'
+        ? this.gcovaRecommendationLimit
+        : this.recommendationLimit,
     );
 
     return {
@@ -129,6 +145,7 @@ export class RestaurantService {
     menus: RestaurantMenuEntity[],
     selectedIds: number[],
     filter: RestaurantMenuFilter | null,
+    limit: number = this.recommendationLimit,
   ): RestaurantMenuEntity[] {
     const menuById = new Map(menus.map((menu) => [menu.id, menu]));
     const selected = selectedIds
@@ -136,13 +153,10 @@ export class RestaurantService {
       .filter((menu): menu is RestaurantMenuEntity => menu != null);
 
     if (selected.length > 0) {
-      return selected.slice(0, this.recommendationLimit);
+      return selected.slice(0, limit);
     }
 
-    return this.fallbackRecommendations(menus, filter).slice(
-      0,
-      this.recommendationLimit,
-    );
+    return this.fallbackRecommendations(menus, filter).slice(0, limit);
   }
 
   private fallbackRecommendations(
@@ -227,6 +241,77 @@ export class RestaurantService {
 
   private normalizeSearchText(value: string): string {
     return value.trim().toLowerCase().replace(/\s+/g, '');
+  }
+
+  private isBeverageMenu(menu: RestaurantMenuEntity): boolean {
+    const category = (menu.menuCategory ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '');
+
+    return (
+      category === '티' ||
+      /음료|커피|콜드브루|드링크|에이드|주스|프라페|스무디|쉐이크|베버리지|빽스치노|아이스샷|생과일/.test(
+        category,
+      )
+    );
+  }
+
+  private isSideMenu(menu: RestaurantMenuEntity): boolean {
+    const category = (menu.menuCategory ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '');
+
+    return category.includes('사이드');
+  }
+
+  private isComponentMenu(
+    menu: RestaurantMenuEntity,
+    restaurantCategory: string | null,
+  ): boolean {
+    const menuCategory = (menu.menuCategory ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '');
+    const excludedCategories: Record<string, Set<string>> = {
+      버거: new Set(['소스', '소스&시즈닝', '토핑', '토핑메뉴', '버거(토핑)']),
+      치킨: new Set(['소스', '재료추가']),
+      피자: new Set(['소스', '토핑', '추가토핑®']),
+      '샌드위치/샐러드': new Set([
+        '토핑',
+        '소스',
+        '드레싱',
+        '빵',
+        '야채',
+        '베이스',
+        '치즈',
+      ]),
+      베이커리: new Set(['토핑', '크림', '딥']),
+    };
+
+    return (
+      excludedCategories[restaurantCategory ?? '']?.has(menuCategory) ?? false
+    );
+  }
+
+  private isRecommendationCandidate(
+    menu: RestaurantMenuEntity,
+    restaurantCategory: string | null,
+  ): boolean {
+    if (restaurantCategory === '카페') {
+      return true;
+    }
+    if (this.isBeverageMenu(menu)) {
+      return false;
+    }
+    if (restaurantCategory !== '베이커리' && this.isSideMenu(menu)) {
+      return false;
+    }
+    if (this.isComponentMenu(menu, restaurantCategory)) {
+      return false;
+    }
+    return true;
   }
 
   private numberValue(value: number | string | null | undefined): number {
