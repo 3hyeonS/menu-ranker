@@ -14,7 +14,7 @@ describe('ChatService conversation memory', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      { find: jest.fn().mockResolvedValue([]) } as never,
       {} as never,
       {} as never,
       {} as never,
@@ -92,10 +92,10 @@ describe('ChatService conversation memory', () => {
       '이전 얘기 이어서 답해줘',
       context,
       userInfo,
-      undefined,
+      expect.stringContaining('일반 채팅에 제공되는 사용자의 월경 기록'),
       true,
     );
-    expect(menstrualContext).not.toHaveBeenCalled();
+    expect(menstrualContext).toHaveBeenCalledWith(9);
     expect(legacyPipeline).not.toHaveBeenCalled();
   });
 
@@ -188,7 +188,7 @@ describe('ChatService conversation memory', () => {
     expect(response.intro_message).not.toContain('식사 기록 모드');
   });
 
-  it('adds all menstrual cycle phases to regular chat for trial users', async () => {
+  it('adds all menstrual cycle phases to regular chat for every user', async () => {
     const service = createService() as any;
     const chatContext = {
       messages: [],
@@ -263,7 +263,7 @@ describe('ChatService conversation memory', () => {
     jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
 
     const response = await service.recommend(
-      { id: 38 },
+      { id: 9 },
       { input: '오늘 운동은 어떻게 할까?' },
     );
 
@@ -271,7 +271,7 @@ describe('ChatService conversation memory', () => {
       '오늘 운동은 어떻게 할까?',
       chatContext,
       userInfo,
-      expect.stringContaining('체험 신청자 일반 채팅에 제공되는 월경 기록'),
+      expect.stringContaining('일반 채팅에 제공되는 사용자의 월경 기록'),
       true,
     );
     const requestContext = callGemini.mock.calls[0][3];
@@ -337,14 +337,6 @@ describe('ChatService conversation memory', () => {
     expect(userInfo).not.toHaveBeenCalled();
     expect(chatContext).not.toHaveBeenCalled();
     expect(gemini).not.toHaveBeenCalled();
-  });
-
-  it('rejects personalized management for users outside the trial group', async () => {
-    const service = createService() as any;
-
-    await expect(service.personalizedManagement({ id: 41 })).rejects.toThrow(
-      'Personalized management is available only to trial participants',
-    );
   });
 
   it('uses expanded record periods only for personalized management', async () => {
@@ -413,9 +405,9 @@ describe('ChatService conversation memory', () => {
     };
     jest.spyOn(service, 'saveNewChatHistory').mockResolvedValue({});
 
-    const response = await service.personalizedManagement({ id: 51 });
+    const response = await service.personalizedManagement({ id: 41 });
 
-    expect(getChatContext).toHaveBeenCalledWith(51, 8, {
+    expect(getChatContext).toHaveBeenCalledWith(41, 8, {
       meals: 7,
       workouts: 7,
       weights: 30,
@@ -622,9 +614,7 @@ describe('ChatService conversation memory', () => {
       '탄수화물·단백질·지방의 균형',
     );
     expect(callGemini.mock.calls[0][3]).not.toContain('"calorie_score"');
-    expect(callGemini.mock.calls[0][3]).not.toContain(
-      '"macro_balance_score"',
-    );
+    expect(callGemini.mock.calls[0][3]).not.toContain('"macro_balance_score"');
     expect(callGemini.mock.calls[0][3]).not.toContain('"max_score"');
     expect(response).toEqual({
       chat_category: 'general',

@@ -147,7 +147,7 @@ export class ChatController {
   @ApiOperation({
     summary: '나에게 맞는 관리법',
     description:
-      '체험 대상 사용자의 전체 월경 주기, 최근 7일 식단·운동·걸음 수·물 섭취 기록과 최근 30일 체중 기록을 종합해 개인화된 관리 피드백을 생성합니다. 물 섭취량은 식단과 동일하게 최근 7일의 날짜별 총량(ml)을 전달합니다.',
+      '사용자의 전체 월경 주기, 최근 7일 식단·운동·걸음 수·물 섭취 기록과 최근 30일 체중 기록을 종합해 개인화된 관리 피드백을 생성합니다. 물 섭취량은 식단과 동일하게 최근 7일의 날짜별 총량(ml)을 전달합니다.',
   })
   @GenericApiResponse({
     status: 201,
@@ -160,12 +160,6 @@ export class ChatController {
     description: '유효하지 않거나 기간이 만료된 accessToken',
     message: 'Invalid or expired accessToken',
     error: 'UnauthorizedException',
-  })
-  @ErrorApiResponse({
-    status: 403,
-    description: '체험 대상 사용자가 아님',
-    message: 'Personalized management is available only to trial participants',
-    error: 'ForbiddenException',
   })
   @ErrorApiResponse({
     status: 503,

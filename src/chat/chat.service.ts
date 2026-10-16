@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   Optional,
@@ -121,9 +120,6 @@ const PERSONALIZED_MANAGEMENT_INPUT = '나에게 맞는 관리법을 알려줘';
 const MANAGEMENT_PATTERN_ANALYSIS_INPUT = '나의 최근 30일 관리 패턴을 분석해줘';
 const MANAGEMENT_PATTERN_ANALYSIS_CONTEXT_DAYS = 30;
 const PERSONALIZED_MANAGEMENT_PREVIOUS_FEEDBACK_LIMIT = 3;
-const PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS = new Set([
-  36, 38, 42, 50, 51, 52, 53, 74, 80, 101, 106, 107,
-]);
 const DEFAULT_MENSTRUAL_CYCLE_DAYS = 28;
 const MIN_NORMAL_MENSTRUAL_CYCLE_DAYS = 14;
 const MAX_NORMAL_MENSTRUAL_CYCLE_DAYS = 45;
@@ -864,30 +860,18 @@ export class ChatService {
       return response;
     }
 
-    const shouldIncludeMenstrualContext =
-      PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS.has(user.id);
     const [userInfo, chatContext, menstrualContext] = await Promise.all([
       this.getRequiredUserInfo(user.id),
       this.getRecentChatContext(user.id),
-      shouldIncludeMenstrualContext
-        ? this.getMenstrualManagementContext(user.id)
-        : Promise.resolve(null),
+      this.getMenstrualManagementContext(user.id),
     ]);
-    const generatedAnswer = menstrualContext
-      ? await this.callGeminiText(
-          input,
-          chatContext,
-          userInfo,
-          this.buildTrialMenstrualChatRequestContext(menstrualContext),
-          true,
-        )
-      : await this.callGeminiText(
-          input,
-          chatContext,
-          userInfo,
-          undefined,
-          true,
-        );
+    const generatedAnswer = await this.callGeminiText(
+      input,
+      chatContext,
+      userInfo,
+      this.buildMenstrualChatRequestContext(menstrualContext),
+      true,
+    );
     const answer = this.sanitizeGeneralChatAnswer(generatedAnswer);
     const response = new ChatRecommendResponseDto();
     response.chat_category = 'general';
@@ -907,12 +891,6 @@ export class ChatService {
   async personalizedManagement(
     user: UserEntity,
   ): Promise<ChatRecommendResponseDto> {
-    if (!PERSONALIZED_MANAGEMENT_ELIGIBLE_USER_IDS.has(user.id)) {
-      throw new ForbiddenException(
-        'Personalized management is available only to trial participants',
-      );
-    }
-
     const recordContextDays: ChatRecordContextDays = {
       meals: PERSONALIZED_MANAGEMENT_MEAL_CONTEXT_DAYS,
       workouts: PERSONALIZED_MANAGEMENT_WORKOUT_CONTEXT_DAYS,
@@ -5099,10 +5077,10 @@ ${JSON.stringify(previousManagementFeedbacks)}
 - 월경 단계와 다음 월경 예상일은 서버가 계산한 값을 그대로 사용하고 직접 다시 계산하거나 다른 날짜로 바꾸지 마.`;
   }
 
-  private buildTrialMenstrualChatRequestContext(
+  private buildMenstrualChatRequestContext(
     menstrualContext: MenstrualManagementContext,
   ): string {
-    return `체험 신청자 일반 채팅에 제공되는 월경 기록 정보야.
+    return `일반 채팅에 제공되는 사용자의 월경 기록 정보야.
 
 서버가 전체 기록을 기준으로 계산한 주기별 월경기·난포기·배란기·황체기와 다음 월경 예상일:
 ${JSON.stringify(menstrualContext)}
@@ -5266,8 +5244,7 @@ ${JSON.stringify(menstrualContext)}
       total_score: scoreContext.score,
       calorie_intake: {
         consumed_calories: scoreContext.calorie_score.consumed_calories,
-        base_target_calories:
-          scoreContext.calorie_score.base_target_calories,
+        base_target_calories: scoreContext.calorie_score.base_target_calories,
         exercise_burned_calories:
           scoreContext.calorie_score.exercise_burned_calories,
         exercise_calories_reflected_in_target:
@@ -7042,8 +7019,7 @@ ${JSON.stringify(
     }
 
     const prediction = predictions[foodIndex];
-    const exactProductMenuId =
-      preferredCandidateIdsByFoodIndex.get(foodIndex);
+    const exactProductMenuId = preferredCandidateIdsByFoodIndex.get(foodIndex);
     const exactProductMenu = exactProductMenuId
       ? candidateMap.get(exactProductMenuId)
       : undefined;
