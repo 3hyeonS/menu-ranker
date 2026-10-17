@@ -41,8 +41,13 @@ export class RestaurantMenuResponseDto {
   })
   unit: number;
 
-  @ApiProperty({ type: Number, description: '중량', example: 100 })
-  weight: number;
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: '중량',
+    example: 100,
+  })
+  weight: number | null;
 
   @ApiProperty({
     type: String,

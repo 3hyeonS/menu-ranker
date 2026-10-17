@@ -39,6 +39,29 @@ describe('RestaurantService', () => {
     expect(response).not.toHaveProperty('fat');
   });
 
+  it('keeps an unavailable restaurant menu weight as null', () => {
+    const service = new RestaurantService(null, null, null);
+    const menu = {
+      id: 2,
+      name: '중량 미제공 메뉴',
+      calories: '500',
+      sugars: null,
+      protein: null,
+      satFat: null,
+      unit: 0,
+      weight: null,
+      unitQuantity: '1인분',
+    } as unknown as RestaurantMenuEntity;
+
+    const response = (
+      service as unknown as {
+        toResponse(menu: RestaurantMenuEntity): Record<string, unknown>;
+      }
+    ).toResponse(menu);
+
+    expect(response.weight).toBeNull();
+  });
+
   it('limits filtered 지코바치킨 recommendations to two menus', async () => {
     const restaurantRepository = {
       findOne: jest.fn().mockResolvedValue({

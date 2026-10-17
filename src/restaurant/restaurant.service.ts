@@ -220,7 +220,7 @@ export class RestaurantService {
       saturated_fat: this.nullableNumber(menu.satFat),
       sodium: this.nullableNumber(menu.sodium),
       unit: menu.unit,
-      weight: this.numberValue(menu.weight),
+      weight: this.nullableNumber(menu.weight),
       unit_quantity: menu.unitQuantity,
     };
   }
@@ -234,7 +234,7 @@ export class RestaurantService {
       protein: this.nullableNumber(menu.protein),
       sat_fat: this.nullableNumber(menu.satFat),
       unit: menu.unit,
-      weight: this.numberValue(menu.weight),
+      weight: this.nullableNumber(menu.weight),
       unit_quantity: menu.unitQuantity,
     };
   }

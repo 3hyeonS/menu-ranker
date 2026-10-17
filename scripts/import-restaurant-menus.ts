@@ -45,7 +45,7 @@ interface ParsedMenu {
   name: string;
   menuCategory: string | null;
   unit: number;
-  weight: number;
+  weight: number | null;
   unitQuantity: string;
   calories: number;
   carbs: number | null;
@@ -231,7 +231,7 @@ function readCatalog(filePath: string): {
       name,
       menuCategory: row['메뉴 카테고리'].trim() || null,
       unit,
-      weight: requiredNumber(row['중량'], '중량', line),
+      weight: nullableNumber(row['중량'], '중량', line),
       unitQuantity: requiredText(row['단위량'], '단위량', line),
       calories: requiredNumber(row['칼로리'], '칼로리', line),
       carbs: nullableNumber(row['탄수화물'], '탄수화물', line),

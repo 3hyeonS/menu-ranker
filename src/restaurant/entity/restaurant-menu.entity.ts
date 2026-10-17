@@ -38,8 +38,8 @@ export class RestaurantMenuEntity {
   @Column({ type: 'tinyint' })
   unit: number;
 
-  @Column({ type: 'decimal', precision: 12, scale: 3 })
-  weight: number;
+  @Column({ type: 'decimal', precision: 12, scale: 3, nullable: true })
+  weight: number | null;
 
   @Column({ type: 'varchar', length: 50, name: 'unit_quantity' })
   unitQuantity: string;
