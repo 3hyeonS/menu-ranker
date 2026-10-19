@@ -1,0 +1,342 @@
+{
+  "generatedAt": "2026-10-18T13:53:45.512Z",
+  "protocol": {
+    "knownBrand": "hybrid_rag",
+    "unseenBrand": "hybrid_rag when RAG confidence >= 0.7; otherwise llm_only",
+    "optionalAbstention": "abstain when selected estimate confidence < 0.6"
+  },
+  "sample": {
+    "knownBrand": 100,
+    "unseenCalibration": 42,
+    "unseenEvaluation": 58
+  },
+  "calibration": [
+    {
+      "threshold": 0.5,
+      "summary": {
+        "requested": 42,
+        "coverage": 1,
+        "meanConfidence": 0.6357142857142857,
+        "nutrients": {
+          "calories": {
+            "evaluated": 42,
+            "mae": 123.1909523809524,
+            "within20Percent": 0.2682926829268293,
+            "within30Percent": 0.3902439024390244
+          },
+          "carbs": {
+            "evaluated": 12,
+            "mae": 24.44333333333333,
+            "within20Percent": 0,
+            "within30Percent": 0
+          },
+          "protein": {
+            "evaluated": 37,
+            "mae": 2.422702702702703,
+            "within20Percent": 0.375,
+            "within30Percent": 0.40625
+          },
+          "fat": {
+            "evaluated": 15,
+            "mae": 4.688666666666666,
+            "within20Percent": 0.09090909090909091,
+            "within30Percent": 0.18181818181818182
+          }
+        }
+      }
+    },
+    {
+      "threshold": 0.6,
+      "summary": {
+        "requested": 42,
+        "coverage": 1,
+        "meanConfidence": 0.6642857142857143,
+        "nutrients": {
+          "calories": {
+            "evaluated": 42,
+            "mae": 118.57380952380953,
+            "within20Percent": 0.2926829268292683,
+            "within30Percent": 0.4146341463414634
+          },
+          "carbs": {
+            "evaluated": 12,
+            "mae": 23.776666666666667,
+            "within20Percent": 0,
+            "within30Percent": 0
+          },
+          "protein": {
+            "evaluated": 37,
+            "mae": 2.2605405405405405,
+            "within20Percent": 0.4375,
+            "within30Percent": 0.46875
+          },
+          "fat": {
+            "evaluated": 15,
+            "mae": 4.088666666666667,
+            "within20Percent": 0.09090909090909091,
+            "within30Percent": 0.2727272727272727
+          }
+        }
+      }
+    },
+    {
+      "threshold": 0.7,
+      "summary": {
+        "requested": 42,
+        "coverage": 1,
+        "meanConfidence": 0.7071428571428569,
+        "nutrients": {
+          "calories": {
+            "evaluated": 42,
+            "mae": 95.95238095238095,
+            "within20Percent": 0.4146341463414634,
+            "within30Percent": 0.4878048780487805
+          },
+          "carbs": {
+            "evaluated": 12,
+            "mae": 21.19333333333333,
+            "within20Percent": 0.2,
+            "within30Percent": 0.2
+          },
+          "protein": {
+            "evaluated": 37,
+            "mae": 1.985945945945946,
+            "within20Percent": 0.4375,
+            "within30Percent": 0.5
+          },
+          "fat": {
+            "evaluated": 15,
+            "mae": 3.3553333333333333,
+            "within20Percent": 0.09090909090909091,
+            "within30Percent": 0.2727272727272727
+          }
+        }
+      }
+    },
+    {
+      "threshold": 0.8,
+      "summary": {
+        "requested": 42,
+        "coverage": 1,
+        "meanConfidence": 0.719047619047619,
+        "nutrients": {
+          "calories": {
+            "evaluated": 42,
+            "mae": 109.72690476190476,
+            "within20Percent": 0.36585365853658536,
+            "within30Percent": 0.5121951219512195
+          },
+          "carbs": {
+            "evaluated": 12,
+            "mae": 17.5,
+            "within20Percent": 0.2,
+            "within30Percent": 0.2
+          },
+          "protein": {
+            "evaluated": 37,
+            "mae": 3.2862162162162165,
+            "within20Percent": 0.46875,
+            "within30Percent": 0.59375
+          },
+          "fat": {
+            "evaluated": 15,
+            "mae": 3.8,
+            "within20Percent": 0.18181818181818182,
+            "within30Percent": 0.36363636363636365
+          }
+        }
+      }
+    },
+    {
+      "threshold": 0.9,
+      "summary": {
+        "requested": 42,
+        "coverage": 1,
+        "meanConfidence": 0.719047619047619,
+        "nutrients": {
+          "calories": {
+            "evaluated": 42,
+            "mae": 109.72690476190476,
+            "within20Percent": 0.36585365853658536,
+            "within30Percent": 0.5121951219512195
+          },
+          "carbs": {
+            "evaluated": 12,
+            "mae": 17.5,
+            "within20Percent": 0.2,
+            "within30Percent": 0.2
+          },
+          "protein": {
+            "evaluated": 37,
+            "mae": 3.2862162162162165,
+            "within20Percent": 0.46875,
+            "within30Percent": 0.59375
+          },
+          "fat": {
+            "evaluated": 15,
+            "mae": 3.8,
+            "within20Percent": 0.18181818181818182,
+            "within30Percent": 0.36363636363636365
+          }
+        }
+      }
+    }
+  ],
+  "results": {
+    "knownBrand": {
+      "requested": 100,
+      "coverage": 1,
+      "meanConfidence": 0.7000000000000002,
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 48.72062,
+          "within20Percent": 0.7216494845360825,
+          "within30Percent": 0.8247422680412371
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 12.875950000000001,
+          "within20Percent": 0.3888888888888889,
+          "within30Percent": 0.5555555555555556
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 2.285685416666667,
+          "within20Percent": 0.632183908045977,
+          "within30Percent": 0.7586206896551724
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 4.937714285714286,
+          "within20Percent": 0.42857142857142855,
+          "within30Percent": 0.5
+        }
+      }
+    },
+    "unseenBrandEvaluation": {
+      "requested": 58,
+      "coverage": 1,
+      "meanConfidence": 0.7284482758620688,
+      "nutrients": {
+        "calories": {
+          "evaluated": 58,
+          "mae": 112.21551724137929,
+          "within20Percent": 0.46551724137931033,
+          "within30Percent": 0.5344827586206896
+        },
+        "carbs": {
+          "evaluated": 9,
+          "mae": 23.956666666666667,
+          "within20Percent": 0,
+          "within30Percent": 0.1111111111111111
+        },
+        "protein": {
+          "evaluated": 49,
+          "mae": 4.225408163265306,
+          "within20Percent": 0.225,
+          "within30Percent": 0.25
+        },
+        "fat": {
+          "evaluated": 17,
+          "mae": 3.665882352941177,
+          "within20Percent": 0.2,
+          "within30Percent": 0.26666666666666666
+        }
+      }
+    },
+    "unseenBrandEvaluationWithAbstention": {
+      "requested": 58,
+      "coverage": 0.896551724137931,
+      "meanConfidence": 0.7567307692307691,
+      "nutrients": {
+        "calories": {
+          "evaluated": 52,
+          "mae": 103.48076923076923,
+          "within20Percent": 0.4807692307692308,
+          "within30Percent": 0.5384615384615384
+        },
+        "carbs": {
+          "evaluated": 9,
+          "mae": 23.956666666666667,
+          "within20Percent": 0,
+          "within30Percent": 0.1111111111111111
+        },
+        "protein": {
+          "evaluated": 49,
+          "mae": 4.225408163265306,
+          "within20Percent": 0.225,
+          "within30Percent": 0.25
+        },
+        "fat": {
+          "evaluated": 17,
+          "mae": 3.665882352941177,
+          "within20Percent": 0.2,
+          "within30Percent": 0.26666666666666666
+        }
+      }
+    },
+    "unseenLlmOnlyEvaluation": {
+      "requested": 58,
+      "coverage": 1,
+      "meanConfidence": 0.7474137931034484,
+      "nutrients": {
+        "calories": {
+          "evaluated": 58,
+          "mae": 138.5262068965517,
+          "within20Percent": 0.39655172413793105,
+          "within30Percent": 0.46551724137931033
+        },
+        "carbs": {
+          "evaluated": 9,
+          "mae": 16.734444444444446,
+          "within20Percent": 0.1111111111111111,
+          "within30Percent": 0.3333333333333333
+        },
+        "protein": {
+          "evaluated": 49,
+          "mae": 6.46591836734694,
+          "within20Percent": 0.15,
+          "within30Percent": 0.15
+        },
+        "fat": {
+          "evaluated": 17,
+          "mae": 3.7129411764705886,
+          "within20Percent": 0.26666666666666666,
+          "within30Percent": 0.3333333333333333
+        }
+      }
+    },
+    "unseenRagOnlyEvaluation": {
+      "requested": 58,
+      "coverage": 1,
+      "meanConfidence": 0.6051724137931036,
+      "nutrients": {
+        "calories": {
+          "evaluated": 58,
+          "mae": 146.54586206896553,
+          "within20Percent": 0.39655172413793105,
+          "within30Percent": 0.5689655172413793
+        },
+        "carbs": {
+          "evaluated": 9,
+          "mae": 35.80111111111111,
+          "within20Percent": 0.1111111111111111,
+          "within30Percent": 0.1111111111111111
+        },
+        "protein": {
+          "evaluated": 49,
+          "mae": 3.130102040816326,
+          "within20Percent": 0.325,
+          "within30Percent": 0.425
+        },
+        "fat": {
+          "evaluated": 17,
+          "mae": 5.029411764705882,
+          "within20Percent": 0.13333333333333333,
+          "within30Percent": 0.2
+        }
+      }
+    }
+  }
+}

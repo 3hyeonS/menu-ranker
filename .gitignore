@@ -54,3 +54,9 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Reusable benchmark API caches
+/benchmark-results/cache/
+
+# Public benchmark datasets (downloaded, reproducible, and too large for Git)
+/benchmark-inputs/public/

@@ -1,0 +1,6855 @@
+{
+  "generatedAt": "2026-10-18T14:52:54.043Z",
+  "model": "gemini-2.5-flash-lite",
+  "sampleSize": 100,
+  "inputPolicy": [
+    "menu_name",
+    "photo (name_photo only)"
+  ],
+  "excludedInputs": [
+    "brand",
+    "category",
+    "weight",
+    "ground-truth nutrition"
+  ],
+  "summary": {
+    "name_only": {
+      "requested": 100,
+      "successful": 95,
+      "failureRate": 0.050000000000000044,
+      "latencyMs": {
+        "mean": 242.70647772631582,
+        "p95": 288.8203482
+      },
+      "nutrients": {
+        "calories": {
+          "mae": 247.4926315789474,
+          "within20Percent": 0.09473684210526316,
+          "within30Percent": 0.1368421052631579
+        },
+        "carbs": {
+          "mae": 30.356631578947376,
+          "within20Percent": 0.12631578947368421,
+          "within30Percent": 0.22105263157894736
+        },
+        "protein": {
+          "mae": 15.465526315789473,
+          "within20Percent": 0.08421052631578947,
+          "within30Percent": 0.10526315789473684
+        },
+        "fat": {
+          "mae": 9.733978947368422,
+          "within20Percent": 0.09782608695652174,
+          "within30Percent": 0.14130434782608695
+        }
+      }
+    },
+    "name_photo": {
+      "requested": 100,
+      "successful": 100,
+      "failureRate": 0,
+      "latencyMs": {
+        "mean": 482.31147129999977,
+        "p95": 766.6181607999999
+      },
+      "nutrients": {
+        "calories": {
+          "mae": 238.24900000000005,
+          "within20Percent": 0.08,
+          "within30Percent": 0.11
+        },
+        "carbs": {
+          "mae": 31.707800000000002,
+          "within20Percent": 0.13,
+          "within30Percent": 0.19
+        },
+        "protein": {
+          "mae": 12.860750000000001,
+          "within20Percent": 0.06,
+          "within30Percent": 0.08
+        },
+        "fat": {
+          "mae": 8.24984,
+          "within20Percent": 0.09278350515463918,
+          "within30Percent": 0.16494845360824742
+        }
+      }
+    }
+  },
+  "pairedSummary": {
+    "name_only": {
+      "requested": 95,
+      "successful": 95,
+      "failureRate": 0,
+      "latencyMs": {
+        "mean": 242.70647772631582,
+        "p95": 288.8203482
+      },
+      "nutrients": {
+        "calories": {
+          "mae": 247.4926315789474,
+          "within20Percent": 0.09473684210526316,
+          "within30Percent": 0.1368421052631579
+        },
+        "carbs": {
+          "mae": 30.356631578947376,
+          "within20Percent": 0.12631578947368421,
+          "within30Percent": 0.22105263157894736
+        },
+        "protein": {
+          "mae": 15.465526315789473,
+          "within20Percent": 0.08421052631578947,
+          "within30Percent": 0.10526315789473684
+        },
+        "fat": {
+          "mae": 9.733978947368422,
+          "within20Percent": 0.09782608695652174,
+          "within30Percent": 0.14130434782608695
+        }
+      }
+    },
+    "name_photo": {
+      "requested": 95,
+      "successful": 95,
+      "failureRate": 0,
+      "latencyMs": {
+        "mean": 485.22048663157864,
+        "p95": 766.6181607999999
+      },
+      "nutrients": {
+        "calories": {
+          "mae": 236.10315789473688,
+          "within20Percent": 0.08421052631578947,
+          "within30Percent": 0.11578947368421053
+        },
+        "carbs": {
+          "mae": 31.589263157894738,
+          "within20Percent": 0.1368421052631579,
+          "within30Percent": 0.18947368421052632
+        },
+        "protein": {
+          "mae": 12.871842105263159,
+          "within20Percent": 0.06315789473684211,
+          "within30Percent": 0.08421052631578947
+        },
+        "fat": {
+          "mae": 8.192926315789476,
+          "within20Percent": 0.08695652173913043,
+          "within30Percent": 0.16304347826086957
+        }
+      }
+    }
+  },
+  "rows": [
+    {
+      "id": "FoodBD-1928",
+      "condition": "name_only",
+      "truth": {
+        "calories": 250,
+        "carbs": 40,
+        "protein": 8,
+        "fat": 6
+      },
+      "estimate": {
+        "id": "FoodBD-1928",
+        "calories": 350,
+        "carbs": 60,
+        "protein": 15,
+        "fat": 5,
+        "confidence": 0.7
+      },
+      "latencyMs": 249.00224459999998,
+      "usage": {
+        "promptTokenCount": 286,
+        "candidatesTokenCount": 260,
+        "totalTokenCount": 546,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2552",
+      "condition": "name_only",
+      "truth": {
+        "calories": 170,
+        "carbs": 33,
+        "protein": 5,
+        "fat": 1
+      },
+      "estimate": {
+        "id": "FoodBD-2552",
+        "calories": 300,
+        "carbs": 55,
+        "protein": 10,
+        "fat": 4,
+        "confidence": 0.7
+      },
+      "latencyMs": 249.00224459999998,
+      "usage": {
+        "promptTokenCount": 286,
+        "candidatesTokenCount": 260,
+        "totalTokenCount": 546,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3327",
+      "condition": "name_only",
+      "truth": {
+        "calories": 280.1,
+        "carbs": 52.2,
+        "protein": 8,
+        "fat": 4.372
+      },
+      "estimate": {
+        "id": "FoodBD-3327",
+        "calories": 450,
+        "carbs": 70,
+        "protein": 20,
+        "fat": 10,
+        "confidence": 0.8
+      },
+      "latencyMs": 249.00224459999998,
+      "usage": {
+        "promptTokenCount": 286,
+        "candidatesTokenCount": 260,
+        "totalTokenCount": 546,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3588",
+      "condition": "name_only",
+      "truth": {
+        "calories": 262,
+        "carbs": 32,
+        "protein": 8,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-3588",
+        "calories": 400,
+        "carbs": 65,
+        "protein": 18,
+        "fat": 8,
+        "confidence": 0.8
+      },
+      "latencyMs": 249.00224459999998,
+      "usage": {
+        "promptTokenCount": 286,
+        "candidatesTokenCount": 260,
+        "totalTokenCount": 546,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3482",
+      "condition": "name_only",
+      "truth": {
+        "calories": 590,
+        "carbs": 107,
+        "protein": 18.4,
+        "fat": 7.6
+      },
+      "estimate": {
+        "id": "FoodBD-3482",
+        "calories": 500,
+        "carbs": 75,
+        "protein": 30,
+        "fat": 12,
+        "confidence": 0.9
+      },
+      "latencyMs": 249.00224459999998,
+      "usage": {
+        "promptTokenCount": 286,
+        "candidatesTokenCount": 260,
+        "totalTokenCount": 546,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2561",
+      "condition": "name_only",
+      "truth": {
+        "calories": 209,
+        "carbs": 36,
+        "protein": 6,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2561",
+        "calories": 350,
+        "carbs": 40,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 238.46048680000004,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2131",
+      "condition": "name_only",
+      "truth": {
+        "calories": 210,
+        "carbs": 45,
+        "protein": 6,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "FoodBD-2131",
+        "calories": 250,
+        "carbs": 45,
+        "protein": 8,
+        "fat": 5,
+        "confidence": 0.8
+      },
+      "latencyMs": 238.46048680000004,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2405",
+      "condition": "name_only",
+      "truth": {
+        "calories": 283,
+        "carbs": 35,
+        "protein": 11,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-2405",
+        "calories": 400,
+        "carbs": 50,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.75
+      },
+      "latencyMs": 238.46048680000004,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2132",
+      "condition": "name_only",
+      "truth": {
+        "calories": 231,
+        "carbs": 36,
+        "protein": 7,
+        "fat": 6
+      },
+      "estimate": {
+        "id": "FoodBD-2132",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.85
+      },
+      "latencyMs": 238.46048680000004,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3392",
+      "condition": "name_only",
+      "truth": {
+        "calories": 488.9,
+        "carbs": 73.75,
+        "protein": 15.35,
+        "fat": 12.854
+      },
+      "estimate": {
+        "id": "FoodBD-3392",
+        "calories": 700,
+        "carbs": 80,
+        "protein": 35,
+        "fat": 30,
+        "confidence": 0.7
+      },
+      "latencyMs": 238.46048680000004,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2631",
+      "condition": "name_only",
+      "truth": {
+        "calories": 154,
+        "carbs": 32.5,
+        "protein": 5,
+        "fat": 0.24
+      },
+      "estimate": {
+        "id": "FoodBD-2631",
+        "calories": 400,
+        "carbs": 50,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 243.34446780000007,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 317,
+        "totalTokenCount": 605,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3156",
+      "condition": "name_only",
+      "truth": {
+        "calories": 207,
+        "carbs": 5,
+        "protein": 14.3,
+        "fat": 14.2
+      },
+      "estimate": {
+        "id": "FoodBD-3156",
+        "calories": 350,
+        "carbs": 40,
+        "protein": 30,
+        "fat": 10,
+        "confidence": 0.8
+      },
+      "latencyMs": 243.34446780000007,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 317,
+        "totalTokenCount": 605,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2940",
+      "condition": "name_only",
+      "truth": {
+        "calories": 370,
+        "carbs": 16,
+        "protein": 24.7,
+        "fat": 21.8
+      },
+      "estimate": {
+        "id": "FoodBD-2940",
+        "calories": 450,
+        "carbs": 45,
+        "protein": 35,
+        "fat": 15,
+        "confidence": 0.75
+      },
+      "latencyMs": 243.34446780000007,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 317,
+        "totalTokenCount": 605,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3385",
+      "condition": "name_only",
+      "truth": {
+        "calories": 457,
+        "carbs": 79.65,
+        "protein": 11.25,
+        "fat": 8.23
+      },
+      "estimate": {
+        "id": "FoodBD-3385",
+        "calories": 450,
+        "carbs": 40,
+        "protein": 35,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 243.34446780000007,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 317,
+        "totalTokenCount": 605,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2640",
+      "condition": "name_only",
+      "truth": {
+        "calories": 281.6,
+        "carbs": 32.5,
+        "protein": 11.6,
+        "fat": 11.24
+      },
+      "estimate": {
+        "id": "FoodBD-2640",
+        "calories": 480,
+        "carbs": 52,
+        "protein": 38,
+        "fat": 16,
+        "confidence": 0.8
+      },
+      "latencyMs": 243.34446780000007,
+      "usage": {
+        "promptTokenCount": 288,
+        "candidatesTokenCount": 317,
+        "totalTokenCount": 605,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3446",
+      "condition": "name_only",
+      "truth": {
+        "calories": 190.3,
+        "carbs": 42,
+        "protein": 3,
+        "fat": 0.5
+      },
+      "estimate": {
+        "id": "FoodBD-3446",
+        "calories": 450,
+        "carbs": 70,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 243.9129476,
+      "usage": {
+        "promptTokenCount": 278,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 593,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2319",
+      "condition": "name_only",
+      "truth": {
+        "calories": 208,
+        "carbs": 25,
+        "protein": 6,
+        "fat": 8
+      },
+      "estimate": {
+        "id": "FoodBD-2319",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 243.9129476,
+      "usage": {
+        "promptTokenCount": 278,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 593,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2639",
+      "condition": "name_only",
+      "truth": {
+        "calories": 295,
+        "carbs": 39.12,
+        "protein": 17.46,
+        "fat": 5.5
+      },
+      "estimate": {
+        "id": "FoodBD-2639",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 40,
+        "fat": 15,
+        "confidence": 0.9
+      },
+      "latencyMs": 243.9129476,
+      "usage": {
+        "promptTokenCount": 278,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 593,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1994",
+      "condition": "name_only",
+      "truth": {
+        "calories": 234,
+        "carbs": 27,
+        "protein": 6,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-1994",
+        "calories": 500,
+        "carbs": 50,
+        "protein": 35,
+        "fat": 18,
+        "confidence": 0.85
+      },
+      "latencyMs": 243.9129476,
+      "usage": {
+        "promptTokenCount": 278,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 593,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2283",
+      "condition": "name_only",
+      "truth": {
+        "calories": 205,
+        "carbs": 31,
+        "protein": 5,
+        "fat": 6
+      },
+      "estimate": {
+        "id": "FoodBD-2283",
+        "calories": 300,
+        "carbs": 40,
+        "protein": 5,
+        "fat": 10,
+        "confidence": 0.6
+      },
+      "latencyMs": 243.9129476,
+      "usage": {
+        "promptTokenCount": 278,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 593,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2209",
+      "condition": "name_only",
+      "truth": {
+        "calories": 282,
+        "carbs": 16,
+        "protein": 16,
+        "fat": 16
+      },
+      "estimate": {
+        "id": "FoodBD-2209",
+        "calories": 650,
+        "carbs": 70,
+        "protein": 40,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 221.4991412000001,
+      "usage": {
+        "promptTokenCount": 291,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 557,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2232",
+      "condition": "name_only",
+      "truth": {
+        "calories": 241,
+        "carbs": 23,
+        "protein": 11,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2232",
+        "calories": 700,
+        "carbs": 75,
+        "protein": 45,
+        "fat": 25,
+        "confidence": 0.75
+      },
+      "latencyMs": 221.4991412000001,
+      "usage": {
+        "promptTokenCount": 291,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 557,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1805",
+      "condition": "name_only",
+      "truth": {
+        "calories": 355,
+        "carbs": 39,
+        "protein": 14,
+        "fat": 15
+      },
+      "estimate": {
+        "id": "FoodBD-1805",
+        "calories": 750,
+        "carbs": 80,
+        "protein": 50,
+        "fat": 25,
+        "confidence": 0.8
+      },
+      "latencyMs": 221.4991412000001,
+      "usage": {
+        "promptTokenCount": 291,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 557,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2449",
+      "condition": "name_only",
+      "truth": {
+        "calories": 313,
+        "carbs": 38,
+        "protein": 13,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2449",
+        "calories": 700,
+        "carbs": 75,
+        "protein": 45,
+        "fat": 25,
+        "confidence": 0.75
+      },
+      "latencyMs": 221.4991412000001,
+      "usage": {
+        "promptTokenCount": 291,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 557,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2126",
+      "condition": "name_only",
+      "truth": {
+        "calories": 344,
+        "carbs": 47,
+        "protein": 13,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-2126",
+        "calories": 680,
+        "carbs": 72,
+        "protein": 42,
+        "fat": 22,
+        "confidence": 0.72
+      },
+      "latencyMs": 221.4991412000001,
+      "usage": {
+        "promptTokenCount": 291,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 557,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2971",
+      "condition": "name_only",
+      "truth": {
+        "calories": 365,
+        "carbs": 46,
+        "protein": 13.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-2971",
+        "calories": 450,
+        "carbs": 50,
+        "protein": 20,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 232.26987179999998,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 549,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2586",
+      "condition": "name_only",
+      "truth": {
+        "calories": 260,
+        "carbs": 33,
+        "protein": 11,
+        "fat": 8
+      },
+      "estimate": {
+        "id": "FoodBD-2586",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 232.26987179999998,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 549,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2865",
+      "condition": "name_only",
+      "truth": {
+        "calories": 336.2,
+        "carbs": 24.5,
+        "protein": 17.5,
+        "fat": 17.92
+      },
+      "estimate": {
+        "id": "FoodBD-2865",
+        "calories": 600,
+        "carbs": 55,
+        "protein": 35,
+        "fat": 25,
+        "confidence": 0.85
+      },
+      "latencyMs": 232.26987179999998,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 549,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1938",
+      "condition": "name_only",
+      "truth": {
+        "calories": 353,
+        "carbs": 50,
+        "protein": 14,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-1938",
+        "calories": 500,
+        "carbs": 45,
+        "protein": 30,
+        "fat": 22,
+        "confidence": 0.75
+      },
+      "latencyMs": 232.26987179999998,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 549,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2982",
+      "condition": "name_only",
+      "truth": {
+        "calories": 262.5,
+        "carbs": 17,
+        "protein": 14,
+        "fat": 15.9
+      },
+      "estimate": {
+        "id": "FoodBD-2982",
+        "calories": 480,
+        "carbs": 52,
+        "protein": 28,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 232.26987179999998,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 549,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2159",
+      "condition": "name_only",
+      "truth": {
+        "calories": 340,
+        "carbs": 40,
+        "protein": 13,
+        "fat": 13
+      },
+      "estimate": {
+        "id": "FoodBD-2159",
+        "calories": 650,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 219.95856779999994,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 553,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2765",
+      "condition": "name_only",
+      "truth": {
+        "calories": 266,
+        "carbs": 54.4,
+        "protein": 6.7,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2765",
+        "calories": 450,
+        "carbs": 70,
+        "protein": 15,
+        "fat": 10,
+        "confidence": 0.8
+      },
+      "latencyMs": 219.95856779999994,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 553,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2920",
+      "condition": "name_only",
+      "truth": {
+        "calories": 195.1,
+        "carbs": 28.25,
+        "protein": 10.3,
+        "fat": 4.18
+      },
+      "estimate": {
+        "id": "FoodBD-2920",
+        "calories": 300,
+        "carbs": 60,
+        "protein": 10,
+        "fat": 5,
+        "confidence": 0.75
+      },
+      "latencyMs": 219.95856779999994,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 553,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2746",
+      "condition": "name_only",
+      "truth": {
+        "calories": 215,
+        "carbs": 16,
+        "protein": 8.7,
+        "fat": 11.8
+      },
+      "estimate": {
+        "id": "FoodBD-2746",
+        "calories": 400,
+        "carbs": 75,
+        "protein": 12,
+        "fat": 8,
+        "confidence": 0.7
+      },
+      "latencyMs": 219.95856779999994,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 553,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3442",
+      "condition": "name_only",
+      "truth": {
+        "calories": 547,
+        "carbs": 99.75,
+        "protein": 12.75,
+        "fat": 10.32
+      },
+      "estimate": {
+        "id": "FoodBD-3442",
+        "calories": 800,
+        "carbs": 100,
+        "protein": 40,
+        "fat": 30,
+        "confidence": 0.6
+      },
+      "latencyMs": 219.95856779999994,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 553,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1892",
+      "condition": "name_only",
+      "truth": {
+        "calories": 302,
+        "carbs": 33,
+        "protein": 12,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-1892",
+        "calories": 650,
+        "carbs": 70,
+        "protein": 30,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 229.09736599999997,
+      "usage": {
+        "promptTokenCount": 275,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 590,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2794",
+      "condition": "name_only",
+      "truth": {
+        "calories": 198.25,
+        "carbs": 23,
+        "protein": 11.4,
+        "fat": 6.394
+      },
+      "estimate": {
+        "id": "FoodBD-2794",
+        "calories": 600,
+        "carbs": 65,
+        "protein": 28,
+        "fat": 22,
+        "confidence": 0.7
+      },
+      "latencyMs": 229.09736599999997,
+      "usage": {
+        "promptTokenCount": 275,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 590,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2421",
+      "condition": "name_only",
+      "truth": {
+        "calories": 205,
+        "carbs": 15,
+        "protein": 8,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2421",
+        "calories": 450,
+        "carbs": 30,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.6
+      },
+      "latencyMs": 229.09736599999997,
+      "usage": {
+        "promptTokenCount": 275,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 590,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1953",
+      "condition": "name_only",
+      "truth": {
+        "calories": 258,
+        "carbs": 39,
+        "protein": 7,
+        "fat": 7
+      },
+      "estimate": {
+        "id": "FoodBD-1953",
+        "calories": 400,
+        "carbs": 45,
+        "protein": 15,
+        "fat": 18,
+        "confidence": 0.6
+      },
+      "latencyMs": 229.09736599999997,
+      "usage": {
+        "promptTokenCount": 275,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 590,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2863",
+      "condition": "name_only",
+      "truth": {
+        "calories": 86.8,
+        "carbs": 18,
+        "protein": 3.2,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "FoodBD-2863",
+        "calories": 350,
+        "carbs": 40,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.5
+      },
+      "latencyMs": 229.09736599999997,
+      "usage": {
+        "promptTokenCount": 275,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 590,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2574",
+      "condition": "name_only",
+      "truth": {
+        "calories": 295,
+        "carbs": 32,
+        "protein": 11,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2574",
+        "calories": 150,
+        "carbs": 2,
+        "protein": 12,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 249.5931536,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 316,
+        "totalTokenCount": 608,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1946",
+      "condition": "name_only",
+      "truth": {
+        "calories": 392,
+        "carbs": 49,
+        "protein": 17,
+        "fat": 13
+      },
+      "estimate": {
+        "id": "FoodBD-1946",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 249.5931536,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 316,
+        "totalTokenCount": 608,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1999",
+      "condition": "name_only",
+      "truth": {
+        "calories": 365,
+        "carbs": 50,
+        "protein": 13,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-1999",
+        "calories": 580,
+        "carbs": 65,
+        "protein": 35,
+        "fat": 18,
+        "confidence": 0.85
+      },
+      "latencyMs": 249.5931536,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 316,
+        "totalTokenCount": 608,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2905",
+      "condition": "name_only",
+      "truth": {
+        "calories": 89,
+        "carbs": 16.5,
+        "protein": 2.9,
+        "fat": 1
+      },
+      "estimate": {
+        "id": "FoodBD-2905",
+        "calories": 650,
+        "carbs": 75,
+        "protein": 40,
+        "fat": 25,
+        "confidence": 0.9
+      },
+      "latencyMs": 249.5931536,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 316,
+        "totalTokenCount": 608,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2422",
+      "condition": "name_only",
+      "truth": {
+        "calories": 382,
+        "carbs": 51,
+        "protein": 14,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2422",
+        "calories": 600,
+        "carbs": 65,
+        "protein": 35,
+        "fat": 25,
+        "confidence": 0.8
+      },
+      "latencyMs": 249.5931536,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 316,
+        "totalTokenCount": 608,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2578",
+      "condition": "name_only",
+      "truth": {
+        "calories": 206,
+        "carbs": 35,
+        "protein": 6,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2578",
+        "calories": 350,
+        "carbs": 45,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 234.15176759999994,
+      "usage": {
+        "promptTokenCount": 283,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 601,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1885",
+      "condition": "name_only",
+      "truth": {
+        "calories": 402,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-1885",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 234.15176759999994,
+      "usage": {
+        "promptTokenCount": 283,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 601,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2355",
+      "condition": "name_only",
+      "truth": {
+        "calories": 180,
+        "carbs": 33,
+        "protein": 5,
+        "fat": 2
+      },
+      "estimate": {
+        "id": "FoodBD-2355",
+        "calories": 400,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 12,
+        "confidence": 0.75
+      },
+      "latencyMs": 234.15176759999994,
+      "usage": {
+        "promptTokenCount": 283,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 601,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2351",
+      "condition": "name_only",
+      "truth": {
+        "calories": 334,
+        "carbs": 39,
+        "protein": 12,
+        "fat": 13
+      },
+      "estimate": {
+        "id": "FoodBD-2351",
+        "calories": 300,
+        "carbs": 40,
+        "protein": 8,
+        "fat": 10,
+        "confidence": 0.65
+      },
+      "latencyMs": 234.15176759999994,
+      "usage": {
+        "promptTokenCount": 283,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 601,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3268",
+      "condition": "name_only",
+      "truth": {
+        "calories": 380,
+        "carbs": 56.5,
+        "protein": 11.25,
+        "fat": 9.56
+      },
+      "estimate": {
+        "id": "FoodBD-3268",
+        "calories": 550,
+        "carbs": 70,
+        "protein": 20,
+        "fat": 22,
+        "confidence": 0.85
+      },
+      "latencyMs": 234.15176759999994,
+      "usage": {
+        "promptTokenCount": 283,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 601,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2429",
+      "condition": "name_only",
+      "truth": {
+        "calories": 225,
+        "carbs": 22,
+        "protein": 7,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2429",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 226.70580279999996,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 558,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2947",
+      "condition": "name_only",
+      "truth": {
+        "calories": 270.3,
+        "carbs": 9.25,
+        "protein": 18.9,
+        "fat": 17.1
+      },
+      "estimate": {
+        "id": "FoodBD-2947",
+        "calories": 700,
+        "carbs": 70,
+        "protein": 45,
+        "fat": 25,
+        "confidence": 0.8
+      },
+      "latencyMs": 226.70580279999996,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 558,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3124",
+      "condition": "name_only",
+      "truth": {
+        "calories": 156.9,
+        "carbs": 22.6,
+        "protein": 6,
+        "fat": 4.5
+      },
+      "estimate": {
+        "id": "FoodBD-3124",
+        "calories": 600,
+        "carbs": 65,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.75
+      },
+      "latencyMs": 226.70580279999996,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 558,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2632",
+      "condition": "name_only",
+      "truth": {
+        "calories": 181.8,
+        "carbs": 15.75,
+        "protein": 13.2,
+        "fat": 7.5
+      },
+      "estimate": {
+        "id": "FoodBD-2632",
+        "calories": 500,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 25,
+        "confidence": 0.65
+      },
+      "latencyMs": 226.70580279999996,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 558,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2424",
+      "condition": "name_only",
+      "truth": {
+        "calories": 176,
+        "carbs": 28,
+        "protein": 4,
+        "fat": 5
+      },
+      "estimate": {
+        "id": "FoodBD-2424",
+        "calories": 650,
+        "carbs": 50,
+        "protein": 40,
+        "fat": 30,
+        "confidence": 0.75
+      },
+      "latencyMs": 226.70580279999996,
+      "usage": {
+        "promptTokenCount": 292,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 558,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3525",
+      "condition": "name_only",
+      "truth": {
+        "calories": 646.4,
+        "carbs": 118.5,
+        "protein": 14.8,
+        "fat": 9.93
+      },
+      "estimate": {
+        "id": "FoodBD-3525",
+        "calories": 750,
+        "carbs": 120,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.6
+      },
+      "latencyMs": 288.8203482,
+      "usage": {
+        "promptTokenCount": 313,
+        "candidatesTokenCount": 319,
+        "totalTokenCount": 632,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2785",
+      "condition": "name_only",
+      "truth": {
+        "calories": 275,
+        "carbs": 25,
+        "protein": 10.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-2785",
+        "calories": 450,
+        "carbs": 40,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 288.8203482,
+      "usage": {
+        "promptTokenCount": 313,
+        "candidatesTokenCount": 319,
+        "totalTokenCount": 632,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2526",
+      "condition": "name_only",
+      "truth": {
+        "calories": 330,
+        "carbs": 41,
+        "protein": 14,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2526",
+        "calories": 600,
+        "carbs": 70,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 288.8203482,
+      "usage": {
+        "promptTokenCount": 313,
+        "candidatesTokenCount": 319,
+        "totalTokenCount": 632,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2374",
+      "condition": "name_only",
+      "truth": {
+        "calories": 340,
+        "carbs": 37,
+        "protein": 13,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2374",
+        "calories": 700,
+        "carbs": 90,
+        "protein": 35,
+        "fat": 25,
+        "confidence": 0.75
+      },
+      "latencyMs": 288.8203482,
+      "usage": {
+        "promptTokenCount": 313,
+        "candidatesTokenCount": 319,
+        "totalTokenCount": 632,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3076",
+      "condition": "name_only",
+      "truth": {
+        "calories": 317,
+        "carbs": 24.5,
+        "protein": 23.6,
+        "fat": 13.6
+      },
+      "estimate": {
+        "id": "FoodBD-3076",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 288.8203482,
+      "usage": {
+        "promptTokenCount": 313,
+        "candidatesTokenCount": 319,
+        "totalTokenCount": 632,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3420",
+      "condition": "name_only",
+      "truth": {
+        "calories": 205.45,
+        "carbs": 44.5,
+        "protein": 3.3375,
+        "fat": 0.9
+      },
+      "estimate": {
+        "id": "FoodBD-3420",
+        "calories": 450,
+        "carbs": 70,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 243.53550860000004,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2317",
+      "condition": "name_only",
+      "truth": {
+        "calories": 353,
+        "carbs": 40,
+        "protein": 13,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2317",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 243.53550860000004,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2886",
+      "condition": "name_only",
+      "truth": {
+        "calories": 477.3,
+        "carbs": 37,
+        "protein": 23.25,
+        "fat": 24.7
+      },
+      "estimate": {
+        "id": "FoodBD-2886",
+        "calories": 550,
+        "carbs": 75,
+        "protein": 25,
+        "fat": 10,
+        "confidence": 0.75
+      },
+      "latencyMs": 243.53550860000004,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2444",
+      "condition": "name_only",
+      "truth": {
+        "calories": 275,
+        "carbs": 30,
+        "protein": 10,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2444",
+        "calories": 500,
+        "carbs": 60,
+        "protein": 20,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 243.53550860000004,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2620",
+      "condition": "name_only",
+      "truth": {
+        "calories": 263,
+        "carbs": 19.2,
+        "protein": 13.1,
+        "fat": 15
+      },
+      "estimate": {
+        "id": "FoodBD-2620",
+        "calories": 350,
+        "carbs": 40,
+        "protein": 20,
+        "fat": 10,
+        "confidence": 0.85
+      },
+      "latencyMs": 243.53550860000004,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 318,
+        "totalTokenCount": 603,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2454",
+      "condition": "name_only",
+      "truth": {
+        "calories": 154,
+        "carbs": 24,
+        "protein": 4,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2454",
+        "calories": 750,
+        "carbs": 120,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 251.06444760000005,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 271,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2315",
+      "condition": "name_only",
+      "truth": {
+        "calories": 318,
+        "carbs": 33,
+        "protein": 11,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2315",
+        "calories": 800,
+        "carbs": 100,
+        "protein": 50,
+        "fat": 25,
+        "confidence": 0.8
+      },
+      "latencyMs": 251.06444760000005,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 271,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2286",
+      "condition": "name_only",
+      "truth": {
+        "calories": 200,
+        "carbs": 27,
+        "protein": 5,
+        "fat": 7
+      },
+      "estimate": {
+        "id": "FoodBD-2286",
+        "calories": 650,
+        "carbs": 110,
+        "protein": 25,
+        "fat": 10,
+        "confidence": 0.75
+      },
+      "latencyMs": 251.06444760000005,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 271,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2670",
+      "condition": "name_only",
+      "truth": {
+        "calories": 204.7,
+        "carbs": 22.5,
+        "protein": 8.8,
+        "fat": 7.9
+      },
+      "estimate": {
+        "id": "FoodBD-2670",
+        "calories": 700,
+        "carbs": 130,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.65
+      },
+      "latencyMs": 251.06444760000005,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 271,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2343",
+      "condition": "name_only",
+      "truth": {
+        "calories": 179,
+        "carbs": 27,
+        "protein": 5,
+        "fat": 5
+      },
+      "estimate": {
+        "id": "FoodBD-2343",
+        "calories": 780,
+        "carbs": 115,
+        "protein": 45,
+        "fat": 20,
+        "confidence": 0.78
+      },
+      "latencyMs": 251.06444760000005,
+      "usage": {
+        "promptTokenCount": 285,
+        "candidatesTokenCount": 271,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2189",
+      "condition": "name_only",
+      "truth": {
+        "calories": 321,
+        "carbs": 41,
+        "protein": 12,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2189",
+        "calories": 750,
+        "carbs": 90,
+        "protein": 40,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 218.9996642,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2139",
+      "condition": "name_only",
+      "truth": {
+        "calories": 233,
+        "carbs": 23,
+        "protein": 8,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2139",
+        "calories": 850,
+        "carbs": 100,
+        "protein": 50,
+        "fat": 30,
+        "confidence": 0.75
+      },
+      "latencyMs": 218.9996642,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3079",
+      "condition": "name_only",
+      "truth": {
+        "calories": 172.2,
+        "carbs": 23.4,
+        "protein": 12.5,
+        "fat": 3.12
+      },
+      "estimate": {
+        "id": "FoodBD-3079",
+        "calories": 700,
+        "carbs": 80,
+        "protein": 45,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 218.9996642,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2481",
+      "condition": "name_only",
+      "truth": {
+        "calories": 335,
+        "carbs": 42,
+        "protein": 14,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2481",
+        "calories": 650,
+        "carbs": 75,
+        "protein": 40,
+        "fat": 18,
+        "confidence": 0.65
+      },
+      "latencyMs": 218.9996642,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2042",
+      "condition": "name_only",
+      "truth": {
+        "calories": 372,
+        "carbs": 51,
+        "protein": 15,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2042",
+        "calories": 600,
+        "carbs": 70,
+        "protein": 35,
+        "fat": 15,
+        "confidence": 0.6
+      },
+      "latencyMs": 218.9996642,
+      "usage": {
+        "promptTokenCount": 290,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 556,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2553",
+      "condition": "name_only",
+      "truth": {
+        "calories": 360,
+        "carbs": 41,
+        "protein": 13,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2553",
+        "calories": 750,
+        "carbs": 90,
+        "protein": 30,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 250.82666819999994,
+      "usage": {
+        "promptTokenCount": 276,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 539,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2808",
+      "condition": "name_only",
+      "truth": {
+        "calories": 420,
+        "carbs": 56,
+        "protein": 15,
+        "fat": 18
+      },
+      "estimate": {
+        "id": "FoodBD-2808",
+        "calories": 300,
+        "carbs": 60,
+        "protein": 8,
+        "fat": 3,
+        "confidence": 0.8
+      },
+      "latencyMs": 250.82666819999994,
+      "usage": {
+        "promptTokenCount": 276,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 539,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1778",
+      "condition": "name_only",
+      "truth": {
+        "calories": 260,
+        "carbs": 39,
+        "protein": 7,
+        "fat": 7
+      },
+      "estimate": {
+        "id": "FoodBD-1778",
+        "calories": 600,
+        "carbs": 70,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.75
+      },
+      "latencyMs": 250.82666819999994,
+      "usage": {
+        "promptTokenCount": 276,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 539,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3101",
+      "condition": "name_only",
+      "truth": {
+        "calories": 295,
+        "carbs": 31,
+        "protein": 11.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-3101",
+        "calories": 450,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 250.82666819999994,
+      "usage": {
+        "promptTokenCount": 276,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 539,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2080",
+      "condition": "name_only",
+      "truth": {
+        "calories": 245,
+        "carbs": 22,
+        "protein": 9,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2080",
+        "calories": 550,
+        "carbs": 40,
+        "protein": 25,
+        "fat": 30,
+        "confidence": 0.75
+      },
+      "latencyMs": 250.82666819999994,
+      "usage": {
+        "promptTokenCount": 276,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 539,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3468",
+      "condition": "name_only",
+      "truth": {
+        "calories": 397.5,
+        "carbs": 74.5,
+        "protein": 10.8,
+        "fat": 5.56
+      },
+      "estimate": {
+        "id": "FoodBD-3468",
+        "calories": 450,
+        "carbs": 40,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 281.1532542000001,
+      "usage": {
+        "promptTokenCount": 304,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 619,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2961",
+      "condition": "name_only",
+      "truth": {
+        "calories": 156.3,
+        "carbs": 22.6,
+        "protein": 5.7,
+        "fat": 4.55
+      },
+      "estimate": {
+        "id": "FoodBD-2961",
+        "calories": 500,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 25,
+        "confidence": 0.6
+      },
+      "latencyMs": 281.1532542000001,
+      "usage": {
+        "promptTokenCount": 304,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 619,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2036",
+      "condition": "name_only",
+      "truth": {
+        "calories": 275,
+        "carbs": 27,
+        "protein": 12,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2036",
+        "calories": 400,
+        "carbs": 45,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 281.1532542000001,
+      "usage": {
+        "promptTokenCount": 304,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 619,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3546",
+      "condition": "name_only",
+      "truth": {
+        "calories": 358.6,
+        "carbs": 57.7,
+        "protein": 10.3,
+        "fat": 7.8
+      },
+      "estimate": {
+        "id": "FoodBD-3546",
+        "calories": 600,
+        "carbs": 70,
+        "protein": 35,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 281.1532542000001,
+      "usage": {
+        "promptTokenCount": 304,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 619,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3014",
+      "condition": "name_only",
+      "truth": {
+        "calories": 272.5,
+        "carbs": 13.4,
+        "protein": 14.74,
+        "fat": 17.86
+      },
+      "estimate": {
+        "id": "FoodBD-3014",
+        "calories": 480,
+        "carbs": 40,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 281.1532542000001,
+      "usage": {
+        "promptTokenCount": 304,
+        "candidatesTokenCount": 315,
+        "totalTokenCount": 619,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3342",
+      "condition": "name_only",
+      "truth": {
+        "calories": 634,
+        "carbs": 113,
+        "protein": 21.7875,
+        "fat": 9.4
+      },
+      "estimate": {
+        "id": "FoodBD-3342",
+        "calories": 750,
+        "carbs": 100,
+        "protein": 40,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 261.78285959999994,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 314,
+        "totalTokenCount": 598,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3073",
+      "condition": "name_only",
+      "truth": {
+        "calories": 149.5,
+        "carbs": 24.2,
+        "protein": 4.8,
+        "fat": 3.5
+      },
+      "estimate": {
+        "id": "FoodBD-3073",
+        "calories": 500,
+        "carbs": 70,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.6
+      },
+      "latencyMs": 261.78285959999994,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 314,
+        "totalTokenCount": 598,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2717",
+      "condition": "name_only",
+      "truth": {
+        "calories": 225,
+        "carbs": 16,
+        "protein": 9.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-2717",
+        "calories": 400,
+        "carbs": 50,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 261.78285959999994,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 314,
+        "totalTokenCount": 598,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3191",
+      "condition": "name_only",
+      "truth": {
+        "calories": 110,
+        "carbs": 25,
+        "protein": 2,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "FoodBD-3191",
+        "calories": 350,
+        "carbs": 40,
+        "protein": 25,
+        "fat": 10,
+        "confidence": 0.8
+      },
+      "latencyMs": 261.78285959999994,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 314,
+        "totalTokenCount": 598,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3005",
+      "condition": "name_only",
+      "truth": {
+        "calories": 169.5,
+        "carbs": 29.2,
+        "protein": 4.8,
+        "fat": 3.5
+      },
+      "estimate": {
+        "id": "FoodBD-3005",
+        "calories": 300,
+        "carbs": 45,
+        "protein": 10,
+        "fat": 8,
+        "confidence": 0.8
+      },
+      "latencyMs": 261.78285959999994,
+      "usage": {
+        "promptTokenCount": 284,
+        "candidatesTokenCount": 314,
+        "totalTokenCount": 598,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2582",
+      "condition": "name_only",
+      "truth": {
+        "calories": 197,
+        "carbs": 35,
+        "protein": 6,
+        "fat": 3
+      },
+      "estimate": {
+        "id": "FoodBD-2582",
+        "calories": 250,
+        "carbs": 30,
+        "protein": 5,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 227.24450859999996,
+      "usage": {
+        "promptTokenCount": 296,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 560,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1857",
+      "condition": "name_only",
+      "truth": {
+        "calories": 304,
+        "carbs": 33,
+        "protein": 12,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-1857",
+        "calories": 450,
+        "carbs": 60,
+        "protein": 15,
+        "fat": 18,
+        "confidence": 0.8
+      },
+      "latencyMs": 227.24450859999996,
+      "usage": {
+        "promptTokenCount": 296,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 560,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3391",
+      "condition": "name_only",
+      "truth": {
+        "calories": 324.5,
+        "carbs": 47,
+        "protein": 11.9,
+        "fat": 9.142
+      },
+      "estimate": {
+        "id": "FoodBD-3391",
+        "calories": 600,
+        "carbs": 90,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.9
+      },
+      "latencyMs": 227.24450859999996,
+      "usage": {
+        "promptTokenCount": 296,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 560,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2211",
+      "condition": "name_only",
+      "truth": {
+        "calories": 275,
+        "carbs": 30,
+        "protein": 10,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2211",
+        "calories": 300,
+        "carbs": 40,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.75
+      },
+      "latencyMs": 227.24450859999996,
+      "usage": {
+        "promptTokenCount": 296,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 560,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3141",
+      "condition": "name_only",
+      "truth": {
+        "calories": 225,
+        "carbs": 16,
+        "protein": 9.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-3141",
+        "calories": 350,
+        "carbs": 45,
+        "protein": 15,
+        "fat": 12,
+        "confidence": 0.85
+      },
+      "latencyMs": 227.24450859999996,
+      "usage": {
+        "promptTokenCount": 296,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 560,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1928",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 250,
+        "carbs": 40,
+        "protein": 8,
+        "fat": 6
+      },
+      "estimate": {
+        "id": "FoodBD-1928",
+        "calories": 350,
+        "carbs": 40,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 484.26291499999934,
+      "usage": {
+        "promptTokenCount": 1576,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2552",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 170,
+        "carbs": 33,
+        "protein": 5,
+        "fat": 1
+      },
+      "estimate": {
+        "id": "FoodBD-2552",
+        "calories": 250,
+        "carbs": 30,
+        "protein": 5,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 484.26291499999934,
+      "usage": {
+        "promptTokenCount": 1576,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3327",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 280.1,
+        "carbs": 52.2,
+        "protein": 8,
+        "fat": 4.372
+      },
+      "estimate": {
+        "id": "FoodBD-3327",
+        "calories": 400,
+        "carbs": 60,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 484.26291499999934,
+      "usage": {
+        "promptTokenCount": 1576,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3588",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 262,
+        "carbs": 32,
+        "protein": 8,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-3588",
+        "calories": 380,
+        "carbs": 45,
+        "protein": 25,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 484.26291499999934,
+      "usage": {
+        "promptTokenCount": 1576,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3482",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 590,
+        "carbs": 107,
+        "protein": 18.4,
+        "fat": 7.6
+      },
+      "estimate": {
+        "id": "FoodBD-3482",
+        "calories": 550,
+        "carbs": 65,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 484.26291499999934,
+      "usage": {
+        "promptTokenCount": 1576,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 286
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2561",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 209,
+        "carbs": 36,
+        "protein": 6,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2561",
+        "calories": 350,
+        "carbs": 50,
+        "protein": 10,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 454.7818921999991,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1842,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2131",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 210,
+        "carbs": 45,
+        "protein": 6,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "FoodBD-2131",
+        "calories": 250,
+        "carbs": 50,
+        "protein": 8,
+        "fat": 3,
+        "confidence": 0.8
+      },
+      "latencyMs": 454.7818921999991,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1842,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2405",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 283,
+        "carbs": 35,
+        "protein": 11,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-2405",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.75
+      },
+      "latencyMs": 454.7818921999991,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1842,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2132",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 231,
+        "carbs": 36,
+        "protein": 7,
+        "fat": 6
+      },
+      "estimate": {
+        "id": "FoodBD-2132",
+        "calories": 550,
+        "carbs": 75,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 454.7818921999991,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1842,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3392",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 488.9,
+        "carbs": 73.75,
+        "protein": 15.35,
+        "fat": 12.854
+      },
+      "estimate": {
+        "id": "FoodBD-3392",
+        "calories": 800,
+        "carbs": 100,
+        "protein": 25,
+        "fat": 30,
+        "confidence": 0.65
+      },
+      "latencyMs": 454.7818921999991,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1842,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2631",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 154,
+        "carbs": 32.5,
+        "protein": 5,
+        "fat": 0.24
+      },
+      "estimate": {
+        "id": "FoodBD-2631",
+        "calories": 400,
+        "carbs": 80,
+        "protein": 8,
+        "fat": 3,
+        "confidence": 0.8
+      },
+      "latencyMs": 467.63864259999974,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3156",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 207,
+        "carbs": 5,
+        "protein": 14.3,
+        "fat": 14.2
+      },
+      "estimate": {
+        "id": "FoodBD-3156",
+        "calories": 550,
+        "carbs": 40,
+        "protein": 45,
+        "fat": 25,
+        "confidence": 0.9
+      },
+      "latencyMs": 467.63864259999974,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2940",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 370,
+        "carbs": 16,
+        "protein": 24.7,
+        "fat": 21.8
+      },
+      "estimate": {
+        "id": "FoodBD-2940",
+        "calories": 600,
+        "carbs": 30,
+        "protein": 40,
+        "fat": 35,
+        "confidence": 0.85
+      },
+      "latencyMs": 467.63864259999974,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3385",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 457,
+        "carbs": 79.65,
+        "protein": 11.25,
+        "fat": 8.23
+      },
+      "estimate": {
+        "id": "FoodBD-3385",
+        "calories": 700,
+        "carbs": 90,
+        "protein": 35,
+        "fat": 25,
+        "confidence": 0.9
+      },
+      "latencyMs": 467.63864259999974,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2640",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 281.6,
+        "carbs": 32.5,
+        "protein": 11.6,
+        "fat": 11.24
+      },
+      "estimate": {
+        "id": "FoodBD-2640",
+        "calories": 500,
+        "carbs": 85,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.85
+      },
+      "latencyMs": 467.63864259999974,
+      "usage": {
+        "promptTokenCount": 1578,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 288
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3446",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 190.3,
+        "carbs": 42,
+        "protein": 3,
+        "fat": 0.5
+      },
+      "estimate": {
+        "id": "FoodBD-3446",
+        "calories": 350,
+        "carbs": 60,
+        "protein": 8,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 483.4409420000011,
+      "usage": {
+        "promptTokenCount": 1568,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1832,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2319",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 208,
+        "carbs": 25,
+        "protein": 6,
+        "fat": 8
+      },
+      "estimate": {
+        "id": "FoodBD-2319",
+        "calories": 700,
+        "carbs": 100,
+        "protein": 40,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 483.4409420000011,
+      "usage": {
+        "promptTokenCount": 1568,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1832,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2639",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 295,
+        "carbs": 39.12,
+        "protein": 17.46,
+        "fat": 5.5
+      },
+      "estimate": {
+        "id": "FoodBD-2639",
+        "calories": 650,
+        "carbs": 70,
+        "protein": 35,
+        "fat": 25,
+        "confidence": 0.85
+      },
+      "latencyMs": 483.4409420000011,
+      "usage": {
+        "promptTokenCount": 1568,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1832,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1994",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 234,
+        "carbs": 27,
+        "protein": 6,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-1994",
+        "calories": 550,
+        "carbs": 90,
+        "protein": 15,
+        "fat": 12,
+        "confidence": 0.75
+      },
+      "latencyMs": 483.4409420000011,
+      "usage": {
+        "promptTokenCount": 1568,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1832,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2283",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 205,
+        "carbs": 31,
+        "protein": 5,
+        "fat": 6
+      },
+      "estimate": {
+        "id": "FoodBD-2283",
+        "calories": 300,
+        "carbs": 40,
+        "protein": 5,
+        "fat": 12,
+        "confidence": 0.8
+      },
+      "latencyMs": 483.4409420000011,
+      "usage": {
+        "promptTokenCount": 1568,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1832,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 278
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2209",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 282,
+        "carbs": 16,
+        "protein": 16,
+        "fat": 16
+      },
+      "estimate": {
+        "id": "FoodBD-2209",
+        "calories": 450,
+        "carbs": 50,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 458.2990175999992,
+      "usage": {
+        "promptTokenCount": 1581,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2232",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 241,
+        "carbs": 23,
+        "protein": 11,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2232",
+        "calories": 480,
+        "carbs": 55,
+        "protein": 32,
+        "fat": 16,
+        "confidence": 0.7
+      },
+      "latencyMs": 458.2990175999992,
+      "usage": {
+        "promptTokenCount": 1581,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1805",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 355,
+        "carbs": 39,
+        "protein": 14,
+        "fat": 15
+      },
+      "estimate": {
+        "id": "FoodBD-1805",
+        "calories": 520,
+        "carbs": 60,
+        "protein": 35,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 458.2990175999992,
+      "usage": {
+        "promptTokenCount": 1581,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2449",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 313,
+        "carbs": 38,
+        "protein": 13,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2449",
+        "calories": 470,
+        "carbs": 52,
+        "protein": 31,
+        "fat": 17,
+        "confidence": 0.7
+      },
+      "latencyMs": 458.2990175999992,
+      "usage": {
+        "promptTokenCount": 1581,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2126",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 344,
+        "carbs": 47,
+        "protein": 13,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-2126",
+        "calories": 500,
+        "carbs": 58,
+        "protein": 33,
+        "fat": 19,
+        "confidence": 0.7
+      },
+      "latencyMs": 458.2990175999992,
+      "usage": {
+        "promptTokenCount": 1581,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 291
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2971",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 365,
+        "carbs": 46,
+        "protein": 13.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-2971",
+        "calories": 450,
+        "carbs": 50,
+        "protein": 15,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 461.72384140000065,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1840,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2586",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 260,
+        "carbs": 33,
+        "protein": 11,
+        "fat": 8
+      },
+      "estimate": {
+        "id": "FoodBD-2586",
+        "calories": 700,
+        "carbs": 100,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 461.72384140000065,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1840,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2865",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 336.2,
+        "carbs": 24.5,
+        "protein": 17.5,
+        "fat": 17.92
+      },
+      "estimate": {
+        "id": "FoodBD-2865",
+        "calories": 650,
+        "carbs": 90,
+        "protein": 35,
+        "fat": 20,
+        "confidence": 0.75
+      },
+      "latencyMs": 461.72384140000065,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1840,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1938",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 353,
+        "carbs": 50,
+        "protein": 14,
+        "fat": 10
+      },
+      "estimate": {
+        "id": "FoodBD-1938",
+        "calories": 550,
+        "carbs": 80,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 461.72384140000065,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1840,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2982",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 262.5,
+        "carbs": 17,
+        "protein": 14,
+        "fat": 15.9
+      },
+      "estimate": {
+        "id": "FoodBD-2982",
+        "calories": 500,
+        "carbs": 40,
+        "protein": 30,
+        "fat": 25,
+        "confidence": 0.85
+      },
+      "latencyMs": 461.72384140000065,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1840,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2159",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 340,
+        "carbs": 40,
+        "protein": 13,
+        "fat": 13
+      },
+      "estimate": {
+        "id": "FoodBD-2159",
+        "calories": 650,
+        "carbs": 80,
+        "protein": 35,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 631.1827619999997,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2765",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 266,
+        "carbs": 54.4,
+        "protein": 6.7,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2765",
+        "calories": 450,
+        "carbs": 60,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.6
+      },
+      "latencyMs": 631.1827619999997,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2920",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 195.1,
+        "carbs": 28.25,
+        "protein": 10.3,
+        "fat": 4.18
+      },
+      "estimate": {
+        "id": "FoodBD-2920",
+        "calories": 500,
+        "carbs": 90,
+        "protein": 10,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 631.1827619999997,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2746",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 215,
+        "carbs": 16,
+        "protein": 8.7,
+        "fat": 11.8
+      },
+      "estimate": {
+        "id": "FoodBD-2746",
+        "calories": 400,
+        "carbs": 40,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.6
+      },
+      "latencyMs": 631.1827619999997,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3442",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 547,
+        "carbs": 99.75,
+        "protein": 12.75,
+        "fat": 10.32
+      },
+      "estimate": {
+        "id": "FoodBD-3442",
+        "calories": 900,
+        "carbs": 120,
+        "protein": 40,
+        "fat": 30,
+        "confidence": 0.8
+      },
+      "latencyMs": 631.1827619999997,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1892",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 302,
+        "carbs": 33,
+        "protein": 12,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-1892",
+        "calories": 450,
+        "carbs": 50,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 501.50968140000043,
+      "usage": {
+        "promptTokenCount": 1565,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1828,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2794",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 198.25,
+        "carbs": 23,
+        "protein": 11.4,
+        "fat": 6.394
+      },
+      "estimate": {
+        "id": "FoodBD-2794",
+        "calories": 400,
+        "carbs": 45,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 501.50968140000043,
+      "usage": {
+        "promptTokenCount": 1565,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1828,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2421",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 205,
+        "carbs": 15,
+        "protein": 8,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2421",
+        "calories": 350,
+        "carbs": 30,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 501.50968140000043,
+      "usage": {
+        "promptTokenCount": 1565,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1828,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1953",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 258,
+        "carbs": 39,
+        "protein": 7,
+        "fat": 7
+      },
+      "estimate": {
+        "id": "FoodBD-1953",
+        "calories": 300,
+        "carbs": 40,
+        "protein": 10,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 501.50968140000043,
+      "usage": {
+        "promptTokenCount": 1565,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1828,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2863",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 86.8,
+        "carbs": 18,
+        "protein": 3.2,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "FoodBD-2863",
+        "calories": 320,
+        "carbs": 35,
+        "protein": 15,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 501.50968140000043,
+      "usage": {
+        "promptTokenCount": 1565,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1828,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 275
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2574",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 295,
+        "carbs": 32,
+        "protein": 11,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2574",
+        "calories": 350,
+        "carbs": 30,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 452.06971899999917,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1845,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1946",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 392,
+        "carbs": 49,
+        "protein": 17,
+        "fat": 13
+      },
+      "estimate": {
+        "id": "FoodBD-1946",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 452.06971899999917,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1845,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1999",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 365,
+        "carbs": 50,
+        "protein": 13,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-1999",
+        "calories": 550,
+        "carbs": 75,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 452.06971899999917,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1845,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2905",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 89,
+        "carbs": 16.5,
+        "protein": 2.9,
+        "fat": 1
+      },
+      "estimate": {
+        "id": "FoodBD-2905",
+        "calories": 450,
+        "carbs": 40,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 452.06971899999917,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1845,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2422",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 382,
+        "carbs": 51,
+        "protein": 14,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2422",
+        "calories": 700,
+        "carbs": 90,
+        "protein": 35,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 452.06971899999917,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1845,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2578",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 206,
+        "carbs": 35,
+        "protein": 6,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2578",
+        "calories": 350,
+        "carbs": 60,
+        "protein": 10,
+        "fat": 8,
+        "confidence": 0.7
+      },
+      "latencyMs": 436.29066080000047,
+      "usage": {
+        "promptTokenCount": 1573,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1885",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 402,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-1885",
+        "calories": 700,
+        "carbs": 100,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 436.29066080000047,
+      "usage": {
+        "promptTokenCount": 1573,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2355",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 180,
+        "carbs": 33,
+        "protein": 5,
+        "fat": 2
+      },
+      "estimate": {
+        "id": "FoodBD-2355",
+        "calories": 380,
+        "carbs": 65,
+        "protein": 12,
+        "fat": 9,
+        "confidence": 0.7
+      },
+      "latencyMs": 436.29066080000047,
+      "usage": {
+        "promptTokenCount": 1573,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2351",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 334,
+        "carbs": 39,
+        "protein": 12,
+        "fat": 13
+      },
+      "estimate": {
+        "id": "FoodBD-2351",
+        "calories": 650,
+        "carbs": 90,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 436.29066080000047,
+      "usage": {
+        "promptTokenCount": 1573,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3268",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 380,
+        "carbs": 56.5,
+        "protein": 11.25,
+        "fat": 9.56
+      },
+      "estimate": {
+        "id": "FoodBD-3268",
+        "calories": 750,
+        "carbs": 120,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 436.29066080000047,
+      "usage": {
+        "promptTokenCount": 1573,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 283
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2429",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 225,
+        "carbs": 22,
+        "protein": 7,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2429",
+        "calories": 450,
+        "carbs": 50,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 443.2455845999997,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1847,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2947",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 270.3,
+        "carbs": 9.25,
+        "protein": 18.9,
+        "fat": 17.1
+      },
+      "estimate": {
+        "id": "FoodBD-2947",
+        "calories": 600,
+        "carbs": 40,
+        "protein": 45,
+        "fat": 25,
+        "confidence": 0.8
+      },
+      "latencyMs": 443.2455845999997,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1847,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3124",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 156.9,
+        "carbs": 22.6,
+        "protein": 6,
+        "fat": 4.5
+      },
+      "estimate": {
+        "id": "FoodBD-3124",
+        "calories": 400,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.75
+      },
+      "latencyMs": 443.2455845999997,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1847,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2632",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 181.8,
+        "carbs": 15.75,
+        "protein": 13.2,
+        "fat": 7.5
+      },
+      "estimate": {
+        "id": "FoodBD-2632",
+        "calories": 550,
+        "carbs": 45,
+        "protein": 35,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 443.2455845999997,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1847,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2424",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 176,
+        "carbs": 28,
+        "protein": 4,
+        "fat": 5
+      },
+      "estimate": {
+        "id": "FoodBD-2424",
+        "calories": 500,
+        "carbs": 70,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.75
+      },
+      "latencyMs": 443.2455845999997,
+      "usage": {
+        "promptTokenCount": 1582,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1847,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 292
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2737",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 195,
+        "carbs": 31,
+        "protein": 6,
+        "fat": 5
+      },
+      "estimate": {
+        "id": "FoodBD-2737",
+        "calories": 350,
+        "carbs": 50,
+        "protein": 10,
+        "fat": 10,
+        "confidence": 0.8
+      },
+      "latencyMs": 427.0401799999992,
+      "usage": {
+        "promptTokenCount": 1561,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1826,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 271
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3217",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 204,
+        "carbs": 18,
+        "protein": 9.4,
+        "fat": 10.144
+      },
+      "estimate": {
+        "id": "FoodBD-3217",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.9
+      },
+      "latencyMs": 427.0401799999992,
+      "usage": {
+        "promptTokenCount": 1561,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1826,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 271
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2652",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 175,
+        "carbs": 18.75,
+        "protein": 2.5,
+        "fat": 8.75
+      },
+      "estimate": {
+        "id": "FoodBD-2652",
+        "calories": 400,
+        "carbs": 70,
+        "protein": 10,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 427.0401799999992,
+      "usage": {
+        "promptTokenCount": 1561,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1826,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 271
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2897",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 227,
+        "carbs": 35.95,
+        "protein": 7.3,
+        "fat": 7.5
+      },
+      "estimate": {
+        "id": "FoodBD-2897",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.85
+      },
+      "latencyMs": 427.0401799999992,
+      "usage": {
+        "promptTokenCount": 1561,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1826,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 271
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3172",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 403.9,
+        "carbs": 46.5,
+        "protein": 16.55,
+        "fat": 16.95
+      },
+      "estimate": {
+        "id": "FoodBD-3172",
+        "calories": 700,
+        "carbs": 60,
+        "protein": 35,
+        "fat": 35,
+        "confidence": 0.95
+      },
+      "latencyMs": 427.0401799999992,
+      "usage": {
+        "promptTokenCount": 1561,
+        "candidatesTokenCount": 265,
+        "totalTokenCount": 1826,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 271
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3525",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 646.4,
+        "carbs": 118.5,
+        "protein": 14.8,
+        "fat": 9.93
+      },
+      "estimate": {
+        "id": "FoodBD-3525",
+        "calories": 750,
+        "carbs": 120,
+        "protein": 20,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 766.6181607999999,
+      "usage": {
+        "promptTokenCount": 1603,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1869,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2785",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 275,
+        "carbs": 25,
+        "protein": 10.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-2785",
+        "calories": 450,
+        "carbs": 50,
+        "protein": 15,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 766.6181607999999,
+      "usage": {
+        "promptTokenCount": 1603,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1869,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2526",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 330,
+        "carbs": 41,
+        "protein": 14,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2526",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.9
+      },
+      "latencyMs": 766.6181607999999,
+      "usage": {
+        "promptTokenCount": 1603,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1869,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2374",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 340,
+        "carbs": 37,
+        "protein": 13,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2374",
+        "calories": 550,
+        "carbs": 70,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.85
+      },
+      "latencyMs": 766.6181607999999,
+      "usage": {
+        "promptTokenCount": 1603,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1869,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3076",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 317,
+        "carbs": 24.5,
+        "protein": 23.6,
+        "fat": 13.6
+      },
+      "estimate": {
+        "id": "FoodBD-3076",
+        "calories": 500,
+        "carbs": 40,
+        "protein": 20,
+        "fat": 30,
+        "confidence": 0.75
+      },
+      "latencyMs": 766.6181607999999,
+      "usage": {
+        "promptTokenCount": 1603,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1869,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 313
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3420",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 205.45,
+        "carbs": 44.5,
+        "protein": 3.3375,
+        "fat": 0.9
+      },
+      "estimate": {
+        "id": "FoodBD-3420",
+        "calories": 450,
+        "carbs": 60,
+        "protein": 15,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 477.87384679999957,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2317",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 353,
+        "carbs": 40,
+        "protein": 13,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2317",
+        "calories": 700,
+        "carbs": 100,
+        "protein": 40,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 477.87384679999957,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2886",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 477.3,
+        "carbs": 37,
+        "protein": 23.25,
+        "fat": 24.7
+      },
+      "estimate": {
+        "id": "FoodBD-2886",
+        "calories": 600,
+        "carbs": 40,
+        "protein": 30,
+        "fat": 35,
+        "confidence": 0.75
+      },
+      "latencyMs": 477.87384679999957,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2444",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 275,
+        "carbs": 30,
+        "protein": 10,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2444",
+        "calories": 400,
+        "carbs": 45,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.85
+      },
+      "latencyMs": 477.87384679999957,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2620",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 263,
+        "carbs": 19.2,
+        "protein": 13.1,
+        "fat": 15
+      },
+      "estimate": {
+        "id": "FoodBD-2620",
+        "calories": 550,
+        "carbs": 50,
+        "protein": 25,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 477.87384679999957,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1841,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2454",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 154,
+        "carbs": 24,
+        "protein": 4,
+        "fat": 4
+      },
+      "estimate": {
+        "id": "FoodBD-2454",
+        "calories": 550,
+        "carbs": 70,
+        "protein": 20,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 470.99280600000054,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2315",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 318,
+        "carbs": 33,
+        "protein": 11,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2315",
+        "calories": 500,
+        "carbs": 60,
+        "protein": 25,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 470.99280600000054,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2286",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 200,
+        "carbs": 27,
+        "protein": 5,
+        "fat": 7
+      },
+      "estimate": {
+        "id": "FoodBD-2286",
+        "calories": 480,
+        "carbs": 65,
+        "protein": 15,
+        "fat": 17,
+        "confidence": 0.7
+      },
+      "latencyMs": 470.99280600000054,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2670",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 204.7,
+        "carbs": 22.5,
+        "protein": 8.8,
+        "fat": 7.9
+      },
+      "estimate": {
+        "id": "FoodBD-2670",
+        "calories": 600,
+        "carbs": 75,
+        "protein": 30,
+        "fat": 22,
+        "confidence": 0.8
+      },
+      "latencyMs": 470.99280600000054,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2343",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 179,
+        "carbs": 27,
+        "protein": 5,
+        "fat": 5
+      },
+      "estimate": {
+        "id": "FoodBD-2343",
+        "calories": 520,
+        "carbs": 72,
+        "protein": 18,
+        "fat": 19,
+        "confidence": 0.7
+      },
+      "latencyMs": 470.99280600000054,
+      "usage": {
+        "promptTokenCount": 1575,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1838,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 285
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2189",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 321,
+        "carbs": 41,
+        "protein": 12,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2189",
+        "calories": 650,
+        "carbs": 90,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 428.1682101999992,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2139",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 233,
+        "carbs": 23,
+        "protein": 8,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2139",
+        "calories": 700,
+        "carbs": 100,
+        "protein": 35,
+        "fat": 22,
+        "confidence": 0.7
+      },
+      "latencyMs": 428.1682101999992,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3079",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 172.2,
+        "carbs": 23.4,
+        "protein": 12.5,
+        "fat": 3.12
+      },
+      "estimate": {
+        "id": "FoodBD-3079",
+        "calories": 600,
+        "carbs": 85,
+        "protein": 30,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 428.1682101999992,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2481",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 335,
+        "carbs": 42,
+        "protein": 14,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2481",
+        "calories": 680,
+        "carbs": 95,
+        "protein": 32,
+        "fat": 21,
+        "confidence": 0.7
+      },
+      "latencyMs": 428.1682101999992,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2042",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 372,
+        "carbs": 51,
+        "protein": 15,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2042",
+        "calories": 620,
+        "carbs": 90,
+        "protein": 28,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 428.1682101999992,
+      "usage": {
+        "promptTokenCount": 1580,
+        "candidatesTokenCount": 264,
+        "totalTokenCount": 1844,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 290
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2553",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 360,
+        "carbs": 41,
+        "protein": 13,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "FoodBD-2553",
+        "calories": 650,
+        "carbs": 90,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 463.57450140000145,
+      "usage": {
+        "promptTokenCount": 1566,
+        "candidatesTokenCount": 261,
+        "totalTokenCount": 1827,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2808",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 420,
+        "carbs": 56,
+        "protein": 15,
+        "fat": 18
+      },
+      "estimate": {
+        "id": "FoodBD-2808",
+        "calories": 300,
+        "carbs": 50,
+        "protein": 8,
+        "fat": 8,
+        "confidence": 0.6
+      },
+      "latencyMs": 463.57450140000145,
+      "usage": {
+        "promptTokenCount": 1566,
+        "candidatesTokenCount": 261,
+        "totalTokenCount": 1827,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1778",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 260,
+        "carbs": 39,
+        "protein": 7,
+        "fat": 7
+      },
+      "estimate": {
+        "id": "FoodBD-1778",
+        "calories": 550,
+        "carbs": 85,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 463.57450140000145,
+      "usage": {
+        "promptTokenCount": 1566,
+        "candidatesTokenCount": 261,
+        "totalTokenCount": 1827,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3101",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 295,
+        "carbs": 31,
+        "protein": 11.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-3101",
+        "calories": 450,
+        "carbs": 40,
+        "protein": 20,
+        "fat": 20,
+        "confidence": 0.8
+      },
+      "latencyMs": 463.57450140000145,
+      "usage": {
+        "promptTokenCount": 1566,
+        "candidatesTokenCount": 261,
+        "totalTokenCount": 1827,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2080",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 245,
+        "carbs": 22,
+        "protein": 9,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2080",
+        "calories": 700,
+        "carbs": 95,
+        "protein": 40,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 463.57450140000145,
+      "usage": {
+        "promptTokenCount": 1566,
+        "candidatesTokenCount": 261,
+        "totalTokenCount": 1827,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 276
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3468",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 397.5,
+        "carbs": 74.5,
+        "protein": 10.8,
+        "fat": 5.56
+      },
+      "estimate": {
+        "id": "FoodBD-3468",
+        "calories": 450,
+        "carbs": 40,
+        "protein": 35,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 453.6128128000011,
+      "usage": {
+        "promptTokenCount": 1594,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1857,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2961",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 156.3,
+        "carbs": 22.6,
+        "protein": 5.7,
+        "fat": 4.55
+      },
+      "estimate": {
+        "id": "FoodBD-2961",
+        "calories": 500,
+        "carbs": 60,
+        "protein": 15,
+        "fat": 22,
+        "confidence": 0.7
+      },
+      "latencyMs": 453.6128128000011,
+      "usage": {
+        "promptTokenCount": 1594,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1857,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2036",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 275,
+        "carbs": 27,
+        "protein": 12,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-2036",
+        "calories": 600,
+        "carbs": 80,
+        "protein": 25,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 453.6128128000011,
+      "usage": {
+        "promptTokenCount": 1594,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1857,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3546",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 358.6,
+        "carbs": 57.7,
+        "protein": 10.3,
+        "fat": 7.8
+      },
+      "estimate": {
+        "id": "FoodBD-3546",
+        "calories": 400,
+        "carbs": 50,
+        "protein": 10,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 453.6128128000011,
+      "usage": {
+        "promptTokenCount": 1594,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1857,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3014",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 272.5,
+        "carbs": 13.4,
+        "protein": 14.74,
+        "fat": 17.86
+      },
+      "estimate": {
+        "id": "FoodBD-3014",
+        "calories": 550,
+        "carbs": 45,
+        "protein": 25,
+        "fat": 28,
+        "confidence": 0.7
+      },
+      "latencyMs": 453.6128128000011,
+      "usage": {
+        "promptTokenCount": 1594,
+        "candidatesTokenCount": 263,
+        "totalTokenCount": 1857,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 304
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3342",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 634,
+        "carbs": 113,
+        "protein": 21.7875,
+        "fat": 9.4
+      },
+      "estimate": {
+        "id": "FoodBD-3342",
+        "calories": 650,
+        "carbs": 90,
+        "protein": 30,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 431.90395480000007,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3073",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 149.5,
+        "carbs": 24.2,
+        "protein": 4.8,
+        "fat": 3.5
+      },
+      "estimate": {
+        "id": "FoodBD-3073",
+        "calories": 450,
+        "carbs": 70,
+        "protein": 15,
+        "fat": 10,
+        "confidence": 0.8
+      },
+      "latencyMs": 431.90395480000007,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2717",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 225,
+        "carbs": 16,
+        "protein": 9.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-2717",
+        "calories": 400,
+        "carbs": 40,
+        "protein": 20,
+        "fat": 18,
+        "confidence": 0.75
+      },
+      "latencyMs": 431.90395480000007,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3191",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 110,
+        "carbs": 25,
+        "protein": 2,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "FoodBD-3191",
+        "calories": 300,
+        "carbs": 50,
+        "protein": 8,
+        "fat": 5,
+        "confidence": 0.85
+      },
+      "latencyMs": 431.90395480000007,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3005",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 169.5,
+        "carbs": 29.2,
+        "protein": 4.8,
+        "fat": 3.5
+      },
+      "estimate": {
+        "id": "FoodBD-3005",
+        "calories": 420,
+        "carbs": 65,
+        "protein": 14,
+        "fat": 9,
+        "confidence": 0.8
+      },
+      "latencyMs": 431.90395480000007,
+      "usage": {
+        "promptTokenCount": 1574,
+        "candidatesTokenCount": 262,
+        "totalTokenCount": 1836,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 284
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2582",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 197,
+        "carbs": 35,
+        "protein": 6,
+        "fat": 3
+      },
+      "estimate": {
+        "id": "FoodBD-2582",
+        "calories": 350,
+        "carbs": 50,
+        "protein": 10,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 451.9992945999984,
+      "usage": {
+        "promptTokenCount": 1586,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1852,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-1857",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 304,
+        "carbs": 33,
+        "protein": 12,
+        "fat": 12
+      },
+      "estimate": {
+        "id": "FoodBD-1857",
+        "calories": 700,
+        "carbs": 120,
+        "protein": 20,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 451.9992945999984,
+      "usage": {
+        "promptTokenCount": 1586,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1852,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3391",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 324.5,
+        "carbs": 47,
+        "protein": 11.9,
+        "fat": 9.142
+      },
+      "estimate": {
+        "id": "FoodBD-3391",
+        "calories": 600,
+        "carbs": 90,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.75
+      },
+      "latencyMs": 451.9992945999984,
+      "usage": {
+        "promptTokenCount": 1586,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1852,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2211",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 275,
+        "carbs": 30,
+        "protein": 10,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "FoodBD-2211",
+        "calories": 400,
+        "carbs": 45,
+        "protein": 15,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 451.9992945999984,
+      "usage": {
+        "promptTokenCount": 1586,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1852,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-3141",
+      "condition": "name_photo",
+      "truth": {
+        "calories": 225,
+        "carbs": 16,
+        "protein": 9.7,
+        "fat": 13.3
+      },
+      "estimate": {
+        "id": "FoodBD-3141",
+        "calories": 450,
+        "carbs": 55,
+        "protein": 15,
+        "fat": 18,
+        "confidence": 0.75
+      },
+      "latencyMs": 451.9992945999984,
+      "usage": {
+        "promptTokenCount": 1586,
+        "candidatesTokenCount": 266,
+        "totalTokenCount": 1852,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 296
+          },
+          {
+            "modality": "IMAGE",
+            "tokenCount": 1290
+          }
+        ],
+        "serviceTier": "standard"
+      },
+      "error": null
+    },
+    {
+      "id": "FoodBD-2737",
+      "condition": "name_only",
+      "truth": {
+        "calories": 195,
+        "carbs": 31,
+        "protein": 6,
+        "fat": 5
+      },
+      "estimate": null,
+      "latencyMs": 0,
+      "usage": {},
+      "error": "TimeoutError: The operation was aborted due to timeout"
+    },
+    {
+      "id": "FoodBD-3217",
+      "condition": "name_only",
+      "truth": {
+        "calories": 204,
+        "carbs": 18,
+        "protein": 9.4,
+        "fat": 10.144
+      },
+      "estimate": null,
+      "latencyMs": 0,
+      "usage": {},
+      "error": "TimeoutError: The operation was aborted due to timeout"
+    },
+    {
+      "id": "FoodBD-2652",
+      "condition": "name_only",
+      "truth": {
+        "calories": 175,
+        "carbs": 18.75,
+        "protein": 2.5,
+        "fat": 8.75
+      },
+      "estimate": null,
+      "latencyMs": 0,
+      "usage": {},
+      "error": "TimeoutError: The operation was aborted due to timeout"
+    },
+    {
+      "id": "FoodBD-2897",
+      "condition": "name_only",
+      "truth": {
+        "calories": 227,
+        "carbs": 35.95,
+        "protein": 7.3,
+        "fat": 7.5
+      },
+      "estimate": null,
+      "latencyMs": 0,
+      "usage": {},
+      "error": "TimeoutError: The operation was aborted due to timeout"
+    },
+    {
+      "id": "FoodBD-3172",
+      "condition": "name_only",
+      "truth": {
+        "calories": 403.9,
+        "carbs": 46.5,
+        "protein": 16.55,
+        "fat": 16.95
+      },
+      "estimate": null,
+      "latencyMs": 0,
+      "usage": {},
+      "error": "TimeoutError: The operation was aborted due to timeout"
+    }
+  ]
+}

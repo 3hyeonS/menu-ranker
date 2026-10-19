@@ -1,0 +1,2000 @@
+{
+  "generatedAt": "2026-10-18T13:56:08.354Z",
+  "model": "gemini-2.5-flash-lite",
+  "testLimit": 20,
+  "batchSize": 1,
+  "usage": {
+    "promptTokenCount": 40497,
+    "candidatesTokenCount": 6022,
+    "totalTokenCount": 46523,
+    "thoughtsTokenCount": 4
+  },
+  "summaries": {
+    "known_brand:llm_only": {
+      "requested": 20,
+      "successful": 20,
+      "failureRate": 0,
+      "meanConfidence": 0.695,
+      "latencyMs": {
+        "mean": 807.3314254999998,
+        "p95": 1038.9203799999998
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 20,
+          "mae": 84.9234,
+          "within20Percent": 0.47368421052631576,
+          "within30Percent": 0.7368421052631579
+        },
+        "carbs": {
+          "evaluated": 4,
+          "mae": 5.7292749999999995,
+          "within20Percent": 0.5,
+          "within30Percent": 1
+        },
+        "protein": {
+          "evaluated": 19,
+          "mae": 3.475615789473684,
+          "within20Percent": 0.23529411764705882,
+          "within30Percent": 0.4117647058823529
+        },
+        "fat": {
+          "evaluated": 3,
+          "mae": 3.126,
+          "within20Percent": 0.3333333333333333,
+          "within30Percent": 0.6666666666666666
+        }
+      }
+    },
+    "known_brand:hybrid_rag": {
+      "requested": 20,
+      "successful": 20,
+      "failureRate": 0,
+      "meanConfidence": 0.6849999999999998,
+      "latencyMs": {
+        "mean": 878.8141427999993,
+        "p95": 989.1723229999989
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 20,
+          "mae": 55.273559999999996,
+          "within20Percent": 0.631578947368421,
+          "within30Percent": 0.7894736842105263
+        },
+        "carbs": {
+          "evaluated": 4,
+          "mae": 10.331949999999999,
+          "within20Percent": 0.5,
+          "within30Percent": 0.5
+        },
+        "protein": {
+          "evaluated": 19,
+          "mae": 1.2969736842105262,
+          "within20Percent": 0.5294117647058824,
+          "within30Percent": 0.7058823529411765
+        },
+        "fat": {
+          "evaluated": 3,
+          "mae": 4.580266666666667,
+          "within20Percent": 0.3333333333333333,
+          "within30Percent": 0.6666666666666666
+        }
+      }
+    },
+    "unseen_brand:llm_only": {
+      "requested": 20,
+      "successful": 20,
+      "failureRate": 0,
+      "meanConfidence": 0.695,
+      "latencyMs": {
+        "mean": 803.5343356999983,
+        "p95": 1019.099556000001
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 20,
+          "mae": 110.38499999999999,
+          "within20Percent": 0.3,
+          "within30Percent": 0.45
+        },
+        "carbs": {
+          "evaluated": 4,
+          "mae": 18.25,
+          "within20Percent": 0.25,
+          "within30Percent": 0.25
+        },
+        "protein": {
+          "evaluated": 15,
+          "mae": 1.0466666666666666,
+          "within20Percent": 0.6,
+          "within30Percent": 0.7
+        },
+        "fat": {
+          "evaluated": 6,
+          "mae": 2.216666666666667,
+          "within20Percent": 0,
+          "within30Percent": 0
+        }
+      }
+    },
+    "unseen_brand:hybrid_rag": {
+      "requested": 20,
+      "successful": 20,
+      "failureRate": 0,
+      "meanConfidence": 0.5849999999999999,
+      "latencyMs": {
+        "mean": 834.5092818500001,
+        "p95": 921.5511799999949
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 20,
+          "mae": 129.60999999999999,
+          "within20Percent": 0.3,
+          "within30Percent": 0.35
+        },
+        "carbs": {
+          "evaluated": 4,
+          "mae": 25.75,
+          "within20Percent": 0,
+          "within30Percent": 0
+        },
+        "protein": {
+          "evaluated": 15,
+          "mae": 1.6666666666666667,
+          "within20Percent": 0.5,
+          "within30Percent": 0.5
+        },
+        "fat": {
+          "evaluated": 6,
+          "mae": 1.6333333333333335,
+          "within20Percent": 0.25,
+          "within30Percent": 0.25
+        }
+      }
+    }
+  },
+  "predictions": [
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "네네치킨:고구마피자 (오리지널):851",
+      "name": "고구마피자 (오리지널)",
+      "brand": "네네치킨",
+      "truth": {
+        "calories": 286.568,
+        "carbs": 36.9171,
+        "protein": 10.8367,
+        "fat": 10.622
+      },
+      "estimate": {
+        "id": "네네치킨:고구마피자 (오리지널):851",
+        "calories": 270,
+        "carbs": 30,
+        "protein": 10,
+        "fat": 13,
+        "confidence": 0.7
+      },
+      "latencyMs": 1038.9203799999998,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "엔제리너스:디카페인 바닐라 카페라떼 (ICE L):4117",
+      "name": "디카페인 바닐라 카페라떼 (ICE L)",
+      "brand": "엔제리너스",
+      "truth": {
+        "calories": 246,
+        "carbs": 41,
+        "protein": 7,
+        "fat": null
+      },
+      "estimate": {
+        "id": "엔제리너스:디카페인 바닐라 카페라떼 (ICE L):4117",
+        "calories": 350,
+        "carbs": 50,
+        "protein": 10,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 799.1724169999998,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "앤티앤스 프레즐:아몬드 프레즐:5433",
+      "name": "아몬드 프레즐",
+      "brand": "앤티앤스 프레즐",
+      "truth": {
+        "calories": 370,
+        "carbs": null,
+        "protein": 8,
+        "fat": null
+      },
+      "estimate": {
+        "id": "앤티앤스 프레즐:아몬드 프레즐:5433",
+        "calories": 310,
+        "carbs": 58,
+        "protein": 9,
+        "fat": 5,
+        "confidence": 0.8
+      },
+      "latencyMs": 835.9371309999997,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "빽다방:딸기쿠키 요거트아이스크림:342",
+      "name": "딸기쿠키 요거트아이스크림",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 554.9,
+        "carbs": null,
+        "protein": 6.6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:딸기쿠키 요거트아이스크림:342",
+        "calories": 700,
+        "carbs": 80,
+        "protein": 15,
+        "fat": 35,
+        "confidence": 0.7
+      },
+      "latencyMs": 804.730845,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "교촌치킨:반반윙콤비[레드+마라레드]:448",
+      "name": "반반윙콤비[레드+마라레드]",
+      "brand": "교촌치킨",
+      "truth": {
+        "calories": 100.8,
+        "carbs": null,
+        "protein": 7.2,
+        "fat": null
+      },
+      "estimate": {
+        "id": "교촌치킨:반반윙콤비[레드+마라레드]:448",
+        "calories": 100,
+        "carbs": 5,
+        "protein": 8,
+        "fat": 5,
+        "confidence": 0.4
+      },
+      "latencyMs": 776.1921199999997,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "파파존스:수퍼 파파스 (F 골드링씬):2687",
+      "name": "수퍼 파파스 (F 골드링씬)",
+      "brand": "파파존스",
+      "truth": {
+        "calories": 363,
+        "carbs": null,
+        "protein": 14,
+        "fat": null
+      },
+      "estimate": {
+        "id": "파파존스:수퍼 파파스 (F 골드링씬):2687",
+        "calories": 850,
+        "carbs": 70,
+        "protein": 40,
+        "fat": 50,
+        "confidence": 0.7
+      },
+      "latencyMs": 774.0083450000002,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "한솥:반찬 토네이도 소세지:6669",
+      "name": "반찬 토네이도 소세지",
+      "brand": "한솥",
+      "truth": {
+        "calories": 353,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:반찬 토네이도 소세지:6669",
+        "calories": 250,
+        "carbs": 10,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.4
+      },
+      "latencyMs": 748.0853049999996,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "KFC:스위트칠리소스:44",
+      "name": "스위트칠리소스",
+      "brand": "KFC",
+      "truth": {
+        "calories": 90,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "KFC:스위트칠리소스:44",
+        "calories": 100,
+        "carbs": 25,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 712.3679160000002,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "폴바셋:아이스 디카페인 카페오트 (460ml):5641",
+      "name": "아이스 디카페인 카페오트 (460ml)",
+      "brand": "폴바셋",
+      "truth": {
+        "calories": 185,
+        "carbs": null,
+        "protein": 3,
+        "fat": null
+      },
+      "estimate": {
+        "id": "폴바셋:아이스 디카페인 카페오트 (460ml):5641",
+        "calories": 250,
+        "carbs": 25,
+        "protein": 5,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 877.6936640000013,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "이디야커피:(L) 아이스크림 카페라떼:3686",
+      "name": "(L) 아이스크림 카페라떼",
+      "brand": "이디야커피",
+      "truth": {
+        "calories": 318,
+        "carbs": null,
+        "protein": 8,
+        "fat": null
+      },
+      "estimate": {
+        "id": "이디야커피:(L) 아이스크림 카페라떼:3686",
+        "calories": 450,
+        "carbs": 55,
+        "protein": 10,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 819.0937839999988,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "고피자:아메리칸 치즈 피자:2631",
+      "name": "아메리칸 치즈 피자",
+      "brand": "고피자",
+      "truth": {
+        "calories": 193,
+        "carbs": null,
+        "protein": 9,
+        "fat": null
+      },
+      "estimate": {
+        "id": "고피자:아메리칸 치즈 피자:2631",
+        "calories": 250,
+        "carbs": 25,
+        "protein": 12,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 787.782102000001,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "맘스터치:제로콜라(PET 1.25L):1285",
+      "name": "제로콜라(PET 1.25L)",
+      "brand": "맘스터치",
+      "truth": {
+        "calories": 0,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "맘스터치:제로콜라(PET 1.25L):1285",
+        "calories": 0,
+        "carbs": 0,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 1
+      },
+      "latencyMs": 761.1397670000006,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "파파존스:존스 페이버릿 (F 스파이시 갈릭 치즈롤):2745",
+      "name": "존스 페이버릿 (F 스파이시 갈릭 치즈롤)",
+      "brand": "파파존스",
+      "truth": {
+        "calories": 408,
+        "carbs": null,
+        "protein": 19,
+        "fat": null
+      },
+      "estimate": {
+        "id": "파파존스:존스 페이버릿 (F 스파이시 갈릭 치즈롤):2745",
+        "calories": 350,
+        "carbs": 30,
+        "protein": 15,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 776.7442970000011,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "달콤커피:카라멜마끼아또  (프리미엄마일드) (Regular):6042",
+      "name": "카라멜마끼아또  (프리미엄마일드) (Regular)",
+      "brand": "달콤커피",
+      "truth": {
+        "calories": 287,
+        "carbs": null,
+        "protein": 9,
+        "fat": null
+      },
+      "estimate": {
+        "id": "달콤커피:카라멜마끼아또  (프리미엄마일드) (Regular):6042",
+        "calories": 350,
+        "carbs": 45,
+        "protein": 5,
+        "fat": 15,
+        "confidence": 0.8
+      },
+      "latencyMs": 870.150803999999,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "투썸플레이스:말차 라떼:3753",
+      "name": "말차 라떼",
+      "brand": "투썸플레이스",
+      "truth": {
+        "calories": 120,
+        "carbs": null,
+        "protein": 6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "투썸플레이스:말차 라떼:3753",
+        "calories": 250,
+        "carbs": 35,
+        "protein": 8,
+        "fat": 9,
+        "confidence": 0.7
+      },
+      "latencyMs": 825.6005059999989,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "와플대학:청포도 레몬 요거치노:5597",
+      "name": "청포도 레몬 요거치노",
+      "brand": "와플대학",
+      "truth": {
+        "calories": 408,
+        "carbs": null,
+        "protein": 5,
+        "fat": null
+      },
+      "estimate": {
+        "id": "와플대학:청포도 레몬 요거치노:5597",
+        "calories": 350,
+        "carbs": 70,
+        "protein": 5,
+        "fat": 5,
+        "confidence": 0.6
+      },
+      "latencyMs": 698.1531579999992,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "스타벅스:블랙&화이트 콜드 브루:3331",
+      "name": "블랙&화이트 콜드 브루",
+      "brand": "스타벅스",
+      "truth": {
+        "calories": 175,
+        "carbs": 12,
+        "protein": 1,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "스타벅스:블랙&화이트 콜드 브루:3331",
+        "calories": 150,
+        "carbs": 15,
+        "protein": 2,
+        "fat": 9,
+        "confidence": 0.8
+      },
+      "latencyMs": 739.8326219999999,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "탐앤탐스:아이스 그린민트 초콜릿:6337",
+      "name": "아이스 그린민트 초콜릿",
+      "brand": "탐앤탐스",
+      "truth": {
+        "calories": 360,
+        "carbs": 46,
+        "protein": 7,
+        "fat": 17
+      },
+      "estimate": {
+        "id": "탐앤탐스:아이스 그린민트 초콜릿:6337",
+        "calories": 350,
+        "carbs": 50,
+        "protein": 5,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 744.1490519999988,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "피자에땅:베이컨 토핑:6248",
+      "name": "베이컨 토핑",
+      "brand": "피자에땅",
+      "truth": {
+        "calories": 175,
+        "carbs": null,
+        "protein": 7,
+        "fat": null
+      },
+      "estimate": {
+        "id": "피자에땅:베이컨 토핑:6248",
+        "calories": 200,
+        "carbs": 1,
+        "protein": 10,
+        "fat": 18,
+        "confidence": 0.7
+      },
+      "latencyMs": 801.2615779999996,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "llm_only",
+      "menuId": "와플대학:피스타치오믹스 가득 토핑:5503",
+      "name": "피스타치오믹스 가득 토핑",
+      "brand": "와플대학",
+      "truth": {
+        "calories": 599,
+        "carbs": null,
+        "protein": 7,
+        "fat": null
+      },
+      "estimate": {
+        "id": "와플대학:피스타치오믹스 가득 토핑:5503",
+        "calories": 450,
+        "carbs": 35,
+        "protein": 10,
+        "fat": 30,
+        "confidence": 0.7
+      },
+      "latencyMs": 955.612717,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "네네치킨:고구마피자 (오리지널):851",
+      "name": "고구마피자 (오리지널)",
+      "brand": "네네치킨",
+      "truth": {
+        "calories": 286.568,
+        "carbs": 36.9171,
+        "protein": 10.8367,
+        "fat": 10.622
+      },
+      "estimate": {
+        "id": "네네치킨:고구마피자 (오리지널):851",
+        "calories": 309.4392,
+        "carbs": 34.5893,
+        "protein": 13.3792,
+        "fat": 13.0628,
+        "confidence": 0.8
+      },
+      "latencyMs": 987.1807550000012,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "엔제리너스:디카페인 바닐라 카페라떼 (ICE L):4117",
+      "name": "디카페인 바닐라 카페라떼 (ICE L)",
+      "brand": "엔제리너스",
+      "truth": {
+        "calories": 246,
+        "carbs": 41,
+        "protein": 7,
+        "fat": null
+      },
+      "estimate": {
+        "id": "엔제리너스:디카페인 바닐라 카페라떼 (ICE L):4117",
+        "calories": 246,
+        "carbs": 41,
+        "protein": 7,
+        "fat": 0,
+        "confidence": 0.8
+      },
+      "latencyMs": 788.7876919999981,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "앤티앤스 프레즐:아몬드 프레즐:5433",
+      "name": "아몬드 프레즐",
+      "brand": "앤티앤스 프레즐",
+      "truth": {
+        "calories": 370,
+        "carbs": null,
+        "protein": 8,
+        "fat": null
+      },
+      "estimate": {
+        "id": "앤티앤스 프레즐:아몬드 프레즐:5433",
+        "calories": 350,
+        "carbs": 40,
+        "protein": 9,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 983.3332730000002,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "빽다방:딸기쿠키 요거트아이스크림:342",
+      "name": "딸기쿠키 요거트아이스크림",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 554.9,
+        "carbs": null,
+        "protein": 6.6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:딸기쿠키 요거트아이스크림:342",
+        "calories": 430,
+        "carbs": 60,
+        "protein": 6,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 883.2345759999989,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "교촌치킨:반반윙콤비[레드+마라레드]:448",
+      "name": "반반윙콤비[레드+마라레드]",
+      "brand": "교촌치킨",
+      "truth": {
+        "calories": 100.8,
+        "carbs": null,
+        "protein": 7.2,
+        "fat": null
+      },
+      "estimate": {
+        "id": "교촌치킨:반반윙콤비[레드+마라레드]:448",
+        "calories": 103.5,
+        "carbs": 0,
+        "protein": 7.7,
+        "fat": 0,
+        "confidence": 0.8
+      },
+      "latencyMs": 915.8694429999996,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "파파존스:수퍼 파파스 (F 골드링씬):2687",
+      "name": "수퍼 파파스 (F 골드링씬)",
+      "brand": "파파존스",
+      "truth": {
+        "calories": 363,
+        "carbs": null,
+        "protein": 14,
+        "fat": null
+      },
+      "estimate": {
+        "id": "파파존스:수퍼 파파스 (F 골드링씬):2687",
+        "calories": 345,
+        "carbs": 30,
+        "protein": 15,
+        "fat": 20,
+        "confidence": 0.6
+      },
+      "latencyMs": 905.4437709999984,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "한솥:반찬 토네이도 소세지:6669",
+      "name": "반찬 토네이도 소세지",
+      "brand": "한솥",
+      "truth": {
+        "calories": 353,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:반찬 토네이도 소세지:6669",
+        "calories": 250,
+        "carbs": 10,
+        "protein": 15,
+        "fat": 15,
+        "confidence": 0.4
+      },
+      "latencyMs": 814.4568470000013,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "KFC:스위트칠리소스:44",
+      "name": "스위트칠리소스",
+      "brand": "KFC",
+      "truth": {
+        "calories": 90,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "KFC:스위트칠리소스:44",
+        "calories": 74,
+        "carbs": 0,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 840.6508299999987,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "폴바셋:아이스 디카페인 카페오트 (460ml):5641",
+      "name": "아이스 디카페인 카페오트 (460ml)",
+      "brand": "폴바셋",
+      "truth": {
+        "calories": 185,
+        "carbs": null,
+        "protein": 3,
+        "fat": null
+      },
+      "estimate": {
+        "id": "폴바셋:아이스 디카페인 카페오트 (460ml):5641",
+        "calories": 280,
+        "carbs": 20,
+        "protein": 4,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 853.2869019999998,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "이디야커피:(L) 아이스크림 카페라떼:3686",
+      "name": "(L) 아이스크림 카페라떼",
+      "brand": "이디야커피",
+      "truth": {
+        "calories": 318,
+        "carbs": null,
+        "protein": 8,
+        "fat": null
+      },
+      "estimate": {
+        "id": "이디야커피:(L) 아이스크림 카페라떼:3686",
+        "calories": 465,
+        "carbs": 40,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 925.1633329999968,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "고피자:아메리칸 치즈 피자:2631",
+      "name": "아메리칸 치즈 피자",
+      "brand": "고피자",
+      "truth": {
+        "calories": 193,
+        "carbs": null,
+        "protein": 9,
+        "fat": null
+      },
+      "estimate": {
+        "id": "고피자:아메리칸 치즈 피자:2631",
+        "calories": 173,
+        "carbs": 15,
+        "protein": 7,
+        "fat": 9,
+        "confidence": 0.6
+      },
+      "latencyMs": 876.1098070000007,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "맘스터치:제로콜라(PET 1.25L):1285",
+      "name": "제로콜라(PET 1.25L)",
+      "brand": "맘스터치",
+      "truth": {
+        "calories": 0,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "맘스터치:제로콜라(PET 1.25L):1285",
+        "calories": 0,
+        "carbs": 0,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 1
+      },
+      "latencyMs": 801.7553689999986,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "파파존스:존스 페이버릿 (F 스파이시 갈릭 치즈롤):2745",
+      "name": "존스 페이버릿 (F 스파이시 갈릭 치즈롤)",
+      "brand": "파파존스",
+      "truth": {
+        "calories": 408,
+        "carbs": null,
+        "protein": 19,
+        "fat": null
+      },
+      "estimate": {
+        "id": "파파존스:존스 페이버릿 (F 스파이시 갈릭 치즈롤):2745",
+        "calories": 407,
+        "carbs": 30,
+        "protein": 18,
+        "fat": 25,
+        "confidence": 0.7
+      },
+      "latencyMs": 859.8071730000011,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "달콤커피:카라멜마끼아또  (프리미엄마일드) (Regular):6042",
+      "name": "카라멜마끼아또  (프리미엄마일드) (Regular)",
+      "brand": "달콤커피",
+      "truth": {
+        "calories": 287,
+        "carbs": null,
+        "protein": 9,
+        "fat": null
+      },
+      "estimate": {
+        "id": "달콤커피:카라멜마끼아또  (프리미엄마일드) (Regular):6042",
+        "calories": 300,
+        "carbs": 35,
+        "protein": 10,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 789.5026689999977,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "투썸플레이스:말차 라떼:3753",
+      "name": "말차 라떼",
+      "brand": "투썸플레이스",
+      "truth": {
+        "calories": 120,
+        "carbs": null,
+        "protein": 6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "투썸플레이스:말차 라떼:3753",
+        "calories": 250,
+        "carbs": 30,
+        "protein": 8,
+        "fat": 10,
+        "confidence": 0.6
+      },
+      "latencyMs": 733.2809269999998,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "와플대학:청포도 레몬 요거치노:5597",
+      "name": "청포도 레몬 요거치노",
+      "brand": "와플대학",
+      "truth": {
+        "calories": 408,
+        "carbs": null,
+        "protein": 5,
+        "fat": null
+      },
+      "estimate": {
+        "id": "와플대학:청포도 레몬 요거치노:5597",
+        "calories": 415,
+        "carbs": 80,
+        "protein": 7,
+        "fat": 5,
+        "confidence": 0.6
+      },
+      "latencyMs": 842.3260719999998,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "스타벅스:블랙&화이트 콜드 브루:3331",
+      "name": "블랙&화이트 콜드 브루",
+      "brand": "스타벅스",
+      "truth": {
+        "calories": 175,
+        "carbs": 12,
+        "protein": 1,
+        "fat": 14
+      },
+      "estimate": {
+        "id": "스타벅스:블랙&화이트 콜드 브루:3331",
+        "calories": 140,
+        "carbs": 22,
+        "protein": 2.5,
+        "fat": 5.7,
+        "confidence": 0.7
+      },
+      "latencyMs": 978.3903519999949,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "탐앤탐스:아이스 그린민트 초콜릿:6337",
+      "name": "아이스 그린민트 초콜릿",
+      "brand": "탐앤탐스",
+      "truth": {
+        "calories": 360,
+        "carbs": 46,
+        "protein": 7,
+        "fat": 17
+      },
+      "estimate": {
+        "id": "탐앤탐스:아이스 그린민트 초콜릿:6337",
+        "calories": 570,
+        "carbs": 75,
+        "protein": 7,
+        "fat": 20,
+        "confidence": 0.7
+      },
+      "latencyMs": 989.1723229999989,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "피자에땅:베이컨 토핑:6248",
+      "name": "베이컨 토핑",
+      "brand": "피자에땅",
+      "truth": {
+        "calories": 175,
+        "carbs": null,
+        "protein": 7,
+        "fat": null
+      },
+      "estimate": {
+        "id": "피자에땅:베이컨 토핑:6248",
+        "calories": 216,
+        "carbs": 0,
+        "protein": 12.5,
+        "fat": 17.5,
+        "confidence": 0.6
+      },
+      "latencyMs": 869.7385770000037,
+      "error": null
+    },
+    {
+      "split": "known_brand",
+      "method": "hybrid_rag",
+      "menuId": "와플대학:피스타치오믹스 가득 토핑:5503",
+      "name": "피스타치오믹스 가득 토핑",
+      "brand": "와플대학",
+      "truth": {
+        "calories": 599,
+        "carbs": null,
+        "protein": 7,
+        "fat": null
+      },
+      "estimate": {
+        "id": "와플대학:피스타치오믹스 가득 토핑:5503",
+        "calories": 500,
+        "carbs": 30,
+        "protein": 8,
+        "fat": 35,
+        "confidence": 0.6
+      },
+      "latencyMs": 938.7921649999989,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "빽다방:피스타치오 생크림 카페라떼(ICED):87",
+      "name": "피스타치오 생크림 카페라떼(ICED)",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 568.3,
+        "carbs": null,
+        "protein": 10.6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:피스타치오 생크림 카페라떼(ICED):87",
+        "calories": 550,
+        "carbs": 60,
+        "protein": 8,
+        "fat": 30,
+        "confidence": 0.7
+      },
+      "latencyMs": 849.6670000000013,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "탐앤탐스:바닐라 탐앤치노:6341",
+      "name": "바닐라 탐앤치노",
+      "brand": "탐앤탐스",
+      "truth": {
+        "calories": 538,
+        "carbs": 90,
+        "protein": 5,
+        "fat": 18
+      },
+      "estimate": {
+        "id": "탐앤탐스:바닐라 탐앤치노:6341",
+        "calories": 350,
+        "carbs": 55,
+        "protein": 5,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 922.2585299999992,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "탐앤탐스:용과망고 클렌즈 스무디:6278",
+      "name": "용과망고 클렌즈 스무디",
+      "brand": "탐앤탐스",
+      "truth": {
+        "calories": 220,
+        "carbs": 53,
+        "protein": 2,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "탐앤탐스:용과망고 클렌즈 스무디:6278",
+        "calories": 250,
+        "carbs": 60,
+        "protein": 2,
+        "fat": 1,
+        "confidence": 0.7
+      },
+      "latencyMs": 799.488154000006,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "빽다방:저당사과젤리 매실티 ICED:194",
+      "name": "저당사과젤리 매실티 ICED",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 42.2,
+        "carbs": null,
+        "protein": 0.3,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:저당사과젤리 매실티 ICED:194",
+        "calories": 150,
+        "carbs": 35,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 771.104754,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "던킨도너츠:에티오피아(Drip Coffee):4707",
+      "name": "에티오피아(Drip Coffee)",
+      "brand": "던킨도너츠",
+      "truth": {
+        "calories": 15,
+        "carbs": null,
+        "protein": 0,
+        "fat": 0.3
+      },
+      "estimate": {
+        "id": "던킨도너츠:에티오피아(Drip Coffee):4707",
+        "calories": 2,
+        "carbs": 0,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 0.9
+      },
+      "latencyMs": 799.7454999999973,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "한솥:단품 묵은지 김치찌개:6663",
+      "name": "단품 묵은지 김치찌개",
+      "brand": "한솥",
+      "truth": {
+        "calories": 194,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:단품 묵은지 김치찌개:6663",
+        "calories": 350,
+        "carbs": 15,
+        "protein": 20,
+        "fat": 18,
+        "confidence": 0.6
+      },
+      "latencyMs": 806.4478170000002,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "스타벅스:딸기 아사이 레모네이드 스타벅스 리프레셔:3298",
+      "name": "딸기 아사이 레모네이드 스타벅스 리프레셔",
+      "brand": "스타벅스",
+      "truth": {
+        "calories": 105,
+        "carbs": 25,
+        "protein": 1,
+        "fat": 1
+      },
+      "estimate": {
+        "id": "스타벅스:딸기 아사이 레모네이드 스타벅스 리프레셔:3298",
+        "calories": 150,
+        "carbs": 35,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.8
+      },
+      "latencyMs": 838.6545039999983,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "한솥:참치야채 감초고추장 비빔밥:6659",
+      "name": "참치야채 감초고추장 비빔밥",
+      "brand": "한솥",
+      "truth": {
+        "calories": 606,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:참치야채 감초고추장 비빔밥:6659",
+        "calories": 750,
+        "carbs": 90,
+        "protein": 30,
+        "fat": 25,
+        "confidence": 0.6
+      },
+      "latencyMs": 793.0159059999933,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "던킨도너츠:아이스 히비스커스 애플티:4701",
+      "name": "아이스 히비스커스 애플티",
+      "brand": "던킨도너츠",
+      "truth": {
+        "calories": 25,
+        "carbs": null,
+        "protein": 0,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "던킨도너츠:아이스 히비스커스 애플티:4701",
+        "calories": 120,
+        "carbs": 30,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 0.8
+      },
+      "latencyMs": 735.3931119999979,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "공차:패션 프룻 히비스커스 (COLD L):3274",
+      "name": "패션 프룻 히비스커스 (COLD L)",
+      "brand": "공차",
+      "truth": {
+        "calories": 98,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:패션 프룻 히비스커스 (COLD L):3274",
+        "calories": 250,
+        "carbs": 60,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 767.0052099999957,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "한솥:김치 제육 덮밥:6650",
+      "name": "김치 제육 덮밥",
+      "brand": "한솥",
+      "truth": {
+        "calories": 605.4,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:김치 제육 덮밥:6650",
+        "calories": 750,
+        "carbs": 80,
+        "protein": 40,
+        "fat": 30,
+        "confidence": 0.7
+      },
+      "latencyMs": 731.5637889999998,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "피자스쿨:치즈바이트 (치즈바이트):2584",
+      "name": "치즈바이트 (치즈바이트)",
+      "brand": "피자스쿨",
+      "truth": {
+        "calories": 216,
+        "carbs": null,
+        "protein": 12,
+        "fat": null
+      },
+      "estimate": {
+        "id": "피자스쿨:치즈바이트 (치즈바이트):2584",
+        "calories": 250,
+        "carbs": 25,
+        "protein": 10,
+        "fat": 12,
+        "confidence": 0.7
+      },
+      "latencyMs": 798.321468999995,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "공차:납작복숭아 아이스티 얼그레이 + 미니펄 (COLD J):3032",
+      "name": "납작복숭아 아이스티 얼그레이 + 미니펄 (COLD J)",
+      "brand": "공차",
+      "truth": {
+        "calories": 81,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:납작복숭아 아이스티 얼그레이 + 미니펄 (COLD J):3032",
+        "calories": 250,
+        "carbs": 60,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 905.6653409999999,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "스타벅스:아이스 호지 글레이즈드 티 라떼:3397",
+      "name": "아이스 호지 글레이즈드 티 라떼",
+      "brand": "스타벅스",
+      "truth": {
+        "calories": 215,
+        "carbs": 24,
+        "protein": 5,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "스타벅스:아이스 호지 글레이즈드 티 라떼:3397",
+        "calories": 250,
+        "carbs": 45,
+        "protein": 3,
+        "fat": 6,
+        "confidence": 0.8
+      },
+      "latencyMs": 1019.099556000001,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "공차:미니펄 망고 밀크 + 리얼 망고 (COLD L):3077",
+      "name": "미니펄 망고 밀크 + 리얼 망고 (COLD L)",
+      "brand": "공차",
+      "truth": {
+        "calories": 338,
+        "carbs": null,
+        "protein": 6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:미니펄 망고 밀크 + 리얼 망고 (COLD L):3077",
+        "calories": 350,
+        "carbs": 60,
+        "protein": 5,
+        "fat": 10,
+        "confidence": 0.7
+      },
+      "latencyMs": 710.1438179999968,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "공차:초콜렛 밀크티 (COLD J):3235",
+      "name": "초콜렛 밀크티 (COLD J)",
+      "brand": "공차",
+      "truth": {
+        "calories": 244,
+        "carbs": null,
+        "protein": 5,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:초콜렛 밀크티 (COLD J):3235",
+        "calories": 450,
+        "carbs": 70,
+        "protein": 5,
+        "fat": 15,
+        "confidence": 0.7
+      },
+      "latencyMs": 800.6522330000007,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "한솥:집반찬 맛김치:6674",
+      "name": "집반찬 맛김치",
+      "brand": "한솥",
+      "truth": {
+        "calories": 45,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:집반찬 맛김치:6674",
+        "calories": 50,
+        "carbs": 10,
+        "protein": 2,
+        "fat": 1,
+        "confidence": 0.4
+      },
+      "latencyMs": 717.6081199999971,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "공차:얼그레이 아메리카노 (DRIP) (HOT J):3142",
+      "name": "얼그레이 아메리카노 (DRIP) (HOT J)",
+      "brand": "공차",
+      "truth": {
+        "calories": 15,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:얼그레이 아메리카노 (DRIP) (HOT J):3142",
+        "calories": 10,
+        "carbs": 2,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 0.8
+      },
+      "latencyMs": 796.379098999998,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "한솥:매화 연어:6614",
+      "name": "매화 연어",
+      "brand": "한솥",
+      "truth": {
+        "calories": 1024,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:매화 연어:6614",
+        "calories": 750,
+        "carbs": 60,
+        "protein": 40,
+        "fat": 40,
+        "confidence": 0.6
+      },
+      "latencyMs": 739.058760999993,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "llm_only",
+      "menuId": "빽다방:말차쿠키 소프트:361",
+      "name": "말차쿠키 소프트",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 426,
+        "carbs": null,
+        "protein": 4.6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:말차쿠키 소프트:361",
+        "calories": 800,
+        "carbs": 90,
+        "protein": 10,
+        "fat": 45,
+        "confidence": 0.6
+      },
+      "latencyMs": 769.4140409999964,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "빽다방:피스타치오 생크림 카페라떼(ICED):87",
+      "name": "피스타치오 생크림 카페라떼(ICED)",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 568.3,
+        "carbs": null,
+        "protein": 10.6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:피스타치오 생크림 카페라떼(ICED):87",
+        "calories": 350,
+        "carbs": 30,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.6
+      },
+      "latencyMs": 818.773076999998,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "탐앤탐스:바닐라 탐앤치노:6341",
+      "name": "바닐라 탐앤치노",
+      "brand": "탐앤탐스",
+      "truth": {
+        "calories": 538,
+        "carbs": 90,
+        "protein": 5,
+        "fat": 18
+      },
+      "estimate": {
+        "id": "탐앤탐스:바닐라 탐앤치노:6341",
+        "calories": 350,
+        "carbs": 50,
+        "protein": 10,
+        "fat": 12,
+        "confidence": 0.6
+      },
+      "latencyMs": 921.5511799999949,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "탐앤탐스:용과망고 클렌즈 스무디:6278",
+      "name": "용과망고 클렌즈 스무디",
+      "brand": "탐앤탐스",
+      "truth": {
+        "calories": 220,
+        "carbs": 53,
+        "protein": 2,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "탐앤탐스:용과망고 클렌즈 스무디:6278",
+        "calories": 300,
+        "carbs": 70,
+        "protein": 2,
+        "fat": 1,
+        "confidence": 0.6
+      },
+      "latencyMs": 895.4116570000042,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "빽다방:저당사과젤리 매실티 ICED:194",
+      "name": "저당사과젤리 매실티 ICED",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 42.2,
+        "carbs": null,
+        "protein": 0.3,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:저당사과젤리 매실티 ICED:194",
+        "calories": 170,
+        "carbs": 40,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.6
+      },
+      "latencyMs": 869.5678079999998,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "던킨도너츠:에티오피아(Drip Coffee):4707",
+      "name": "에티오피아(Drip Coffee)",
+      "brand": "던킨도너츠",
+      "truth": {
+        "calories": 15,
+        "carbs": null,
+        "protein": 0,
+        "fat": 0.3
+      },
+      "estimate": {
+        "id": "던킨도너츠:에티오피아(Drip Coffee):4707",
+        "calories": 10,
+        "carbs": 0,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 861.6926949999979,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "한솥:단품 묵은지 김치찌개:6663",
+      "name": "단품 묵은지 김치찌개",
+      "brand": "한솥",
+      "truth": {
+        "calories": 194,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:단품 묵은지 김치찌개:6663",
+        "calories": 450,
+        "carbs": 20,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.4
+      },
+      "latencyMs": 833.0903340000004,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "스타벅스:딸기 아사이 레모네이드 스타벅스 리프레셔:3298",
+      "name": "딸기 아사이 레모네이드 스타벅스 리프레셔",
+      "brand": "스타벅스",
+      "truth": {
+        "calories": 105,
+        "carbs": 25,
+        "protein": 1,
+        "fat": 1
+      },
+      "estimate": {
+        "id": "스타벅스:딸기 아사이 레모네이드 스타벅스 리프레셔:3298",
+        "calories": 250,
+        "carbs": 60,
+        "protein": 1,
+        "fat": 0.5,
+        "confidence": 0.6
+      },
+      "latencyMs": 753.7831870000009,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "한솥:참치야채 감초고추장 비빔밥:6659",
+      "name": "참치야채 감초고추장 비빔밥",
+      "brand": "한솥",
+      "truth": {
+        "calories": 606,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:참치야채 감초고추장 비빔밥:6659",
+        "calories": 700,
+        "carbs": 80,
+        "protein": 25,
+        "fat": 30,
+        "confidence": 0.6
+      },
+      "latencyMs": 855.980273000001,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "던킨도너츠:아이스 히비스커스 애플티:4701",
+      "name": "아이스 히비스커스 애플티",
+      "brand": "던킨도너츠",
+      "truth": {
+        "calories": 25,
+        "carbs": null,
+        "protein": 0,
+        "fat": 0
+      },
+      "estimate": {
+        "id": "던킨도너츠:아이스 히비스커스 애플티:4701",
+        "calories": 10,
+        "carbs": 2.5,
+        "protein": 0.2,
+        "fat": 0,
+        "confidence": 0.6
+      },
+      "latencyMs": 826.162725999995,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "공차:패션 프룻 히비스커스 (COLD L):3274",
+      "name": "패션 프룻 히비스커스 (COLD L)",
+      "brand": "공차",
+      "truth": {
+        "calories": 98,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:패션 프룻 히비스커스 (COLD L):3274",
+        "calories": 242,
+        "carbs": 60,
+        "protein": 0,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 850.6890649999987,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "한솥:김치 제육 덮밥:6650",
+      "name": "김치 제육 덮밥",
+      "brand": "한솥",
+      "truth": {
+        "calories": 605.4,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:김치 제육 덮밥:6650",
+        "calories": 700,
+        "carbs": 80,
+        "protein": 30,
+        "fat": 25,
+        "confidence": 0.6
+      },
+      "latencyMs": 811.9423779999997,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "피자스쿨:치즈바이트 (치즈바이트):2584",
+      "name": "치즈바이트 (치즈바이트)",
+      "brand": "피자스쿨",
+      "truth": {
+        "calories": 216,
+        "carbs": null,
+        "protein": 12,
+        "fat": null
+      },
+      "estimate": {
+        "id": "피자스쿨:치즈바이트 (치즈바이트):2584",
+        "calories": 250,
+        "carbs": 15,
+        "protein": 10,
+        "fat": 15,
+        "confidence": 0.6
+      },
+      "latencyMs": 792.6570559999964,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "공차:납작복숭아 아이스티 얼그레이 + 미니펄 (COLD J):3032",
+      "name": "납작복숭아 아이스티 얼그레이 + 미니펄 (COLD J)",
+      "brand": "공차",
+      "truth": {
+        "calories": 81,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:납작복숭아 아이스티 얼그레이 + 미니펄 (COLD J):3032",
+        "calories": 350,
+        "carbs": 80,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.6
+      },
+      "latencyMs": 758.4659109999993,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "스타벅스:아이스 호지 글레이즈드 티 라떼:3397",
+      "name": "아이스 호지 글레이즈드 티 라떼",
+      "brand": "스타벅스",
+      "truth": {
+        "calories": 215,
+        "carbs": 24,
+        "protein": 5,
+        "fat": 11
+      },
+      "estimate": {
+        "id": "스타벅스:아이스 호지 글레이즈드 티 라떼:3397",
+        "calories": 240,
+        "carbs": 35,
+        "protein": 7,
+        "fat": 9,
+        "confidence": 0.6
+      },
+      "latencyMs": 806.7759640000004,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "공차:미니펄 망고 밀크 + 리얼 망고 (COLD L):3077",
+      "name": "미니펄 망고 밀크 + 리얼 망고 (COLD L)",
+      "brand": "공차",
+      "truth": {
+        "calories": 338,
+        "carbs": null,
+        "protein": 6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:미니펄 망고 밀크 + 리얼 망고 (COLD L):3077",
+        "calories": 350,
+        "carbs": 70,
+        "protein": 5,
+        "fat": 5,
+        "confidence": 0.6
+      },
+      "latencyMs": 770.3259810000018,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "공차:초콜렛 밀크티 (COLD J):3235",
+      "name": "초콜렛 밀크티 (COLD J)",
+      "brand": "공차",
+      "truth": {
+        "calories": 244,
+        "carbs": null,
+        "protein": 5,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:초콜렛 밀크티 (COLD J):3235",
+        "calories": 450,
+        "carbs": 65,
+        "protein": 12,
+        "fat": 15,
+        "confidence": 0.6
+      },
+      "latencyMs": 869.095392999996,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "한솥:집반찬 맛김치:6674",
+      "name": "집반찬 맛김치",
+      "brand": "한솥",
+      "truth": {
+        "calories": 45,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:집반찬 맛김치:6674",
+        "calories": 50,
+        "carbs": 5,
+        "protein": 2,
+        "fat": 1,
+        "confidence": 0.3
+      },
+      "latencyMs": 814.378309000007,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "공차:얼그레이 아메리카노 (DRIP) (HOT J):3142",
+      "name": "얼그레이 아메리카노 (DRIP) (HOT J)",
+      "brand": "공차",
+      "truth": {
+        "calories": 15,
+        "carbs": null,
+        "protein": 0,
+        "fat": null
+      },
+      "estimate": {
+        "id": "공차:얼그레이 아메리카노 (DRIP) (HOT J):3142",
+        "calories": 10,
+        "carbs": 1,
+        "protein": 1,
+        "fat": 0,
+        "confidence": 0.7
+      },
+      "latencyMs": 822.6028320000041,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "한솥:매화 연어:6614",
+      "name": "매화 연어",
+      "brand": "한솥",
+      "truth": {
+        "calories": 1024,
+        "carbs": null,
+        "protein": null,
+        "fat": null
+      },
+      "estimate": {
+        "id": "한솥:매화 연어:6614",
+        "calories": 450,
+        "carbs": 40,
+        "protein": 25,
+        "fat": 20,
+        "confidence": 0.4
+      },
+      "latencyMs": 859.5123230000027,
+      "error": null
+    },
+    {
+      "split": "unseen_brand",
+      "method": "hybrid_rag",
+      "menuId": "빽다방:말차쿠키 소프트:361",
+      "name": "말차쿠키 소프트",
+      "brand": "빽다방",
+      "truth": {
+        "calories": 426,
+        "carbs": null,
+        "protein": 4.6,
+        "fat": null
+      },
+      "estimate": {
+        "id": "빽다방:말차쿠키 소프트:361",
+        "calories": 520.5,
+        "carbs": 72.1,
+        "protein": 8.1,
+        "fat": 19.5,
+        "confidence": 0.7
+      },
+      "latencyMs": 897.7274880000041,
+      "error": null
+    }
+  ]
+}

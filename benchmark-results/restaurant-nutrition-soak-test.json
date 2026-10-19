@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-10-18T14:19:53.673Z",
+  "model": "gemini-2.5-flash-lite",
+  "sampleSize": 20,
+  "durationSeconds": 300,
+  "maxRequests": 1000,
+  "results": [
+    {
+      "concurrency": 3,
+      "requested": 1000,
+      "successful": 1000,
+      "failed": 0,
+      "rateLimited": 0,
+      "wallMs": 278330.496316,
+      "throughputPerSecond": 3.5928509927444643,
+      "latencyMs": {
+        "mean": 820.3027342320015,
+        "p50": 810.1807010000048,
+        "p95": 923.9389209999936
+      },
+      "usage": {
+        "promptTokenCount": 751136,
+        "candidatesTokenCount": 82328,
+        "totalTokenCount": 833542,
+        "thoughtsTokenCount": 78
+      },
+      "errors": []
+    }
+  ]
+}

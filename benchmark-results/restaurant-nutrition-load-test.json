@@ -1,0 +1,68 @@
+{
+  "generatedAt": "2026-10-18T14:06:14.274Z",
+  "model": "gemini-2.5-flash-lite",
+  "sampleSize": 20,
+  "results": [
+    {
+      "concurrency": 1,
+      "requested": 20,
+      "successful": 20,
+      "failed": 0,
+      "rateLimited": 0,
+      "wallMs": 17667.061733,
+      "throughputPerSecond": 1.1320501565148406,
+      "latencyMs": {
+        "mean": 868.6442359000005,
+        "p50": 865.5432259999998,
+        "p95": 987.9977560000007
+      },
+      "usage": {
+        "promptTokenCount": 15021,
+        "candidatesTokenCount": 1652,
+        "totalTokenCount": 16673
+      },
+      "errors": []
+    },
+    {
+      "concurrency": 3,
+      "requested": 20,
+      "successful": 20,
+      "failed": 0,
+      "rateLimited": 0,
+      "wallMs": 6495.118469000001,
+      "throughputPerSecond": 3.0792355975424157,
+      "latencyMs": {
+        "mean": 909.7306265499999,
+        "p50": 915.0781999999999,
+        "p95": 1030.058406
+      },
+      "usage": {
+        "promptTokenCount": 15021,
+        "candidatesTokenCount": 1644,
+        "totalTokenCount": 16667,
+        "thoughtsTokenCount": 2
+      },
+      "errors": []
+    },
+    {
+      "concurrency": 5,
+      "requested": 20,
+      "successful": 20,
+      "failed": 0,
+      "rateLimited": 0,
+      "wallMs": 5784.4528489999975,
+      "throughputPerSecond": 3.457543958277325,
+      "latencyMs": {
+        "mean": 1026.5987552,
+        "p50": 914.2634929999986,
+        "p95": 2832.956835000001
+      },
+      "usage": {
+        "promptTokenCount": 15021,
+        "candidatesTokenCount": 1633,
+        "totalTokenCount": 16654
+      },
+      "errors": []
+    }
+  ]
+}

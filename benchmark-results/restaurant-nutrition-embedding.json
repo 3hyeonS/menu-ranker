@@ -1,0 +1,1561 @@
+{
+  "generatedAt": "2026-10-18T13:39:32.801Z",
+  "options": {
+    "csvPath": "/home/sehyeon/menu-ranker/menu-import-template.csv",
+    "outputPath": "/home/sehyeon/menu-ranker/benchmark-results/restaurant-nutrition-embedding.json",
+    "cachePath": "/home/sehyeon/menu-ranker/benchmark-results/cache/menu-embeddings.json",
+    "sizes": [
+      250,
+      500,
+      1000,
+      2000,
+      4000
+    ],
+    "testLimit": 100,
+    "topK": 5,
+    "minSimilarity": 0.45,
+    "seed": "restaurant-nutrition-v1",
+    "dimension": 128,
+    "batchSize": 50,
+    "modes": [
+      "name",
+      "name_category",
+      "name_category_weight"
+    ]
+  },
+  "api": {
+    "model": "gemini-embedding-001",
+    "requests": 292,
+    "embeddedTexts": 14574,
+    "elapsedMs": 335849.47,
+    "reusedFromCache": 5574
+  },
+  "splits": {
+    "known_brand": {
+      "trainSize": 5372,
+      "availableTestSize": 1344,
+      "evaluatedTestSize": 100,
+      "testBrands": [
+        "BBQ",
+        "BHC",
+        "KFC",
+        "고피자",
+        "공차",
+        "교촌치킨",
+        "굽네치킨",
+        "네네치킨",
+        "노브랜드버거",
+        "달콤왕가탕후루",
+        "달콤커피",
+        "더벤티",
+        "던킨도너츠",
+        "도미노피자",
+        "뚜레쥬르",
+        "롯데리아",
+        "맘스터치",
+        "매머드커피",
+        "맥도날드",
+        "메가커피",
+        "멕시카나치킨",
+        "버거킹",
+        "빽다방",
+        "샐러드박스",
+        "샐러디",
+        "샐러리아",
+        "서브웨이",
+        "송사부고로케",
+        "스타벅스",
+        "슬로우캘리",
+        "앤티앤스 프레즐",
+        "엔제리너스",
+        "와플대학",
+        "이디야커피",
+        "자담치킨",
+        "처갓집양념치킨",
+        "커피빈",
+        "컴포즈커피",
+        "퀴즈노스",
+        "크리스피크림도넛",
+        "탐앤탐스",
+        "텐퍼센트커피",
+        "투썸플레이스",
+        "파리바게뜨",
+        "파스쿠찌",
+        "파파이스",
+        "파파존스",
+        "팔공티",
+        "폴바셋",
+        "푸라닭치킨",
+        "프랭크버거",
+        "피자나라치킨공주",
+        "피자마루",
+        "피자스쿨",
+        "피자에땅",
+        "피자헛",
+        "한솥",
+        "할리스"
+      ]
+    },
+    "unseen_brand": {
+      "trainSize": 5101,
+      "availableTestSize": 1615,
+      "evaluatedTestSize": 100,
+      "testBrands": [
+        "공차",
+        "교촌치킨",
+        "던킨도너츠",
+        "롯데리아",
+        "빽다방",
+        "스타벅스",
+        "크리스피크림도넛",
+        "탐앤탐스",
+        "프랭크버거",
+        "피자스쿨",
+        "한솥",
+        "호식이두마리치킨"
+      ]
+    }
+  },
+  "results": [
+    {
+      "split": "known_brand",
+      "datasetSize": 250,
+      "actualDatasetSize": 250,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.4148,
+        "p50": 0.3212,
+        "p95": 0.5669,
+        "p99": 5.9746
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 125.0477,
+          "mape": 0.6742,
+          "within20Percent": 0.3711,
+          "within30Percent": 0.5258
+        },
+        "carbs": {
+          "evaluated": 15,
+          "mae": 18.9106,
+          "mape": 0.3986,
+          "within20Percent": 0.2,
+          "within30Percent": 0.4
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 4.7961,
+          "mape": 0.9948,
+          "within20Percent": 0.3563,
+          "within30Percent": 0.4598
+        },
+        "fat": {
+          "evaluated": 8,
+          "mae": 8.5672,
+          "mape": 2.0236,
+          "within20Percent": 0,
+          "within30Percent": 0.125
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 250,
+      "actualDatasetSize": 250,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.4665,
+        "p50": 0.3697,
+        "p95": 0.5597,
+        "p99": 4.9298
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 122.9265,
+          "mape": 0.652,
+          "within20Percent": 0.3814,
+          "within30Percent": 0.5361
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 20.0567,
+          "mape": 0.6626,
+          "within20Percent": 0.3529,
+          "within30Percent": 0.4118
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 4.5892,
+          "mape": 1.3424,
+          "within20Percent": 0.4138,
+          "within30Percent": 0.5517
+        },
+        "fat": {
+          "evaluated": 12,
+          "mae": 9.3915,
+          "mape": 1.5155,
+          "within20Percent": 0.0833,
+          "within30Percent": 0.0833
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 250,
+      "actualDatasetSize": 250,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.4513,
+        "p50": 0.4005,
+        "p95": 0.5881,
+        "p99": 3.4076
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 281.8557,
+          "mape": 1.5011,
+          "within20Percent": 0.4845,
+          "within30Percent": 0.6082
+        },
+        "carbs": {
+          "evaluated": 16,
+          "mae": 17.616,
+          "mape": 0.7252,
+          "within20Percent": 0.4375,
+          "within30Percent": 0.4375
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 8.0642,
+          "mape": 2.4421,
+          "within20Percent": 0.3678,
+          "within30Percent": 0.5977
+        },
+        "fat": {
+          "evaluated": 11,
+          "mae": 8.5708,
+          "mape": 2.1197,
+          "within20Percent": 0,
+          "within30Percent": 0.0909
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 500,
+      "actualDatasetSize": 500,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.8531,
+        "p50": 0.6431,
+        "p95": 1.0122,
+        "p99": 11.9777
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 123.9324,
+          "mape": 0.6648,
+          "within20Percent": 0.3402,
+          "within30Percent": 0.5361
+        },
+        "carbs": {
+          "evaluated": 16,
+          "mae": 22.6234,
+          "mape": 0.5727,
+          "within20Percent": 0.1875,
+          "within30Percent": 0.25
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 4.3094,
+          "mape": 1.0901,
+          "within20Percent": 0.3908,
+          "within30Percent": 0.5402
+        },
+        "fat": {
+          "evaluated": 12,
+          "mae": 8.1622,
+          "mape": 1.004,
+          "within20Percent": 0.4167,
+          "within30Percent": 0.4167
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 500,
+      "actualDatasetSize": 500,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.903,
+        "p50": 0.7541,
+        "p95": 1.1157,
+        "p99": 5.1335
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 128.7947,
+          "mape": 0.7503,
+          "within20Percent": 0.3814,
+          "within30Percent": 0.567
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 17.2775,
+          "mape": 0.5384,
+          "within20Percent": 0.2941,
+          "within30Percent": 0.4118
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 4.979,
+          "mape": 1.0115,
+          "within20Percent": 0.3563,
+          "within30Percent": 0.5287
+        },
+        "fat": {
+          "evaluated": 13,
+          "mae": 8.1891,
+          "mape": 0.7389,
+          "within20Percent": 0.0769,
+          "within30Percent": 0.3846
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 500,
+      "actualDatasetSize": 500,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.9859,
+        "p50": 0.8074,
+        "p95": 1.3731,
+        "p99": 4.8586
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 113.521,
+          "mape": 0.8683,
+          "within20Percent": 0.5464,
+          "within30Percent": 0.701
+        },
+        "carbs": {
+          "evaluated": 16,
+          "mae": 17.1159,
+          "mape": 0.5786,
+          "within20Percent": 0.4375,
+          "within30Percent": 0.5625
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 4.1245,
+          "mape": 1.6437,
+          "within20Percent": 0.4943,
+          "within30Percent": 0.7126
+        },
+        "fat": {
+          "evaluated": 12,
+          "mae": 6.0424,
+          "mape": 0.5717,
+          "within20Percent": 0.1667,
+          "within30Percent": 0.1667
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 1000,
+      "actualDatasetSize": 1000,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 1.5816,
+        "p50": 1.3097,
+        "p95": 1.9049,
+        "p99": 8.7053
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 100.0833,
+          "mape": 0.4981,
+          "within20Percent": 0.4433,
+          "within30Percent": 0.6289
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 12.8445,
+          "mape": 0.2685,
+          "within20Percent": 0.5,
+          "within30Percent": 0.5556
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 3.6506,
+          "mape": 0.8877,
+          "within20Percent": 0.4368,
+          "within30Percent": 0.5402
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 7.4142,
+          "mape": 1.9856,
+          "within20Percent": 0.2857,
+          "within30Percent": 0.3571
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 1000,
+      "actualDatasetSize": 1000,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 1.8155,
+        "p50": 1.5406,
+        "p95": 5.0302,
+        "p99": 6.2242
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 107.7078,
+          "mape": 0.5074,
+          "within20Percent": 0.4639,
+          "within30Percent": 0.6289
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 14.8068,
+          "mape": 0.3696,
+          "within20Percent": 0.4444,
+          "within30Percent": 0.6667
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 4.0092,
+          "mape": 1.1118,
+          "within20Percent": 0.4368,
+          "within30Percent": 0.5402
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 8.5714,
+          "mape": 3.4239,
+          "within20Percent": 0.2143,
+          "within30Percent": 0.3571
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 1000,
+      "actualDatasetSize": 1000,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 1.9775,
+        "p50": 1.6755,
+        "p95": 4.5212,
+        "p99": 5.6411
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 83.2842,
+          "mape": 0.571,
+          "within20Percent": 0.5773,
+          "within30Percent": 0.7216
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 11.345,
+          "mape": 0.3726,
+          "within20Percent": 0.5,
+          "within30Percent": 0.5556
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 2.8855,
+          "mape": 0.6598,
+          "within20Percent": 0.5632,
+          "within30Percent": 0.7241
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 4.9397,
+          "mape": 1.4344,
+          "within20Percent": 0.3571,
+          "within30Percent": 0.3571
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 2000,
+      "actualDatasetSize": 2000,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 3.3973,
+        "p50": 2.8697,
+        "p95": 8.3823,
+        "p99": 11.4363
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 107.8686,
+          "mape": 0.4482,
+          "within20Percent": 0.4536,
+          "within30Percent": 0.6186
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 11.882,
+          "mape": 0.276,
+          "within20Percent": 0.4706,
+          "within30Percent": 0.5882
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 3.5766,
+          "mape": 0.8534,
+          "within20Percent": 0.4138,
+          "within30Percent": 0.5402
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 6.047,
+          "mape": 1.332,
+          "within20Percent": 0.4286,
+          "within30Percent": 0.5714
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 2000,
+      "actualDatasetSize": 2000,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 3.9892,
+        "p50": 3.4405,
+        "p95": 7.2221,
+        "p99": 8.887
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 103.063,
+          "mape": 0.4242,
+          "within20Percent": 0.4433,
+          "within30Percent": 0.6082
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 9.8939,
+          "mape": 0.2041,
+          "within20Percent": 0.5556,
+          "within30Percent": 0.7222
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 3.7562,
+          "mape": 0.7473,
+          "within20Percent": 0.4598,
+          "within30Percent": 0.6092
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 6.4112,
+          "mape": 1.9092,
+          "within20Percent": 0.4286,
+          "within30Percent": 0.5
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 2000,
+      "actualDatasetSize": 2000,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 4.3174,
+        "p50": 3.9037,
+        "p95": 7.6309,
+        "p99": 8.2819
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 92.8887,
+          "mape": 0.5131,
+          "within20Percent": 0.5567,
+          "within30Percent": 0.7113
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 11.6864,
+          "mape": 0.319,
+          "within20Percent": 0.5556,
+          "within30Percent": 0.6667
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 2.7713,
+          "mape": 0.4157,
+          "within20Percent": 0.5977,
+          "within30Percent": 0.7471
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 4.0571,
+          "mape": 0.351,
+          "within20Percent": 0.4286,
+          "within30Percent": 0.5
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 4000,
+      "actualDatasetSize": 4000,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 7.8052,
+        "p50": 7.0569,
+        "p95": 11.9664,
+        "p99": 13.8287
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 98.1455,
+          "mape": 0.4302,
+          "within20Percent": 0.4433,
+          "within30Percent": 0.6701
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 15.7069,
+          "mape": 0.3834,
+          "within20Percent": 0.1176,
+          "within30Percent": 0.4706
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 3.5255,
+          "mape": 0.7982,
+          "within20Percent": 0.4253,
+          "within30Percent": 0.5747
+        },
+        "fat": {
+          "evaluated": 13,
+          "mae": 6.3111,
+          "mape": 1.5766,
+          "within20Percent": 0.3846,
+          "within30Percent": 0.4615
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 4000,
+      "actualDatasetSize": 4000,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 8.9525,
+        "p50": 8.3222,
+        "p95": 12.1881,
+        "p99": 13.3252
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 97.8212,
+          "mape": 0.3634,
+          "within20Percent": 0.3814,
+          "within30Percent": 0.6392
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 13.2341,
+          "mape": 0.2776,
+          "within20Percent": 0.3333,
+          "within30Percent": 0.4444
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 3.4939,
+          "mape": 0.4606,
+          "within20Percent": 0.4368,
+          "within30Percent": 0.5977
+        },
+        "fat": {
+          "evaluated": 13,
+          "mae": 5.8466,
+          "mape": 2.003,
+          "within20Percent": 0.3846,
+          "within30Percent": 0.4615
+        }
+      }
+    },
+    {
+      "split": "known_brand",
+      "datasetSize": 4000,
+      "actualDatasetSize": 4000,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 9.7612,
+        "p50": 9.1695,
+        "p95": 12.5592,
+        "p99": 13.3703
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 71.4977,
+          "mape": 0.3735,
+          "within20Percent": 0.6082,
+          "within30Percent": 0.732
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 13.671,
+          "mape": 0.2704,
+          "within20Percent": 0.3333,
+          "within30Percent": 0.6111
+        },
+        "protein": {
+          "evaluated": 96,
+          "mae": 2.2361,
+          "mape": 0.3333,
+          "within20Percent": 0.6092,
+          "within30Percent": 0.7586
+        },
+        "fat": {
+          "evaluated": 14,
+          "mae": 4.6231,
+          "mape": 0.435,
+          "within20Percent": 0.4286,
+          "within30Percent": 0.5
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 250,
+      "actualDatasetSize": 250,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.4111,
+        "p50": 0.3213,
+        "p95": 0.4055,
+        "p99": 8.5405
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 178.2395,
+          "mape": 1.6459,
+          "within20Percent": 0.2121,
+          "within30Percent": 0.3232
+        },
+        "carbs": {
+          "evaluated": 19,
+          "mae": 20.9872,
+          "mape": 1.049,
+          "within20Percent": 0.1765,
+          "within30Percent": 0.2353
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 3.8636,
+          "mape": 1.3097,
+          "within20Percent": 0.1806,
+          "within30Percent": 0.2639
+        },
+        "fat": {
+          "evaluated": 27,
+          "mae": 5.8619,
+          "mape": 6.5839,
+          "within20Percent": 0.3333,
+          "within30Percent": 0.3333
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 250,
+      "actualDatasetSize": 250,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.4242,
+        "p50": 0.3658,
+        "p95": 0.5166,
+        "p99": 4.2855
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 191.3168,
+          "mape": 2.9271,
+          "within20Percent": 0.2525,
+          "within30Percent": 0.3636
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 20.6181,
+          "mape": 1.1349,
+          "within20Percent": 0.2,
+          "within30Percent": 0.2667
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 4.7351,
+          "mape": 1.8536,
+          "within20Percent": 0.2083,
+          "within30Percent": 0.2917
+        },
+        "fat": {
+          "evaluated": 22,
+          "mae": 5.0388,
+          "mape": 4.0509,
+          "within20Percent": 0.4706,
+          "within30Percent": 0.4706
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 250,
+      "actualDatasetSize": 250,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.4614,
+        "p50": 0.3913,
+        "p95": 0.5186,
+        "p99": 3.5329
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 399.156,
+          "mape": 7.6651,
+          "within20Percent": 0.303,
+          "within30Percent": 0.3939
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 20.5072,
+          "mape": 0.7601,
+          "within20Percent": 0.2,
+          "within30Percent": 0.3333
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 12.6445,
+          "mape": 7.6743,
+          "within20Percent": 0.1667,
+          "within30Percent": 0.2222
+        },
+        "fat": {
+          "evaluated": 21,
+          "mae": 7.8685,
+          "mape": 21.8218,
+          "within20Percent": 0.1875,
+          "within30Percent": 0.1875
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 500,
+      "actualDatasetSize": 500,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.7854,
+        "p50": 0.639,
+        "p95": 0.8358,
+        "p99": 7.9075
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 176.2126,
+          "mape": 1.7014,
+          "within20Percent": 0.2525,
+          "within30Percent": 0.3535
+        },
+        "carbs": {
+          "evaluated": 20,
+          "mae": 28.2371,
+          "mape": 1.3202,
+          "within20Percent": 0.1111,
+          "within30Percent": 0.1667
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 3.586,
+          "mape": 1.3074,
+          "within20Percent": 0.2222,
+          "within30Percent": 0.3194
+        },
+        "fat": {
+          "evaluated": 22,
+          "mae": 5.6473,
+          "mape": 4.1109,
+          "within20Percent": 0.2353,
+          "within30Percent": 0.3529
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 500,
+      "actualDatasetSize": 500,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.8978,
+        "p50": 0.7495,
+        "p95": 1.1057,
+        "p99": 6.1828
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 183.6439,
+          "mape": 2.6366,
+          "within20Percent": 0.202,
+          "within30Percent": 0.3636
+        },
+        "carbs": {
+          "evaluated": 19,
+          "mae": 28.6782,
+          "mape": 1.3301,
+          "within20Percent": 0.1176,
+          "within30Percent": 0.1176
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 4.1754,
+          "mape": 1.4116,
+          "within20Percent": 0.2361,
+          "within30Percent": 0.3194
+        },
+        "fat": {
+          "evaluated": 20,
+          "mae": 4.3223,
+          "mape": 3.7642,
+          "within20Percent": 0.3333,
+          "within30Percent": 0.4
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 500,
+      "actualDatasetSize": 500,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 0.9477,
+        "p50": 0.8078,
+        "p95": 1.257,
+        "p99": 4.7249
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 352.0295,
+          "mape": 3.0078,
+          "within20Percent": 0.2626,
+          "within30Percent": 0.3838
+        },
+        "carbs": {
+          "evaluated": 20,
+          "mae": 30.909,
+          "mape": 1.041,
+          "within20Percent": 0.1111,
+          "within30Percent": 0.2222
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 8.6381,
+          "mape": 3.1766,
+          "within20Percent": 0.2222,
+          "within30Percent": 0.3056
+        },
+        "fat": {
+          "evaluated": 23,
+          "mae": 6.5674,
+          "mape": 2.9061,
+          "within20Percent": 0.1111,
+          "within30Percent": 0.2222
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 1000,
+      "actualDatasetSize": 1000,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 1.6052,
+        "p50": 1.3052,
+        "p95": 2.2059,
+        "p99": 10.2952
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 162.6603,
+          "mape": 1.3165,
+          "within20Percent": 0.2424,
+          "within30Percent": 0.3535
+        },
+        "carbs": {
+          "evaluated": 20,
+          "mae": 24.6442,
+          "mape": 1.1192,
+          "within20Percent": 0.1111,
+          "within30Percent": 0.2222
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 3.3444,
+          "mape": 0.9159,
+          "within20Percent": 0.25,
+          "within30Percent": 0.3889
+        },
+        "fat": {
+          "evaluated": 23,
+          "mae": 6.3524,
+          "mape": 2.9762,
+          "within20Percent": 0.1579,
+          "within30Percent": 0.1579
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 1000,
+      "actualDatasetSize": 1000,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 1.8287,
+        "p50": 1.5616,
+        "p95": 4.7175,
+        "p99": 5.6827
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 166.2266,
+          "mape": 1.9843,
+          "within20Percent": 0.3131,
+          "within30Percent": 0.4646
+        },
+        "carbs": {
+          "evaluated": 20,
+          "mae": 24.9282,
+          "mape": 1.1465,
+          "within20Percent": 0.1111,
+          "within30Percent": 0.2222
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 4.1718,
+          "mape": 1.6889,
+          "within20Percent": 0.2222,
+          "within30Percent": 0.3611
+        },
+        "fat": {
+          "evaluated": 18,
+          "mae": 4.7526,
+          "mape": 4.8869,
+          "within20Percent": 0.2857,
+          "within30Percent": 0.2857
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 1000,
+      "actualDatasetSize": 1000,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 1.9506,
+        "p50": 1.6622,
+        "p95": 4.688,
+        "p99": 5.9093
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 288.9278,
+          "mape": 2.6454,
+          "within20Percent": 0.303,
+          "within30Percent": 0.3939
+        },
+        "carbs": {
+          "evaluated": 19,
+          "mae": 27.5002,
+          "mape": 0.8468,
+          "within20Percent": 0.1176,
+          "within30Percent": 0.1765
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 7.0872,
+          "mape": 1.8653,
+          "within20Percent": 0.2083,
+          "within30Percent": 0.3056
+        },
+        "fat": {
+          "evaluated": 18,
+          "mae": 5.8664,
+          "mape": 3.5302,
+          "within20Percent": 0.1429,
+          "within30Percent": 0.1429
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 2000,
+      "actualDatasetSize": 2000,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 3.2324,
+        "p50": 2.7307,
+        "p95": 7.311,
+        "p99": 10.5978
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 153.1588,
+          "mape": 1.6693,
+          "within20Percent": 0.2929,
+          "within30Percent": 0.4545
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 31.4413,
+          "mape": 1.1813,
+          "within20Percent": 0.2667,
+          "within30Percent": 0.2667
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 2.91,
+          "mape": 0.9222,
+          "within20Percent": 0.2361,
+          "within30Percent": 0.375
+        },
+        "fat": {
+          "evaluated": 21,
+          "mae": 6.7057,
+          "mape": 4.0714,
+          "within20Percent": 0.375,
+          "within30Percent": 0.4375
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 2000,
+      "actualDatasetSize": 2000,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 4.1948,
+        "p50": 3.6536,
+        "p95": 7.5111,
+        "p99": 9.1549
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 160.67,
+          "mape": 2.2296,
+          "within20Percent": 0.2929,
+          "within30Percent": 0.4343
+        },
+        "carbs": {
+          "evaluated": 14,
+          "mae": 31.5583,
+          "mape": 1.6246,
+          "within20Percent": 0,
+          "within30Percent": 0.0833
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 3.8264,
+          "mape": 0.9735,
+          "within20Percent": 0.25,
+          "within30Percent": 0.3611
+        },
+        "fat": {
+          "evaluated": 15,
+          "mae": 4.843,
+          "mape": 6.3844,
+          "within20Percent": 0.3636,
+          "within30Percent": 0.3636
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 2000,
+      "actualDatasetSize": 2000,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 4.2856,
+        "p50": 3.8555,
+        "p95": 7.2966,
+        "p99": 7.7098
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 243.5329,
+          "mape": 2.5379,
+          "within20Percent": 0.303,
+          "within30Percent": 0.4242
+        },
+        "carbs": {
+          "evaluated": 18,
+          "mae": 27.2385,
+          "mape": 0.7798,
+          "within20Percent": 0.0625,
+          "within30Percent": 0.125
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 5.9829,
+          "mape": 1.4673,
+          "within20Percent": 0.2778,
+          "within30Percent": 0.375
+        },
+        "fat": {
+          "evaluated": 17,
+          "mae": 5.813,
+          "mape": 7.2354,
+          "within20Percent": 0.0769,
+          "within30Percent": 0.0769
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 4000,
+      "actualDatasetSize": 4000,
+      "testSize": 100,
+      "inputMode": "name",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 7.5249,
+        "p50": 6.7223,
+        "p95": 11.9611,
+        "p99": 12.6693
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 157.4383,
+          "mape": 1.6011,
+          "within20Percent": 0.2828,
+          "within30Percent": 0.404
+        },
+        "carbs": {
+          "evaluated": 17,
+          "mae": 27.0094,
+          "mape": 0.9959,
+          "within20Percent": 0.1333,
+          "within30Percent": 0.2
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 3.0745,
+          "mape": 0.8777,
+          "within20Percent": 0.25,
+          "within30Percent": 0.4167
+        },
+        "fat": {
+          "evaluated": 19,
+          "mae": 6.0366,
+          "mape": 4.4643,
+          "within20Percent": 0.2667,
+          "within30Percent": 0.3333
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 4000,
+      "actualDatasetSize": 4000,
+      "testSize": 100,
+      "inputMode": "name_category",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 8.9097,
+        "p50": 8.1024,
+        "p95": 12.167,
+        "p99": 13.1452
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 161.4422,
+          "mape": 2.0659,
+          "within20Percent": 0.303,
+          "within30Percent": 0.404
+        },
+        "carbs": {
+          "evaluated": 15,
+          "mae": 27.985,
+          "mape": 1.2628,
+          "within20Percent": 0.0769,
+          "within30Percent": 0.2308
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 3.7611,
+          "mape": 1.0049,
+          "within20Percent": 0.2639,
+          "within30Percent": 0.3194
+        },
+        "fat": {
+          "evaluated": 15,
+          "mae": 7.683,
+          "mape": 7.3648,
+          "within20Percent": 0.25,
+          "within30Percent": 0.25
+        }
+      }
+    },
+    {
+      "split": "unseen_brand",
+      "datasetSize": 4000,
+      "actualDatasetSize": 4000,
+      "testSize": 100,
+      "inputMode": "name_category_weight",
+      "method": "embedding_similar_menu",
+      "topK": 5,
+      "minSimilarity": 0.45,
+      "coverage": 1,
+      "abstentionRate": 0,
+      "latencyMs": {
+        "mean": 9.4582,
+        "p50": 8.7581,
+        "p95": 12.4573,
+        "p99": 15.1271
+      },
+      "nutrients": {
+        "calories": {
+          "evaluated": 100,
+          "mae": 191.6894,
+          "mape": 2.5171,
+          "within20Percent": 0.3434,
+          "within30Percent": 0.4646
+        },
+        "carbs": {
+          "evaluated": 15,
+          "mae": 21.6882,
+          "mape": 0.8102,
+          "within20Percent": 0.0769,
+          "within30Percent": 0.2308
+        },
+        "protein": {
+          "evaluated": 86,
+          "mae": 4.5509,
+          "mape": 1.1889,
+          "within20Percent": 0.3333,
+          "within30Percent": 0.375
+        },
+        "fat": {
+          "evaluated": 15,
+          "mae": 5.8662,
+          "mape": 10.7296,
+          "within20Percent": 0.1667,
+          "within30Percent": 0.1667
+        }
+      }
+    }
+  ]
+}
