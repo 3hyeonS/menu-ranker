@@ -1,3 +1,4 @@
+import { getFrequentlyRecordedMenuIds } from '../utils/frequent-menu.util';
 import {
   BadRequestException,
   ConflictException,
@@ -1939,8 +1940,12 @@ failure_reason enum:
       return { menu_ids: [], menu_names: [], menu_quantities: [] };
     }
 
-    const allMenus =
-      await this.getAllFoodImageRecognitionCandidateMenus(userId);
+    const [allMenus, frequentMenuIds] = await Promise.all([
+      this.getAllFoodImageRecognitionCandidateMenus(userId),
+      getFrequentlyRecordedMenuIds(this.mealMenuRepository, userId),
+    ]);
+    const frequentIdSet = new Set(frequentMenuIds);
+    const frequentMenus = allMenus.filter((menu) => frequentIdSet.has(menu.id));
     const candidateGroups = await Promise.all(
       predictions.map(async (prediction, index) => {
         const candidateSelection =
@@ -1948,6 +1953,7 @@ failure_reason enum:
             userId,
             prediction,
             allMenus,
+            frequentMenus,
           );
 
         return {
@@ -2020,6 +2026,7 @@ failure_reason enum:
     userId: number,
     prediction: HomeFoodImagePrediction,
     allMenus: HomeFoodImageRecognitionCandidate[],
+    frequentMenus: HomeFoodImageRecognitionCandidate[] = [],
   ): Promise<{
     candidates: HomeFoodImageRecognitionCandidate[];
     preferredCandidateId?: number;
@@ -2087,6 +2094,11 @@ failure_reason enum:
         ...exactProductMenus,
         ...brandMenus,
         ...preferredMenus,
+        ...this.findTopHomeFoodImageLocalCandidates(
+          prediction,
+          frequentMenus,
+          limit,
+        ),
         ...compatibleVectorMenus,
         ...localMenus,
       ]).filter((candidate) =>

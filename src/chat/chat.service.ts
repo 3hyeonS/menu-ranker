@@ -1,3 +1,4 @@
+import { getFrequentlyRecordedMenuIds } from '../utils/frequent-menu.util';
 import {
   BadRequestException,
   Injectable,
@@ -6047,6 +6048,18 @@ ${JSON.stringify(
     >,
     timing?: ChatTimingLogger,
   ): Promise<FoodImageCandidateGroup[]> {
+    const frequentMenuIds = new Set(
+      await getFrequentlyRecordedMenuIds(this.mealMenuRepository, userId),
+    );
+    const frequentMenus = menus.filter((menu) => frequentMenuIds.has(menu.id));
+    const frequentGroups = this.getFoodImageLocalCandidateGroupsByPrediction(
+      predictions.map((prediction, index) => ({ prediction, index })),
+      frequentMenus,
+      context,
+    );
+    const frequentGroupMap = new Map(
+      frequentGroups.map((group) => [group.foodIndex, group]),
+    );
     const preferredRefinedSaltMenus = predictions.some(
       (prediction) =>
         !prediction.brand && isGenericPlainSaltName(prediction.foodName),
@@ -6122,6 +6135,7 @@ ${JSON.stringify(
             ...exactProductMenus,
             ...brandMenus,
             ...preferredMenus,
+            ...(frequentGroupMap.get(index)?.candidates ?? []),
             ...group.candidates,
           ]).filter((candidate) =>
             this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
