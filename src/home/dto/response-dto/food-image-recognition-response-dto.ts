@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { stripPublicMenuSourcePrefix } from '../../../utils/menu-name.util';
 
 type FoodImageRecognitionInput = {
   menu_ids: number[];
@@ -40,5 +41,6 @@ export class FoodImageRecognitionResponseDto {
 
   constructor(value: FoodImageRecognitionInput) {
     Object.assign(this, value);
+    this.menu_names = value.menu_names.map(stripPublicMenuSourcePrefix);
   }
 }
