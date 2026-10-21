@@ -107,4 +107,33 @@ describe('frequent menus in food image candidates', () => {
     );
     expect(groups[0].candidates.map((menu) => menu.id)).toEqual([20, 30]);
   });
+  it('keeps an unrecorded personal food when frequent public duplicates fill the chat candidate limit', async () => {
+    const service = Object.create(ChatService.prototype) as any;
+    const duplicates = Array.from({ length: 9 }, (_, index) => ({
+      ...frequent,
+      id: index + 1,
+    }));
+    const personal = { ...frequent, id: 100, ownerUserId: 7 };
+    const repository = createRepository();
+    repository.query.getRawMany.mockResolvedValue(
+      duplicates.map((menu) => ({ menu_id: menu.id })),
+    );
+    service.mealMenuRepository = repository;
+    service.getFoodImageVectorCandidateGroupsByPrediction = jest
+      .fn()
+      .mockResolvedValue([
+        {
+          foodIndex: 0,
+          foodName: prediction.foodName,
+          candidates: duplicates.slice(0, 8),
+        },
+      ]);
+    const groups = await service.buildFoodImageCandidateGroupsByPrediction(
+      7,
+      [prediction],
+      [...duplicates, personal],
+      { inferredBrand: null, inferredCategory: null },
+    );
+    expect(groups[0].candidates.map((menu) => menu.id)).toEqual([100]);
+  });
 });

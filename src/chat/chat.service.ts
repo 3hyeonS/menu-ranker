@@ -1,3 +1,7 @@
+import {
+  preferUserFoodImageMenu,
+  prioritizeUserFoodImageMenus,
+} from '../utils/food-image-menu-priority.util';
 import { getFrequentlyRecordedMenuIds } from '../utils/frequent-menu.util';
 import {
   BadRequestException,
@@ -534,6 +538,8 @@ type MenuRecognitionCandidate = {
   brand: string | null;
   category: string | null;
   unit?: number;
+  ownerUserId?: number | null;
+  frequentRank?: number;
 };
 
 type RecognitionTextMenuMatch = {
@@ -5310,6 +5316,7 @@ ${JSON.stringify(feedbackContext)}
       .createQueryBuilder('menu')
       .leftJoin('menu.user', 'user')
       .select([
+        'user.id AS ownerUserId',
         'menu.id AS id',
         'menu.name AS name',
         'menu.brand AS brand',
@@ -5844,7 +5851,7 @@ ${JSON.stringify(
     const preferredGenericMenu = prediction.brand
       ? undefined
       : findPreferredGenericFoodImageCandidate(prediction.foodName, menus);
-    const matchedMenu =
+    const selected =
       preferredMenu ??
       preferredGenericMenu ??
       this.findBestRecognitionCandidate(
@@ -5854,6 +5861,10 @@ ${JSON.stringify(
         null,
         55,
       );
+
+    const matchedMenu = selected
+      ? preferUserFoodImageMenu(selected, menus)
+      : null;
 
     return matchedMenu &&
       this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)
@@ -6048,10 +6059,28 @@ ${JSON.stringify(
     >,
     timing?: ChatTimingLogger,
   ): Promise<FoodImageCandidateGroup[]> {
-    const frequentMenuIds = new Set(
-      await getFrequentlyRecordedMenuIds(this.mealMenuRepository, userId),
+    const frequentMenuIds = await getFrequentlyRecordedMenuIds(
+      this.mealMenuRepository,
+      userId,
     );
-    const frequentMenus = menus.filter((menu) => frequentMenuIds.has(menu.id));
+    const frequentRanks = new Map(
+      frequentMenuIds.map((id, index) => [id, index + 1]),
+    );
+    menus = menus.map((menu) => ({
+      ...menu,
+      frequentRank: frequentRanks.get(menu.id),
+    }));
+    const frequentMenus = menus.filter(
+      (menu) => menu.frequentRank !== undefined,
+    );
+    const personalGroups = this.getFoodImageLocalCandidateGroupsByPrediction(
+      predictions.map((prediction, index) => ({ prediction, index })),
+      menus.filter((menu) => menu.ownerUserId != null),
+      context,
+    );
+    const personalGroupMap = new Map(
+      personalGroups.map((group) => [group.foodIndex, group]),
+    );
     const frequentGroups = this.getFoodImageLocalCandidateGroupsByPrediction(
       predictions.map((prediction, index) => ({ prediction, index })),
       frequentMenus,
@@ -6135,14 +6164,21 @@ ${JSON.stringify(
             ...exactProductMenus,
             ...brandMenus,
             ...preferredMenus,
+            ...(personalGroupMap.get(index)?.candidates ?? []),
             ...(frequentGroupMap.get(index)?.candidates ?? []),
-            ...group.candidates,
+            ...group.candidates.map(
+              (menu) =>
+                menus.find((candidate) => candidate.id === menu.id) ?? menu,
+            ),
           ]).filter((candidate) =>
             this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
           ),
+        );
+        const prioritizedCandidates = prioritizeUserFoodImageMenus(
+          candidates,
         ).slice(0, this.getFoodImagePerFoodVectorCandidateLimit());
         const exactPreferredCandidate = exactProductMenus.find((menu) =>
-          candidates.some((candidate) => candidate.id === menu.id),
+          prioritizedCandidates.some((candidate) => candidate.id === menu.id),
         );
 
         return {
@@ -6150,7 +6186,7 @@ ${JSON.stringify(
           ...(exactPreferredCandidate
             ? { preferredCandidateId: exactPreferredCandidate.id }
             : {}),
-          candidates,
+          candidates: prioritizedCandidates,
         };
       })
       .filter((group) => group.candidates.length > 0);
@@ -6650,6 +6686,7 @@ ${JSON.stringify(
       .createQueryBuilder('menu')
       .leftJoin('menu.user', 'user')
       .select([
+        'user.id AS ownerUserId',
         'menu.id AS id',
         'menu.name AS name',
         'menu.brand AS brand',
@@ -6928,7 +6965,21 @@ ${JSON.stringify(
   candidateGroups.map((group) => ({
     food_index: group.foodIndex,
     food_name: group.foodName,
-    candidate_menus: group.candidates,
+    candidate_menus: group.candidates.map(
+      ({ id, name, brand, category, unit, ownerUserId, frequentRank }) => ({
+        id,
+        name,
+        brand,
+        category,
+        unit,
+        source:
+          ownerUserId != null
+            ? 'personal'
+            : frequentRank !== undefined
+              ? 'frequent'
+              : 'public',
+      }),
+    ),
   })),
 )}
 
@@ -7047,8 +7098,12 @@ ${JSON.stringify(
               (candidate): candidate is MenuRecognitionCandidate => !!candidate,
             ),
         );
-    const matchedMenu =
-      exactProductMenu ?? preferredMenu ?? candidateMap.get(menuId)!;
+    const matchedMenu = preferUserFoodImageMenu(
+      exactProductMenu ?? preferredMenu ?? candidateMap.get(menuId)!,
+      Array.from(candidateIdsByFoodIndex.get(foodIndex) ?? [])
+        .map((id) => candidateMap.get(id)!)
+        .filter(Boolean),
+    );
     if (!this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)) {
       return null;
     }

@@ -1,3 +1,7 @@
+import {
+  preferUserFoodImageMenu,
+  prioritizeUserFoodImageMenus,
+} from '../utils/food-image-menu-priority.util';
 import { getFrequentlyRecordedMenuIds } from '../utils/frequent-menu.util';
 import {
   BadRequestException,
@@ -178,6 +182,8 @@ type HomeFoodImageRecognitionCandidate = {
   category: string | null;
   weight: number | null;
   unit: number | null;
+  ownerUserId?: number | null;
+  frequentRank?: number;
 };
 
 type HomeFoodImagePrediction = {
@@ -1940,12 +1946,20 @@ failure_reason enum:
       return { menu_ids: [], menu_names: [], menu_quantities: [] };
     }
 
-    const [allMenus, frequentMenuIds] = await Promise.all([
+    const [loadedMenus, frequentMenuIds] = await Promise.all([
       this.getAllFoodImageRecognitionCandidateMenus(userId),
       getFrequentlyRecordedMenuIds(this.mealMenuRepository, userId),
     ]);
-    const frequentIdSet = new Set(frequentMenuIds);
-    const frequentMenus = allMenus.filter((menu) => frequentIdSet.has(menu.id));
+    const frequentRanks = new Map(
+      frequentMenuIds.map((id, index) => [id, index + 1]),
+    );
+    const allMenus = loadedMenus.map((menu) => ({
+      ...menu,
+      frequentRank: frequentRanks.get(menu.id),
+    }));
+    const frequentMenus = allMenus.filter(
+      (menu) => menu.frequentRank !== undefined,
+    );
     const candidateGroups = await Promise.all(
       predictions.map(async (prediction, index) => {
         const candidateSelection =
@@ -2096,24 +2110,35 @@ failure_reason enum:
         ...preferredMenus,
         ...this.findTopHomeFoodImageLocalCandidates(
           prediction,
+          allMenus.filter((menu) => menu.ownerUserId != null),
+          limit,
+        ),
+        ...this.findTopHomeFoodImageLocalCandidates(
+          prediction,
           frequentMenus,
           limit,
         ),
-        ...compatibleVectorMenus,
+        ...compatibleVectorMenus.map(
+          (menu) =>
+            allMenus.find((candidate) => candidate.id === menu.id) ?? menu,
+        ),
         ...localMenus,
       ]).filter((candidate) =>
         this.isHomeFoodImageDishTypeCompatible(foodName, candidate),
       ),
+    );
+    const prioritizedCandidates = prioritizeUserFoodImageMenus(
+      candidates,
     ).slice(0, limit);
     const exactPreferredCandidate = exactProductMenus.find((menu) =>
-      candidates.some((candidate) => candidate.id === menu.id),
+      prioritizedCandidates.some((candidate) => candidate.id === menu.id),
     );
 
     return {
       ...(exactPreferredCandidate
         ? { preferredCandidateId: exactPreferredCandidate.id }
         : {}),
-      candidates,
+      candidates: prioritizedCandidates,
     };
   }
 
@@ -2628,8 +2653,11 @@ ${JSON.stringify(
             prediction.foodName,
             groupCandidates,
           );
-      const candidate =
+      const selected =
         exactProductMenu ?? preferredCandidate ?? candidateMap.get(menuId);
+      const candidate = selected
+        ? preferUserFoodImageMenu(selected, groupCandidates)
+        : undefined;
 
       if (
         !candidate ||
@@ -2672,8 +2700,11 @@ ${JSON.stringify(
               prediction.foodName,
               candidates,
             );
-        const candidate =
+        const selected =
           exactProductCandidate ?? preferredCandidate ?? candidates[0];
+        const candidate = selected
+          ? preferUserFoodImageMenu(selected, candidates)
+          : undefined;
 
         if (
           !candidate ||
@@ -2733,16 +2764,7 @@ ${JSON.stringify(
   private async getFoodImageRecognitionMenusByIds(
     userId: number,
     menuIds: number[],
-  ): Promise<
-    Array<{
-      id: number;
-      name: string;
-      brand: string | null;
-      category: string | null;
-      weight: number | null;
-      unit: number | null;
-    }>
-  > {
+  ): Promise<HomeFoodImageRecognitionCandidate[]> {
     if (menuIds.length === 0) {
       return [];
     }
@@ -2751,6 +2773,7 @@ ${JSON.stringify(
       .createQueryBuilder('menu')
       .leftJoin('menu.user', 'user')
       .select([
+        'user.id AS ownerUserId',
         'menu.id AS id',
         'menu.name AS name',
         'menu.brand AS brand',
@@ -2788,20 +2811,12 @@ ${JSON.stringify(
 
   private async getAllFoodImageRecognitionCandidateMenus(
     userId: number,
-  ): Promise<
-    Array<{
-      id: number;
-      name: string;
-      brand: string | null;
-      category: string | null;
-      weight: number | null;
-      unit: number | null;
-    }>
-  > {
+  ): Promise<HomeFoodImageRecognitionCandidate[]> {
     const rows = await this.menuRepository
       .createQueryBuilder('menu')
       .leftJoin('menu.user', 'user')
       .select([
+        'user.id AS ownerUserId',
         'menu.id AS id',
         'menu.name AS name',
         'menu.brand AS brand',
