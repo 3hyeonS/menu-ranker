@@ -1,0 +1,51 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.1'
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --runInBand
+      - run: npm run build
+      - name: Package build
+        run: tar -czf "$RUNNER_TEMP/melo-dist.tar.gz" dist
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy and check health
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          artifact="/tmp/melo-dist-${GITHUB_SHA}.tar.gz"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            "$RUNNER_TEMP/melo-dist.tar.gz" "ubuntu@${EC2_HOST}:${artifact}"
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 \
+            "ubuntu@${EC2_HOST}" bash -s -- "$GITHUB_SHA" "$artifact" < scripts/deploy-ec2.sh
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
