@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import * as dotenv from 'dotenv';
 import { UserEntity } from './entity/user/user.entity';
+import { USER_ROLES } from './entity/authority.entity';
 
 // .env 파일 로드
 dotenv.config();
@@ -28,7 +29,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
       let member: UserEntity;
 
-      if (role === 'USER' || role === 'ADMIN') {
+      if (USER_ROLES.includes(role)) {
         member = await this.usersRepository.findOne({
           where: { id, email },
         });

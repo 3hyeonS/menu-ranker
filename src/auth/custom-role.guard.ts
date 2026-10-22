@@ -34,7 +34,11 @@ export class RolesGuard implements CanActivate {
     }
 
     // 사용자의 역할이 필요한 역할 목록에 포함되는지 권한 확인
-    const hasRole = requiredRoles.some((role) => user.authority.role === role);
+    const hasRole = requiredRoles.some(
+      (role) =>
+        user.authority.role === role ||
+        (role === 'USER' && user.authority.role === 'TESTER'),
+    );
     if (!hasRole) {
       throw new ForbiddenException(
         `Not a member of the ${requiredRoles} (only ${requiredRoles} can call this api)`,

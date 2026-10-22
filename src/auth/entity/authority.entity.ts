@@ -1,7 +1,8 @@
 import { Entity, OneToMany, PrimaryColumn } from 'typeorm';
 import { UserEntity } from './user/user.entity';
 
-export type TRole = 'USER' | 'ADMIN';
+export const USER_ROLES = ['USER', 'TESTER', 'ADMIN'] as const;
+export type TRole = (typeof USER_ROLES)[number];
 
 @Entity({ name: 'authority' })
 export class AuthorityEntity {

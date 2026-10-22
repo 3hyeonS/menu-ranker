@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { TRole } from '../../../entity/authority.entity';
+import { TRole, USER_ROLES } from '../../../entity/authority.entity';
 import { TPlatform } from '../../../entity/user/signWith.entity';
 import { UserEntity } from '../../../entity/user/user.entity';
 
@@ -19,7 +19,7 @@ export class UserResponseDto {
   @ApiProperty({ example: 'KAKAO' })
   platform: TPlatform;
 
-  @ApiProperty({ example: 'USER' })
+  @ApiProperty({ enum: USER_ROLES, example: 'USER' })
   role: TRole;
 
   @ApiProperty({

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { TRole } from '../../../auth/entity/authority.entity';
+import { TRole, USER_ROLES } from '../../../auth/entity/authority.entity';
 import { UserEntity } from '../../../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../../../auth/entity/user/userInfo.entity';
 
@@ -17,7 +17,7 @@ export class ProfileResponseDto {
   @ApiProperty({ example: '소셜프로필명', nullable: true })
   name: string | null;
 
-  @ApiProperty({ example: 'USER' })
+  @ApiProperty({ enum: USER_ROLES, example: 'USER' })
   role: TRole;
 
   @ApiProperty({
