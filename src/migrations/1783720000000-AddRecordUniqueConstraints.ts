@@ -2,8 +2,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 // 같은 사용자·날짜(·끼니/운동)의 기록이 중복 저장되지 않게 UNIQUE 인덱스를 추가한다.
 // 운영 DB 중복 0건 확인(2026-10-25, #7 결정). 실행은 사용자 허락 후에만 한다.
-export class AddRecordUniqueConstraints1783710000000 implements MigrationInterface {
-  name = 'AddRecordUniqueConstraints1783710000000';
+export class AddRecordUniqueConstraints1783720000000 implements MigrationInterface {
+  name = 'AddRecordUniqueConstraints1783720000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

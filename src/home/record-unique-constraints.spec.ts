@@ -2,7 +2,7 @@ import { getMetadataArgsStorage } from 'typeorm';
 import { MealEntity } from './entity/meal.entity';
 import { WeightStepsEntity } from './entity/weight-steps.entity';
 import { WorkoutRecordEntity } from './entity/workout-record.entity';
-import { AddRecordUniqueConstraints1783710000000 } from '../migrations/1783710000000-AddRecordUniqueConstraints';
+import { AddRecordUniqueConstraints1783720000000 } from '../migrations/1783720000000-AddRecordUniqueConstraints';
 
 describe('record UNIQUE constraints', () => {
   it.each([
@@ -34,7 +34,7 @@ describe('record UNIQUE constraints', () => {
   it('adds meal and weight_steps unique indexes and skips the existing workout_record index', async () => {
     const queryRunner = createQueryRunner(1);
 
-    await new AddRecordUniqueConstraints1783710000000().up(queryRunner as any);
+    await new AddRecordUniqueConstraints1783720000000().up(queryRunner as any);
 
     const statements = queryRunner.query.mock.calls.map((call) => call[0]);
     expect(statements).toEqual([
@@ -47,7 +47,7 @@ describe('record UNIQUE constraints', () => {
   it('creates the workout_record unique index only when it is missing', async () => {
     const queryRunner = createQueryRunner(0);
 
-    await new AddRecordUniqueConstraints1783710000000().up(queryRunner as any);
+    await new AddRecordUniqueConstraints1783720000000().up(queryRunner as any);
 
     expect(queryRunner.query).toHaveBeenLastCalledWith(
       'ALTER TABLE `workout_record` ADD UNIQUE INDEX `IDX_workout_record_user_date_workout` (`userId`, `date`, `workoutId`)',
@@ -57,7 +57,7 @@ describe('record UNIQUE constraints', () => {
   it('keeps a userId index for the foreign keys when reverting', async () => {
     const queryRunner = createQueryRunner(1);
 
-    await new AddRecordUniqueConstraints1783710000000().down(
+    await new AddRecordUniqueConstraints1783720000000().down(
       queryRunner as any,
     );
 
