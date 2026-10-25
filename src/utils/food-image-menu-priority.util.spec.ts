@@ -1,5 +1,4 @@
-import { HomeService } from '../home/home.service';
-import { ChatService } from '../chat/chat.service';
+import { FoodImageMenuMatcher } from '../food-image/food-image-menu-matcher';
 import {
   preferUserFoodImageMenu,
   prioritizeUserFoodImageMenus,
@@ -67,61 +66,76 @@ describe('food image menu source priority', () => {
     ).toEqual([3]);
   });
 
-  it('does not let the home generic-food correction override a personal menu', () => {
-    const service = Object.create(HomeService.prototype) as any;
-    const candidates = [publicMenu, frequentMenu, personalMenu];
-    const result = service.normalizeHomeFoodImageRematches(
-      [{ food_index: 0, menu_id: 1 }],
-      [prediction],
-      new Map(candidates.map((m) => [m.id, m] as const)),
-      new Map([[0, new Set([1, 2, 3])]]),
-    );
-    expect(result[0].menu.id).toBe(3);
-    expect(result[0].estimatedQuantity).toBe(150);
-    const fallback = service.mergeHomeFoodImageMatchesWithLocalFallback(
-      [prediction],
-      [{ foodIndex: 0, foodName: '밥', candidates }],
-      [],
-    );
-    expect(fallback[0].menu.id).toBe(3);
-  });
+  // 자주 먹은 메뉴가 없는 MealMenu repository와 공용 메뉴 id만 돌려주는 벡터 검색으로 matcher를 만든다.
+  const createMatcher = () => {
+    const builder: any = {};
+    [
+      'innerJoin',
+      'where',
+      'andWhere',
+      'select',
+      'addSelect',
+      'groupBy',
+      'orderBy',
+      'addOrderBy',
+      'limit',
+    ].forEach((method) => {
+      builder[method] = () => builder;
+    });
+    builder.getRawMany = async () => [];
+    return new FoodImageMenuMatcher(
+      { getMenusByIds: jest.fn().mockResolvedValue([publicMenu]) } as any,
+      { createQueryBuilder: () => builder } as any,
+      {
+        searchMenusByText: jest.fn().mockResolvedValue([{ menuId: 1 }]),
+      } as any,
+    ) as any;
+  };
 
-  it('preserves personal and frequent IDs in chat rematches and local fallback', () => {
-    const service = Object.create(ChatService.prototype) as any;
+  it('preserves personal and frequent IDs in rematches and local fallback', () => {
+    const matcher = createMatcher();
     for (const [candidates, expected] of [
       [[publicMenu, frequentMenu, personalMenu], 3],
       [[publicMenu, frequentMenu], 2],
     ] as const) {
-      const result = service.normalizeRematchedFoodImageMenu(
+      const result = matcher.normalizeRematchedMenu(
         { food_index: 0, menu_id: 1 },
         [prediction],
         new Map(candidates.map((m) => [m.id, m] as const)),
         new Map([[0, new Set(candidates.map((m) => m.id))]]),
       );
       expect(result.id).toBe(expected);
-      const local = service.matchFoodImagePredictionLocally(
-        prediction,
-        candidates,
-        0,
+      expect(result.estimatedQuantity).toBe(150);
+      const local = matcher.mergeRematchesWithLocalFallback(
+        [prediction],
+        [{ foodIndex: 0, foodName: '밥', candidates }],
+        [],
+        [],
       );
-      expect(local.id).toBe(expected);
+      expect(local[0].id).toBe(expected);
     }
   });
 
-  it('adds an unrecorded personal menu even when the home vector search only finds a public duplicate', async () => {
-    const service = Object.create(HomeService.prototype) as any;
-    service.isVectorSearchEnabled = () => true;
-    service.menuVectorService = {
-      searchMenusByText: jest.fn().mockResolvedValue([{ menuId: 1 }]),
-    };
-    service.getFoodImageRecognitionMenusByIds = jest
-      .fn()
-      .mockResolvedValue([publicMenu]);
-    const result = await service.getFoodImageCandidatesForSingleFood(
-      7,
-      prediction,
-      [publicMenu, personalMenu],
-    );
-    expect(result.candidates.map((m) => m.id)).toEqual([3]);
+  it('adds an unrecorded personal menu even when the vector search only finds a public duplicate', async () => {
+    const savedVectorSearchEnabled = process.env.VECTOR_SEARCH_ENABLED;
+    process.env.VECTOR_SEARCH_ENABLED = 'true';
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      const groups = await createMatcher().buildCandidateGroups({
+        userId: 7,
+        predictions: [prediction],
+        menus: [publicMenu, personalMenu],
+        logPrefix: '[TEST]',
+      });
+      expect(groups[0].candidates.map((m) => m.id)).toEqual([3]);
+    } finally {
+      jest.restoreAllMocks();
+      if (savedVectorSearchEnabled === undefined) {
+        delete process.env.VECTOR_SEARCH_ENABLED;
+      } else {
+        process.env.VECTOR_SEARCH_ENABLED = savedVectorSearchEnabled;
+      }
+    }
   });
 });

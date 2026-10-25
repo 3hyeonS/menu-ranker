@@ -194,8 +194,9 @@ Gemini generateContent 호출(모델 fallback·요청 취소 포함)은 `src/gem
 
 ## Food image menu cache
 
-음식 사진 인식(`POST /home/recognizeFoodImage` 계열)은 후보 계산에 공용 메뉴 전체 목록을 쓴다.
-공용 메뉴(`menu.user`가 null)는 프로세스 메모리에 캐시하고, 개인 메뉴는 요청마다 DB에서 읽는다.
+음식 사진 인식(`POST /home/recognizeFoodImage`, chat 음식 사진 피드백)과 벡터 검색이 꺼졌을 때의
+chat 일반 메뉴 매칭은 후보 계산에 공용 메뉴 전체 목록을 쓴다(`src/food-image`의 `FoodImageMenuCatalog`).
+공용 메뉴(`menu.user`가 null)는 프로세스 메모리에 하나만 캐시해 home·chat이 같이 쓰고, 개인 메뉴는 요청마다 DB에서 읽는다.
 
 ```env
 FOOD_IMAGE_PUBLIC_MENU_CACHE_TTL_MS=300000  # 기본 5분, 0이면 캐시하지 않음

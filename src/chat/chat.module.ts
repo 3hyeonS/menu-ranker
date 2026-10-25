@@ -17,6 +17,7 @@ import { ChatUserMemoryEntity } from './entity/chat-user-memory.entity';
 import { VectorModule } from '../vector/vector.module';
 import { GeminiModule } from '../gemini/gemini.module';
 import { StorageModule } from '../storage/storage.module';
+import { FoodImageModule } from '../food-image/food-image.module';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
 import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
@@ -48,6 +49,7 @@ dotenv.config();
     VectorModule,
     GeminiModule,
     StorageModule,
+    FoodImageModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, JwtStrategy],

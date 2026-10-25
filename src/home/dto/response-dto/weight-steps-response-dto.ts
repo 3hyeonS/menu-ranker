@@ -1,14 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsDate,
-  IsIn,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsOptional } from 'class-validator';
 
 export class WeightStepsResponseDto {
   @ApiProperty({

@@ -3,16 +3,14 @@ import {
   InternalServerErrorException,
   Injectable,
   Logger,
-  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Not, Repository } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
+import { LessThan, Repository } from 'typeorm';
 import { randomBytes } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
-import { firstValueFrom, lastValueFrom, retry } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 import { RefreshTokenEntity } from './entity/refreshToken.entity';
 import appleSignin from 'apple-signin-auth';
 import { SignWithEntity } from './entity/user/signWith.entity';
@@ -79,9 +77,7 @@ export class AuthService {
   }
 
   private resolveSignUpRoleByEmail(email: string): 'USER' | 'ADMIN' {
-    return AUTO_ADMIN_EMAILS.has(email.trim().toLowerCase())
-      ? 'ADMIN'
-      : 'USER';
+    return AUTO_ADMIN_EMAILS.has(email.trim().toLowerCase()) ? 'ADMIN' : 'USER';
   }
 
   // userAuth controller

@@ -1,14 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsDate,
-  IsIn,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsDate, IsIn, IsNotEmpty, IsNumber } from 'class-validator';
 
 export class MealImageUploadRequestDto {
   @ApiProperty({

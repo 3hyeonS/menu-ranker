@@ -16,9 +16,9 @@ import { MealEntity } from './entity/meal.entity';
 import { MealMenuEntity } from './entity/meal-menu.entity';
 import { WeightStepsEntity } from './entity/weight-steps.entity';
 import { BrandAddEntity } from './entity/brand-add.entity';
-import { VectorModule } from '../vector/vector.module';
 import { GeminiModule } from '../gemini/gemini.module';
 import { StorageModule } from '../storage/storage.module';
+import { FoodImageModule } from '../food-image/food-image.module';
 import { FolderEntity } from './entity/folder.entity';
 import { FolderMenuEntity } from './entity/folder-menu.entity';
 import { MenuSetEntity } from './entity/menu-set.entity';
@@ -58,9 +58,9 @@ dotenv.config();
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
-    VectorModule,
     GeminiModule,
     StorageModule,
+    FoodImageModule,
   ],
   controllers: [HomeController],
   providers: [HomeService, JwtStrategy],
