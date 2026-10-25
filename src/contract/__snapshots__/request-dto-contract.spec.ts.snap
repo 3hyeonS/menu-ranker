@@ -1,0 +1,2422 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`API request DTO contract AdminSignUpRequestDto 1`] = `
+{
+  "adminId": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isLength [1,20]",
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+  "email": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isEmail [null]",
+      "isLength [1,100]",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ChatMealFeedbackRequestDto 1`] = `
+{
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "matches ["/^\\\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\\\d|3[01])$/",null] message="date must be in YYYY-MM-DD format"",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ChatMealRecordDeleteRequestDto 1`] = `
+{
+  "chat_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ChatMealRecordParseRequestDto 1`] = `
+{
+  "text": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ChatMealRecordRequestDto 1`] = `
+{
+  "chat_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "menu_ids": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_input_modes": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isIn [[0,1]] each message="each value in menu_input_modes must be 0 or 1"",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_quantities": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}] each",
+    ],
+  },
+  "time": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2,3,4]] message="time must be 0, 1, 2, 3 or 4"",
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ChatNutritionLabelMenuRegisterRequestDto 1`] = `
+{
+  "alcohol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "brand": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "caffeine": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "calories": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+  "carbs": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "cholesterol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "dietary_fiber": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "name": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+  "potassium": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "protein": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sat_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sodium": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sugar_alchol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sugars": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "trans_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "un_sat_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "unit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ChatRecommendRequestDto 1`] = `
+{
+  "input": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ChatUserMenuSearchRequestDto 1`] = `
+{
+  "text": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract CreateInquiryRequestDto 1`] = `
+{
+  "app_version": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [50]",
+    ],
+  },
+  "content": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [5000]",
+    ],
+  },
+  "os_name": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [50]",
+    ],
+  },
+  "os_version": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [50]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract CreateSubscriptionCodeRequestDto 1`] = `
+{
+  "benefit_days": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isOptional",
+      "max [3650]",
+      "min [1]",
+    ],
+  },
+  "code": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [255]",
+    ],
+  },
+  "expires_at": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isDateString [null]",
+      "isOptional",
+    ],
+  },
+  "max_uses": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isOptional",
+      "max [1000000]",
+      "min [1]",
+    ],
+  },
+  "starts_at": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isDateString [null]",
+      "isOptional",
+    ],
+  },
+  "type": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [["TRIAL","PAID","PROMOTION","ADMIN","TUMBLBUG"]]",
+      "isOptional",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract CreateSubscriptionCodesRequestDto 1`] = `
+{
+  "benefit_days": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isOptional",
+      "max [3650]",
+      "min [1]",
+    ],
+  },
+  "codes": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayMaxSize [1000]",
+      "arrayNotEmpty",
+      "isArray",
+      "isNotEmpty each",
+      "isString each",
+      "maxLength [255] each",
+    ],
+  },
+  "expires_at": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isDateString [null]",
+      "isOptional",
+    ],
+  },
+  "max_uses": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isOptional",
+      "max [1000000]",
+      "min [1]",
+    ],
+  },
+  "starts_at": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isDateString [null]",
+      "isOptional",
+    ],
+  },
+  "type": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [["TRIAL","PAID","PROMOTION","ADMIN","TUMBLBUG"]]",
+      "isOptional",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract DateRequestDto 1`] = `
+{
+  "date": {
+    "designType": "Date",
+    "hasTransform": false,
+    "transformType": "Date",
+    "validators": [
+      "isDate",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract DefaltRatioRequestDto 1`] = `
+{
+  "goal": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "target_calories": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "target_weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract DefaltTargetCaloriesRequestDto 1`] = `
+{
+  "activity": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "birthYear": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "gender": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "goal": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "height": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+  "target_weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract DeleteFolderRequestDto 1`] = `
+{
+  "folder_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract DeleteMealRequestDto 1`] = `
+{
+  "date": {
+    "designType": "Date",
+    "hasTransform": false,
+    "transformType": "Date",
+    "validators": [
+      "isDate",
+      "isNotEmpty",
+    ],
+  },
+  "menu_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
+      "isNumber [{}]",
+    ],
+  },
+  "time": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2,3,4]] message="current must be 0, 1, 2, 3 or 4"",
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract DeleteMenuSetRequestDto 1`] = `
+{
+  "set_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract DeleteWorkoutRecordRequestDto 1`] = `
+{
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isDateString [null]",
+      "isNotEmpty",
+    ],
+  },
+  "workout_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "isOptional",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract FolderDetailRequestDto 1`] = `
+{
+  "folder_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract FolderListRequestDto 1`] = `
+{
+  "cursor": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "isOptional",
+    ],
+  },
+  "limit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "max [100]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract GetMenstrualRecordsRequestDto 1`] = `
+{
+  "from_date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+  "to_date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract GetUserGoalSnapshotRequestDto 1`] = `
+{
+  "date": {
+    "designType": "Date",
+    "hasTransform": false,
+    "transformType": "Date",
+    "validators": [
+      "isDate",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract GetWorkoutRecordRequestDto 1`] = `
+{
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isDateString [null]",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract MealImageUploadRequestDto 1`] = `
+{
+  "date": {
+    "designType": "Date",
+    "hasTransform": false,
+    "transformType": "Date",
+    "validators": [
+      "isDate",
+      "isNotEmpty",
+    ],
+  },
+  "time": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2,3,4]] message="current must be 0, 1, 2, 3 or 4"",
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract MealRecordedDatesRequestDto 1`] = `
+{
+  "endDate": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+  "startDate": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract MenstrualDateRangeRequestDto 1`] = `
+{
+  "end_date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+  "start_date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract MenuIdRequestDto 1`] = `
+{
+  "id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract MenuSetDetailRequestDto 1`] = `
+{
+  "set_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract MenuSetListRequestDto 1`] = `
+{
+  "cursor": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "isOptional",
+    ],
+  },
+  "limit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "max [100]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract ModifyMenuRequestDto 1`] = `
+{
+  "alcohol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "brand": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "caffeine": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "calories": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+  "carbs": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "cholesterol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "dietary_fiber": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "name": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+  "potassium": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "protein": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sat_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sodium": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sugar_alchol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sugars": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "trans_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "un_sat_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "unit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract MonthlyCalendarRequestDto 1`] = `
+{
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}$/",null]",
+    ],
+  },
+  "mode": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [["intake","workout","weight","water","섭취","운동","몸무게","물 섭취"]]",
+      "isString",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RecentAnalysisRequestDto 1`] = `
+{
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+  "mode": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [["intake","weight","burned","deficit","섭취 칼로리","체중","소모 칼로리","칼로리 적자"]]",
+      "isString",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RefreshTokenRequestDto 1`] = `
+{
+  "refreshToken": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isJwt",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RegisterMealRequestDto 1`] = `
+{
+  "date": {
+    "designType": "Date",
+    "hasTransform": false,
+    "transformType": "Date",
+    "validators": [
+      "isDate",
+      "isNotEmpty",
+    ],
+  },
+  "image": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "meal_time": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+      "matches ["/^([01]\\\\d|2[0-3]):[0-5]\\\\d$/",null] message="meal_time must be in HH:mm format"",
+    ],
+  },
+  "menu_ids": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayNotEmpty",
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
+      "isArray",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_input_modes": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayNotEmpty",
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
+      "isArray",
+      "isIn [[0,1]] each message="each value in menu_input_modes must be 0 or 1"",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_quantities": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayNotEmpty",
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
+      "isArray",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}] each",
+    ],
+  },
+  "menu_set_ids": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayNotEmpty",
+      "conditionalValidation ["[Function (_, value) => value !== undefined && value !== null]"]",
+      "isArray",
+      "isNumber [{}] each",
+    ],
+  },
+  "time": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2,3,4]] message="current must be 0, 1, 2, 3 or 4"",
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RegisterMenuRequestDto 1`] = `
+{
+  "alcohol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "brand": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "caffeine": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "calories": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+  "carbs": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "cholesterol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "dietary_fiber": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "name": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+  "potassium": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "protein": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sat_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sodium": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sugar_alchol": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "sugars": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "trans_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "un_sat_fat": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "isOptional",
+    ],
+  },
+  "unit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{}]",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RegisterStepsRequestDto 1`] = `
+{
+  "date": {
+    "designType": "Date",
+    "hasTransform": false,
+    "transformType": "Date",
+    "validators": [
+      "isDate",
+      "isNotEmpty",
+    ],
+  },
+  "steps": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RegisterSubCodeRequestDto 1`] = `
+{
+  "subCode": {
+    "designType": "String",
+    "hasTransform": true,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [255]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RegisterUserInfoRequestDto 1`] = `
+{
+  "activity": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2,3]]",
+      "isNotEmpty",
+    ],
+  },
+  "birthYear": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+      "max [2016]",
+      "min [1926]",
+    ],
+  },
+  "diet_management_status": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isArray",
+      "isInt each",
+      "isNotEmpty",
+    ],
+  },
+  "eating_out_freq_weekly": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+      "min [0]",
+    ],
+  },
+  "gender": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1]]",
+      "isNotEmpty",
+    ],
+  },
+  "goal": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2]]",
+      "isNotEmpty",
+    ],
+  },
+  "height": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "max [250]",
+      "min [1]",
+    ],
+  },
+  "job_type": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+    ],
+  },
+  "lunch_location": {
+    "designType": "Number",
+    "hasTransform": true,
+    "transformType": null,
+    "validators": [
+      "conditionalValidation ["[Function (dto) => dto.job_type === WORKER_JOB_TYPE]"]",
+      "isInt",
+      "isNotEmpty",
+    ],
+  },
+  "persona_type": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+    ],
+  },
+  "subCode": {
+    "designType": "String",
+    "hasTransform": true,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "target_calories": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+      "max [99999]",
+      "min [1]",
+    ],
+  },
+  "target_ratio": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayMaxSize [3]",
+      "arrayMinSize [3]",
+      "isArray",
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}] each",
+      "sumTo100",
+    ],
+  },
+  "target_weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "max [200]",
+      "min [1]",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "max [200]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RegisterWeightRequestDto 1`] = `
+{
+  "date": {
+    "designType": "Date",
+    "hasTransform": false,
+    "transformType": "Date",
+    "validators": [
+      "isDate",
+      "isNotEmpty",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "max [200]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RegisteredMenuListRequestDto 1`] = `
+{
+  "cursor": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isInt",
+      "isOptional",
+      "min [1]",
+    ],
+  },
+  "input": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+      "maxLength [100]",
+    ],
+  },
+  "limit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isInt",
+      "isOptional",
+      "max [100]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RestaurantDetailRequestDto 1`] = `
+{
+  "filter": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isEnum [{"BALANCED":"균형","LOW_CALORIE":"저칼로리","PROTEIN":"단백질"},["균형","저칼로리","단백질"]]",
+      "isOptional",
+    ],
+  },
+  "restaurant_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isInt",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract RestaurantSearchRequestDto 1`] = `
+{
+  "cursor": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isInt",
+      "isOptional",
+      "min [1]",
+    ],
+  },
+  "input": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isString",
+      "maxLength [300]",
+    ],
+  },
+  "limit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isInt",
+      "max [100]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract SaveMenstrualRecordsRequestDto 1`] = `
+{
+  "add_ranges": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "MenstrualDateRangeRequestDto",
+    "validators": [
+      "arrayMaxSize [100]",
+      "isArray",
+      "nestedValidation each message="each value in nested property $property must be either object or array"",
+    ],
+  },
+  "remove_ranges": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "MenstrualDateRangeRequestDto",
+    "validators": [
+      "arrayMaxSize [100]",
+      "isArray",
+      "nestedValidation each message="each value in nested property $property must be either object or array"",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract SearchBrandRequestDto 1`] = `
+{
+  "input": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract SearchInBrandRequestDto 1`] = `
+{
+  "brand": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "input": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract SearchMenuRequestDto 1`] = `
+{
+  "cursor": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isOptional",
+      "min [1]",
+    ],
+  },
+  "input": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+    ],
+  },
+  "limit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+      "max [100]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract SearchWorkoutRequestDto 1`] = `
+{
+  "body_part_major": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "body_part_minor": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "cursor": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "isOptional",
+    ],
+  },
+  "equipment_category": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "equipment_detail": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "equipment_original_detail": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isOptional",
+      "isString",
+    ],
+  },
+  "input": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isString",
+    ],
+  },
+  "limit": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "max [100]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateActivityRequestDto 1`] = `
+{
+  "activity": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2,3]]",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateBirthYearRequestDto 1`] = `
+{
+  "birthYear": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+      "max [2016]",
+      "min [1926]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateGenderRequestDto 1`] = `
+{
+  "gender": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1]]",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateGoalRequestDto 1`] = `
+{
+  "goal": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [[0,1,2]]",
+      "isNotEmpty",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateHeightRequestDto 1`] = `
+{
+  "height": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "max [250]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateNicknameRequestDto 1`] = `
+{
+  "nickname": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [50]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateTargetCaloriesRequestDto 1`] = `
+{
+  "target_calories": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "isNotEmpty",
+      "max [99999]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateTargetRatioRequestDto 1`] = `
+{
+  "target_ratio": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "arrayMaxSize [3]",
+      "arrayMinSize [3]",
+      "isArray",
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}] each",
+      "sumTo100",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateTargetWeightRequestDto 1`] = `
+{
+  "target_weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "max [200]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateWaterCupSizeRequestDto 1`] = `
+{
+  "cup_size": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "max [1000]",
+      "min [50]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpdateWeightRequestDto 1`] = `
+{
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "max [200]",
+      "min [1]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpsertFolderRequestDto 1`] = `
+{
+  "folder_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "isOptional",
+    ],
+  },
+  "folder_name": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [255]",
+    ],
+  },
+  "menu_ids": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_input_modes": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isIn [[0,1]] each message="each value in menu_input_modes must be 0 or 1"",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_quantities": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}] each",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpsertMenuSetRequestDto 1`] = `
+{
+  "menu_ids": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_input_modes": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isIn [[0,1]] each message="each value in menu_input_modes must be 0 or 1"",
+      "isNumber [{}] each",
+    ],
+  },
+  "menu_quantities": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "arrayNotEmpty",
+      "isArray",
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}] each",
+    ],
+  },
+  "set_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "isOptional",
+    ],
+  },
+  "set_name": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "maxLength [255]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpsertWaterIntakeRequestDto 1`] = `
+{
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+  "water_intake": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isInt",
+      "max [10000]",
+      "min [0]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract UpsertWorkoutRecordRequestDto 1`] = `
+{
+  "burned_calories": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "min [0]",
+    ],
+  },
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isDateString [null]",
+      "isNotEmpty",
+    ],
+  },
+  "intensity": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+      "isOptional",
+      "max [2]",
+      "min [0]",
+    ],
+  },
+  "set_list": {
+    "designType": "Array",
+    "hasTransform": false,
+    "transformType": "WorkoutSetRequestDto",
+    "validators": [
+      "isArray",
+      "isOptional",
+      "nestedValidation each message="each value in nested property $property must be either object or array"",
+    ],
+  },
+  "workout_duration": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+      "min [0]",
+    ],
+  },
+  "workout_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+    ],
+  },
+  "workout_type": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isIn [["cardio","weight"]]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract WaterDateRequestDto 1`] = `
+{
+  "date": {
+    "designType": "String",
+    "hasTransform": false,
+    "transformType": null,
+    "validators": [
+      "isNotEmpty",
+      "isString",
+      "matches ["/^\\\\d{4}-\\\\d{2}-\\\\d{2}$/",null]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract WorkoutDetailRequestDto 1`] = `
+{
+  "workout_id": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract WorkoutSetRequestDto 1`] = `
+{
+  "reps": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+    ],
+  },
+  "set_order": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{}]",
+    ],
+  },
+  "weight": {
+    "designType": "Number",
+    "hasTransform": false,
+    "transformType": "Number",
+    "validators": [
+      "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}]",
+    ],
+  },
+}
+`;
+
+exports[`API request DTO contract lists every request DTO 1`] = `
+[
+  "AdminSignUpRequestDto",
+  "ChatMealFeedbackRequestDto",
+  "ChatMealRecordDeleteRequestDto",
+  "ChatMealRecordParseRequestDto",
+  "ChatMealRecordRequestDto",
+  "ChatNutritionLabelMenuRegisterRequestDto",
+  "ChatRecommendRequestDto",
+  "ChatUserMenuSearchRequestDto",
+  "CreateInquiryRequestDto",
+  "CreateSubscriptionCodeRequestDto",
+  "CreateSubscriptionCodesRequestDto",
+  "DateRequestDto",
+  "DefaltRatioRequestDto",
+  "DefaltTargetCaloriesRequestDto",
+  "DeleteFolderRequestDto",
+  "DeleteMealRequestDto",
+  "DeleteMenuSetRequestDto",
+  "DeleteWorkoutRecordRequestDto",
+  "FolderDetailRequestDto",
+  "FolderListRequestDto",
+  "GetMenstrualRecordsRequestDto",
+  "GetUserGoalSnapshotRequestDto",
+  "GetWorkoutRecordRequestDto",
+  "MealImageUploadRequestDto",
+  "MealRecordedDatesRequestDto",
+  "MenstrualDateRangeRequestDto",
+  "MenuIdRequestDto",
+  "MenuSetDetailRequestDto",
+  "MenuSetListRequestDto",
+  "ModifyMenuRequestDto",
+  "MonthlyCalendarRequestDto",
+  "RecentAnalysisRequestDto",
+  "RefreshTokenRequestDto",
+  "RegisteredMenuListRequestDto",
+  "RegisterMealRequestDto",
+  "RegisterMenuRequestDto",
+  "RegisterStepsRequestDto",
+  "RegisterSubCodeRequestDto",
+  "RegisterUserInfoRequestDto",
+  "RegisterWeightRequestDto",
+  "RestaurantDetailRequestDto",
+  "RestaurantSearchRequestDto",
+  "SaveMenstrualRecordsRequestDto",
+  "SearchBrandRequestDto",
+  "SearchInBrandRequestDto",
+  "SearchMenuRequestDto",
+  "SearchWorkoutRequestDto",
+  "UpdateActivityRequestDto",
+  "UpdateBirthYearRequestDto",
+  "UpdateGenderRequestDto",
+  "UpdateGoalRequestDto",
+  "UpdateHeightRequestDto",
+  "UpdateNicknameRequestDto",
+  "UpdateTargetCaloriesRequestDto",
+  "UpdateTargetRatioRequestDto",
+  "UpdateTargetWeightRequestDto",
+  "UpdateWaterCupSizeRequestDto",
+  "UpdateWeightRequestDto",
+  "UpsertFolderRequestDto",
+  "UpsertMenuSetRequestDto",
+  "UpsertWaterIntakeRequestDto",
+  "UpsertWorkoutRecordRequestDto",
+  "WaterDateRequestDto",
+  "WorkoutDetailRequestDto",
+  "WorkoutSetRequestDto",
+]
+`;
