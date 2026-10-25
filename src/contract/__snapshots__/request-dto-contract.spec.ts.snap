@@ -63,6 +63,7 @@ exports[`API request DTO contract ChatMealRecordParseRequestDto 1`] = `
     "validators": [
       "isNotEmpty",
       "isString",
+      "maxLength [1000]",
     ],
   },
 }
@@ -308,6 +309,7 @@ exports[`API request DTO contract ChatRecommendRequestDto 1`] = `
     "validators": [
       "isNotEmpty",
       "isString",
+      "maxLength [1000]",
     ],
   },
 }
