@@ -1,5 +1,7 @@
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
+import { FakeGeminiClient } from '../gemini/fake-gemini.client';
+import { FakeFileStorage } from '../storage/fake-file-storage';
 import { HomeService } from './home.service';
 import { MealEntity } from './entity/meal.entity';
 import { MealMenuEntity } from './entity/meal-menu.entity';
@@ -230,8 +232,8 @@ describe('HomeService data bug fixes', () => {
   describe('uploadMealImage', () => {
     it('uploads without deleting when no meal exists for the slot yet', async () => {
       const service = createService();
-      service.bucketName = 'bucket';
-      service.s3 = { send: jest.fn().mockResolvedValue({}) };
+      const fileStorage = new FakeFileStorage();
+      service.fileStorage = fileStorage;
       service.mealRepository = { findOne: jest.fn().mockResolvedValue(null) };
 
       const url = await service.uploadMealImage(
@@ -240,9 +242,33 @@ describe('HomeService data bug fixes', () => {
         { date: '2026-10-25', time: 0 },
       );
 
-      expect(service.s3.send).toHaveBeenCalledTimes(1);
-      expect(service.s3.send.mock.calls[0][0]).toBeInstanceOf(PutObjectCommand);
+      expect(fileStorage.deletedKeys).toEqual([]);
+      expect(fileStorage.uploads).toHaveLength(1);
+      expect(fileStorage.uploads[0]).toEqual(
+        expect.objectContaining({ contentType: 'image/jpeg' }),
+      );
       expect(url).toContain('meal/7/2026-10-25/0/');
+    });
+
+    it('deletes the previous image of the slot before uploading', async () => {
+      const service = createService();
+      const fileStorage = new FakeFileStorage();
+      service.fileStorage = fileStorage;
+      service.mealRepository = {
+        findOne: jest.fn().mockResolvedValue({
+          image:
+            'https://bucket.s3.ap-northeast-2.amazonaws.com/meal/7/2026-10-25/0/old',
+        }),
+      };
+
+      await service.uploadMealImage(
+        user,
+        { buffer: Buffer.from('x'), mimetype: 'image/jpeg' },
+        { date: '2026-10-25', time: 0 },
+      );
+
+      expect(fileStorage.deletedKeys).toEqual(['meal/7/2026-10-25/0/old']);
+      expect(fileStorage.uploads).toHaveLength(1);
     });
   });
 
@@ -278,56 +304,52 @@ describe('HomeService data bug fixes', () => {
     });
   });
   describe('callGeminiJsonWithImage', () => {
-    const envKeys = [
-      'GEMINI_API_KEY',
-      'GEMINI_BASE_URL',
-      'GEMINI_IMAGE_BASE_URL',
-      'GEMINI_IMAGE_MODEL',
-      'GEMINI_IMAGE_FALLBACK_MODELS',
-      'GEMINI_IMAGE_FALLBACK_MODEL',
-    ];
-    const savedEnv: Record<string, string | undefined> = {};
+    const file = {
+      buffer: Buffer.from('image'),
+      mimetype: 'image/png',
+    } as any;
 
-    beforeEach(() => {
-      envKeys.forEach((key) => {
-        savedEnv[key] = process.env[key];
-        delete process.env[key];
-      });
-    });
-
-    afterEach(() => {
-      envKeys.forEach((key) => {
-        if (savedEnv[key] === undefined) {
-          delete process.env[key];
-        } else {
-          process.env[key] = savedEnv[key];
-        }
-      });
-    });
-
-    it('calls the fallback model even when GEMINI_BASE_URL is set', async () => {
-      process.env.GEMINI_API_KEY = 'test-key';
-      process.env.GEMINI_BASE_URL =
-        'https://proxy.example.com/v1beta/models/{model}:generateContent';
-      process.env.GEMINI_IMAGE_MODEL = 'primary-model';
-      process.env.GEMINI_IMAGE_FALLBACK_MODELS = 'fallback-model';
+    it('sends the image to the image model group without a system instruction', async () => {
       const service = createService();
-      service.postGeminiImageJson = jest
-        .fn()
-        .mockRejectedValueOnce({ response: { status: 429 } })
-        .mockResolvedValueOnce({ ok: true });
+      const gemini = new FakeGeminiClient().respondJson({ ok: true });
+      service.geminiClient = gemini;
 
       await expect(
-        service.callGeminiJsonWithImage('prompt', {} as any),
+        service.callGeminiJsonWithImage('prompt', file),
       ).resolves.toEqual({ ok: true });
 
-      const calledUrls = service.postGeminiImageJson.mock.calls.map(
-        (call: unknown[]) => call[3],
+      expect(gemini.requests[0]).toEqual(
+        expect.objectContaining({
+          modelGroup: 'image',
+          timeoutMs: 30000,
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json',
+          },
+          unavailableMessage: 'Nutrition label recognition is unavailable',
+        }),
       );
-      expect(calledUrls).toEqual([
-        'https://proxy.example.com/v1beta/models/primary-model:generateContent',
-        'https://proxy.example.com/v1beta/models/fallback-model:generateContent',
+      expect(gemini.requests[0].systemInstruction).toBeUndefined();
+      expect(gemini.requests[0].contents[0].parts).toEqual([
+        { text: 'prompt' },
+        { inline_data: { mime_type: 'image/png', data: 'aW1hZ2U=' } },
       ]);
+    });
+
+    it('throws the caller-provided unavailable message when every model fails', async () => {
+      const service = createService();
+      service.geminiClient = new FakeGeminiClient().failUnavailable();
+
+      const result = service.callGeminiJsonWithImage(
+        'prompt',
+        file,
+        'Food image recognition is unavailable',
+      );
+
+      await expect(result).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await expect(result).rejects.toThrow(
+        'Food image recognition is unavailable',
+      );
     });
   });
 });

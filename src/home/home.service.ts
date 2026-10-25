@@ -22,8 +22,6 @@ import {
   SelectQueryBuilder,
 } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import { UserEntity } from '../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../auth/entity/user/userInfo.entity';
 import { MenuEntity } from './entity/menu.entity';
@@ -62,14 +60,13 @@ import {
   throwIfRequestAborted,
 } from '../utils/request-abort.util';
 import { getRecordedWeightMultiplier } from '../utils/recorded-nutrition.util';
-import { buildGeminiGenerateContentUrl } from '../utils/gemini-url.util';
+import { GeminiClient } from '../gemini/gemini-client';
+import { FileStorage } from '../storage/file-storage';
+import { buildDatedImageKey } from '../storage/image-key.util';
+import { calculateMifflinStJeorBmr } from '../utils/bmr.util';
+import { AsyncTtlCache } from '../utils/async-ttl-cache.util';
 import { retryOnceOnDuplicateEntry } from '../utils/duplicate-entry.util';
 import { BrandAddEntity } from './entity/brand-add.entity';
-import {
-  DeleteObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
 import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-request-dto';
 import { NutritionLabelRecognitionResponseDto } from './dto/response-dto/nutrition-label-recognition-response-dto';
 import { NutritionLabelRecognition } from './types/nutrition-label-recognition.type';
@@ -178,9 +175,6 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_FOOD_DETECTED: 'no food detected in image',
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
-const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
-const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
-const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 
 type FoodImageRecognitionFailureReason =
   keyof typeof FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES;
@@ -194,6 +188,16 @@ type HomeFoodImageRecognitionCandidate = {
   unit: number | null;
   ownerUserId?: number | null;
   frequentRank?: number;
+};
+
+type FoodImageRecognitionMenuRow = {
+  ownerUserId: number | null;
+  id: number;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  weight: number | null;
+  unit: number | null;
 };
 
 type HomeFoodImagePrediction = {
@@ -399,8 +403,11 @@ const ALTERNATIVE_NUTRITION_GOAL_RULES: AlternativeNutritionGoalRule[] = [
 
 @Injectable()
 export class HomeService {
-  private s3: S3Client;
-  private bucketName: string;
+  // 음식 사진 인식 후보용 공용 메뉴 목록. 앱 안에서 공용 메뉴를 바꾸면 invalidate()한다.
+  private readonly publicFoodImageMenuCache = new AsyncTtlCache(
+    () => this.loadFoodImageRecognitionMenuRows(null),
+    () => this.getFoodImagePublicMenuCacheTtlMs(),
+  );
 
   constructor(
     @InjectRepository(UserEntity)
@@ -437,20 +444,11 @@ export class HomeService {
     private waterSettingRepository: Repository<WaterSettingEntity>,
     @InjectRepository(BrandAddEntity)
     private brandAddRepository: Repository<BrandAddEntity>,
-    private httpService: HttpService,
+    private readonly geminiClient: GeminiClient,
+    private readonly fileStorage: FileStorage,
     @Optional()
     private readonly menuVectorService?: MenuVectorService,
-  ) {
-    this.s3 = new S3Client({
-      region: process.env.AWS_REGION,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      },
-    });
-
-    this.bucketName = process.env.AWS_S3_BUCKET_NAME;
-  }
+  ) {}
 
   // 문자 출력
   getHello(): string {
@@ -1604,25 +1602,17 @@ export class HomeService {
     // 해당 식사의 사진이 이미 있으면 삭제
     if (existingMeal?.image) {
       const fileKey = existingMeal.image.split('com/')[1];
-      const params = {
-        Bucket: this.bucketName,
-        Key: fileKey,
-      };
-      await this.s3.send(new DeleteObjectCommand(params));
+      await this.fileStorage.delete(fileKey);
     }
     const randomString = Math.random().toString(36).substring(2, 12);
     const newFileKey = `meal/${user.id}/${date}/${time}/${randomString}`;
 
     // 업로드
-    const params = {
-      Bucket: this.bucketName,
-      Key: newFileKey,
-      Body: file.buffer,
-      ContentType: file.mimetype,
-    };
-
-    await this.s3.send(new PutObjectCommand(params));
-    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${newFileKey}`;
+    return await this.fileStorage.upload({
+      key: newFileKey,
+      body: file.buffer,
+      contentType: file.mimetype,
+    });
   }
 
   // 음식 사진 인식
@@ -2819,38 +2809,18 @@ ${JSON.stringify(
       }));
   }
 
+  // 공용 메뉴는 TTL 캐시(publicFoodImageMenuCache)에서, 개인 메뉴는 매번 DB에서 읽어
+  // 예전 단일 쿼리(공용 + 내 메뉴, ORDER BY menu.id)와 같은 순서로 합친다.
   private async getAllFoodImageRecognitionCandidateMenus(
     userId: number,
   ): Promise<HomeFoodImageRecognitionCandidate[]> {
-    const rows = await this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoin('menu.user', 'user')
-      .select([
-        'user.id AS ownerUserId',
-        'menu.id AS id',
-        'menu.name AS name',
-        'menu.brand AS brand',
-        'menu.category AS category',
-        'menu.weight AS weight',
-        'menu.unit AS unit',
-      ])
-      .where(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
-            userId,
-          });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .orderBy('menu.id', 'ASC')
-      .getRawMany<{
-        id: number;
-        name: string;
-        brand: string | null;
-        category: string | null;
-        weight: number | null;
-        unit: number | null;
-      }>();
+    const [publicRows, personalRows] = await Promise.all([
+      this.publicFoodImageMenuCache.get(),
+      this.loadFoodImageRecognitionMenuRows(userId),
+    ]);
+    const rows = [...publicRows, ...personalRows].sort(
+      (left, right) => Number(left.id) - Number(right.id),
+    );
 
     return rows.map((menu) => ({
       ...menu,
@@ -2874,6 +2844,42 @@ ${JSON.stringify(
     }
 
     return Math.max(10, Math.min(Math.floor(parsed), 100));
+  }
+
+  // ownerUserId가 null이면 공용 메뉴, 아니면 해당 사용자의 개인 메뉴만 읽는다.
+  private async loadFoodImageRecognitionMenuRows(
+    ownerUserId: number | null,
+  ): Promise<FoodImageRecognitionMenuRow[]> {
+    return await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .select([
+        'user.id AS ownerUserId',
+        'menu.id AS id',
+        'menu.name AS name',
+        'menu.brand AS brand',
+        'menu.category AS category',
+        'menu.weight AS weight',
+        'menu.unit AS unit',
+      ])
+      .where(ownerUserId === null ? 'user.id IS NULL' : 'user.id = :userId', {
+        userId: ownerUserId,
+      })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .orderBy('menu.id', 'ASC')
+      .getRawMany<FoodImageRecognitionMenuRow>();
+  }
+
+  private getFoodImagePublicMenuCacheTtlMs(): number {
+    const parsed = Number(
+      process.env.FOOD_IMAGE_PUBLIC_MENU_CACHE_TTL_MS ?? 300000,
+    );
+
+    if (!Number.isFinite(parsed)) {
+      return 300000;
+    }
+
+    return Math.max(parsed, 0);
   }
 
   private getFoodImagePerFoodVectorCandidateLimit(): number {
@@ -3414,6 +3420,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       .filter((menu): menu is MenuEntity => menu !== null);
 
     const savedMenus = await this.menuRepository.save(menus);
+    this.publicFoodImageMenuCache.invalidate();
 
     return new MenuCsvImportResponseDto(savedMenus.length);
   }
@@ -4353,151 +4360,29 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     file: Express.Multer.File,
     unavailableMessage = 'Nutrition label recognition is unavailable',
   ): Promise<any> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    const primaryModel =
-      process.env.GEMINI_IMAGE_MODEL ??
-      process.env.GEMINI_MODEL ??
-      DEFAULT_GEMINI_MODEL;
-    const configuredFallbackModels = [
-      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS?.split(',').map((model) =>
-        model.trim(),
-      ) ?? []),
-      process.env.GEMINI_IMAGE_FALLBACK_MODEL,
-    ];
-    const hasConfiguredFallbackModels =
-      process.env.GEMINI_IMAGE_FALLBACK_MODELS !== undefined ||
-      process.env.GEMINI_IMAGE_FALLBACK_MODEL !== undefined;
-    const fallbackModels = hasConfiguredFallbackModels
-      ? configuredFallbackModels
-      : DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS;
-    const baseUrlOverride =
-      process.env.GEMINI_IMAGE_BASE_URL ?? process.env.GEMINI_BASE_URL;
-
-    if (!apiKey) {
-      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
-    }
-
-    const attempts = Array.from(
-      new Set(
-        [
-          primaryModel,
-          ...fallbackModels,
-          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
-        ].filter(
-          (model): model is string =>
-            typeof model === 'string' && model.trim().length > 0,
-        ),
-      ),
-    );
-
-    for (const [index, model] of attempts.entries()) {
-      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
-
-      try {
-        throwIfRequestAborted();
-        return await this.postGeminiImageJson(prompt, file, apiKey, baseUrl);
-      } catch (error) {
-        if (isRequestCancellationError(error)) {
-          throw error;
-        }
-        if (
-          index === attempts.length - 1 ||
-          !this.shouldRetryGeminiWithFallback(error)
-        ) {
-          break;
-        }
-      }
-    }
-
-    throw new ServiceUnavailableException(unavailableMessage);
-  }
-
-  private async postGeminiImageJson(
-    prompt: string,
-    file: Express.Multer.File,
-    apiKey: string,
-    baseUrl: string,
-  ): Promise<any> {
-    throwIfRequestAborted();
-    const response = await firstValueFrom(
-      this.httpService.post(
-        `${baseUrl}?key=${apiKey}`,
+    return await this.geminiClient.generateJson({
+      modelGroup: 'image',
+      contents: [
         {
-          contents: [
+          role: 'user',
+          parts: [
+            { text: prompt },
             {
-              role: 'user',
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: file.mimetype,
-                    data: file.buffer.toString('base64'),
-                  },
-                },
-              ],
+              inline_data: {
+                mime_type: file.mimetype,
+                data: file.buffer.toString('base64'),
+              },
             },
           ],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: 'application/json',
-          },
         },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000,
-          signal: getRequestAbortSignal(),
-        },
-      ),
-    );
-
-    throwIfRequestAborted();
-
-    const text = response.data?.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text ?? '')
-      .join('')
-      ?.trim();
-
-    if (!text) {
-      throw new Error('Gemini returned empty content');
-    }
-
-    return JSON.parse(this.stripCodeFence(text));
-  }
-
-  private shouldRetryGeminiWithFallback(error: unknown): boolean {
-    if (isRequestCancellationError(error)) {
-      return false;
-    }
-    const geminiError = error as {
-      code?: string;
-      response?: {
-        status?: number;
-        data?: {
-          error?: {
-            status?: string;
-          };
-        };
-      };
-    };
-    const httpStatus = geminiError.response?.status;
-    const errorStatus = geminiError.response?.data?.error?.status;
-
-    return (
-      httpStatus === 404 ||
-      httpStatus === 429 ||
-      httpStatus === 500 ||
-      httpStatus === 503 ||
-      httpStatus === 504 ||
-      errorStatus === 'NOT_FOUND' ||
-      errorStatus === 'RESOURCE_EXHAUSTED' ||
-      geminiError.code === 'ECONNABORTED'
-    );
-  }
-
-  private buildGeminiBaseUrl(model: string, baseUrlOverride?: string): string {
-    return buildGeminiGenerateContentUrl(model, baseUrlOverride);
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      },
+      timeoutMs: 30000,
+      unavailableMessage,
+    });
   }
 
   // 인식용 음식 사진 S3 업로드
@@ -4506,24 +4391,16 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     file: Express.Multer.File,
   ): Promise<string> {
     throwIfRequestAborted();
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomString = Math.random().toString(36).substring(2, 12);
-    const fileExtension = this.getImageExtension(file.mimetype);
-    const fileKey = `meal-recognition/${user.id}/${date}/${randomString}.${fileExtension}`;
-
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: fileKey,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      }),
-      { abortSignal: getRequestAbortSignal() },
-    );
+    const imageUrl = await this.fileStorage.upload({
+      key: buildDatedImageKey(`meal-recognition/${user.id}`, file.mimetype),
+      body: file.buffer,
+      contentType: file.mimetype,
+      abortSignal: getRequestAbortSignal(),
+    });
 
     throwIfRequestAborted();
 
-    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+    return imageUrl;
   }
 
   private async uploadFailedFoodImageRecognitionIfPossible(
@@ -4560,21 +4437,14 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     user: UserEntity,
     file: Express.Multer.File,
   ): Promise<string> {
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomString = Math.random().toString(36).substring(2, 12);
-    const fileExtension = this.getImageExtension(file.mimetype);
-    const fileKey = `meal-recognition/failed/${user.id}/${date}/${randomString}.${fileExtension}`;
-
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: fileKey,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      }),
-    );
-
-    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+    return await this.fileStorage.upload({
+      key: buildDatedImageKey(
+        `meal-recognition/failed/${user.id}`,
+        file.mimetype,
+      ),
+      body: file.buffer,
+      contentType: file.mimetype,
+    });
   }
 
   // 영양성분표 인식용 사진 S3 업로드
@@ -4583,33 +4453,19 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     file: Express.Multer.File,
   ): Promise<string> {
     throwIfRequestAborted();
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomString = Math.random().toString(36).substring(2, 12);
-    const fileExtension = this.getImageExtension(file.mimetype);
-    const fileKey = `nutrition-label-recognition/${user.id}/${date}/${randomString}.${fileExtension}`;
-
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: fileKey,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      }),
-      { abortSignal: getRequestAbortSignal() },
-    );
+    const imageUrl = await this.fileStorage.upload({
+      key: buildDatedImageKey(
+        `nutrition-label-recognition/${user.id}`,
+        file.mimetype,
+      ),
+      body: file.buffer,
+      contentType: file.mimetype,
+      abortSignal: getRequestAbortSignal(),
+    });
 
     throwIfRequestAborted();
 
-    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
-  }
-
-  // 응답 문자열의 코드 펜스 제거
-  private stripCodeFence(value: string): string {
-    return value
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim();
+    return imageUrl;
   }
 
   // 빈 문자열을 null로 변환
@@ -4701,22 +4557,6 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   }
 
   // MIME 타입에 맞는 이미지 확장자 반환
-  private getImageExtension(mimeType?: string): string {
-    switch (mimeType) {
-      case 'image/jpeg':
-      case 'image/jpg':
-        return 'jpg';
-      case 'image/png':
-        return 'png';
-      case 'image/webp':
-        return 'webp';
-      case 'image/heic':
-        return 'heic';
-      default:
-        return 'bin';
-    }
-  }
-
   private calculateMenuCaloriesForQuantity(
     menu: MenuEntity,
     quantity: number,
@@ -5969,16 +5809,15 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     referenceDate: Date,
   ): number {
     const age = referenceDate.getFullYear() - userInfo.birthYear - 1;
-    let bmr =
-      10 * Number(userInfo.weight) +
-      6.25 * Number(userInfo.height) -
-      5 * age +
-      5;
-    if (userInfo.gender === 1) {
-      bmr -= 166;
-    }
 
-    return roundToOneDecimal(bmr);
+    return roundToOneDecimal(
+      calculateMifflinStJeorBmr({
+        weight: Number(userInfo.weight),
+        height: Number(userInfo.height),
+        age,
+        gender: userInfo.gender,
+      }),
+    );
   }
 
   private estimateStepBurnedCalories(steps: number, weightKg: number): number {

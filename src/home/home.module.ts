@@ -1,7 +1,6 @@
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
-import { HttpModule } from '@nestjs/axios';
 
 import * as dotenv from 'dotenv';
 import { Module } from '@nestjs/common';
@@ -18,6 +17,8 @@ import { MealMenuEntity } from './entity/meal-menu.entity';
 import { WeightStepsEntity } from './entity/weight-steps.entity';
 import { BrandAddEntity } from './entity/brand-add.entity';
 import { VectorModule } from '../vector/vector.module';
+import { GeminiModule } from '../gemini/gemini.module';
+import { StorageModule } from '../storage/storage.module';
 import { FolderEntity } from './entity/folder.entity';
 import { FolderMenuEntity } from './entity/folder-menu.entity';
 import { MenuSetEntity } from './entity/menu-set.entity';
@@ -57,8 +58,9 @@ dotenv.config();
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
-    HttpModule,
     VectorModule,
+    GeminiModule,
+    StorageModule,
   ],
   controllers: [HomeController],
   providers: [HomeService, JwtStrategy],

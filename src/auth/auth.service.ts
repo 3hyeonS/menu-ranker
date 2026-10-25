@@ -27,6 +27,7 @@ import { DefaltRatioResponseDto } from './dto/user-dto/response-dto/default-targ
 import { RegisterUserInfoRequestDto } from './dto/user-dto/request-dto/register-user-info-request-dto';
 import { UserInfoResponseDto } from './dto/user-dto/response-dto/user-info-response-dto';
 import { roundToOneDecimal } from '../utils/number.util';
+import { calculateMifflinStJeorBmr } from '../utils/bmr.util';
 import { UserInfoEntity } from './entity/user/userInfo.entity';
 import { UserGoalEntity } from './entity/user/userGoal.entity';
 import { SubscriptionService } from './subscription.service';
@@ -638,10 +639,7 @@ export class AuthService {
 
     // bmr 계산
     const age = new Date().getFullYear() - birthYear - 1;
-    let bmr = 10 * weight + 6.25 * height - 5 * age + 5;
-    if (gender == 1) {
-      bmr -= 166;
-    }
+    const bmr = calculateMifflinStJeorBmr({ weight, height, age, gender });
 
     // 활동계수 적용
     const activityFactor = 1.2 + 0.175 * activity;

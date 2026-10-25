@@ -1,7 +1,6 @@
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
-import { HttpModule } from '@nestjs/axios';
 import * as dotenv from 'dotenv';
 import { Module } from '@nestjs/common';
 import { MealEntity } from '../home/entity/meal.entity';
@@ -16,6 +15,8 @@ import { ChatHistoryEntity } from './entity/chat-history.entity';
 import { ChatConversationSessionEntity } from './entity/chat-conversation-session.entity';
 import { ChatUserMemoryEntity } from './entity/chat-user-memory.entity';
 import { VectorModule } from '../vector/vector.module';
+import { GeminiModule } from '../gemini/gemini.module';
+import { StorageModule } from '../storage/storage.module';
 import { MenuSetEntity } from '../home/entity/menu-set.entity';
 import { WorkoutRecordEntity } from '../home/entity/workout-record.entity';
 import { WeightStepsEntity } from '../home/entity/weight-steps.entity';
@@ -44,8 +45,9 @@ dotenv.config();
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule,
-    HttpModule,
     VectorModule,
+    GeminiModule,
+    StorageModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, JwtStrategy],
