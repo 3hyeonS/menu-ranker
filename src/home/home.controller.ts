@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { GetUser } from '../decorators/get-user-decorator';
+import { Roles } from '../decorators/roles-decorator';
+import { RolesGuard } from '../auth/custom-role.guard';
 import { JwtService } from '@nestjs/jwt';
 import {
   ApiBearerAuth,
@@ -47,7 +49,7 @@ import { RegisterWeightRequestDto } from './dto/request-dto/register-weight-requ
 import { RegisterStepsRequestDto } from './dto/request-dto/register-step-request-dto';
 import { WeightStepsResponseDto } from './dto/response-dto/weight-steps-response-dto';
 import { MenuIdResponseDto } from './dto/response-dto/menu-id-response-dto';
-import { PrimitiveApiResponse } from 'src/decorators/primitive-api-response-decorator';
+import { PrimitiveApiResponse } from '../decorators/primitive-api-response-decorator';
 import { SearchBrandRequestDto } from './dto/request-dto/search-brand-request-dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MealImageUploadRequestDto } from './dto/request-dto/meal-image-upload-request-dto';
@@ -1046,8 +1048,8 @@ export class HomeController {
     return await this.homeService.registerMenu(user, registerMenuRequestDto);
   }
 
-  // CSV 메뉴 등록
-  // @ApiBearerAuth('accessToken')
+  // CSV 메뉴 등록 (관리자 전용)
+  @ApiBearerAuth('accessToken')
   @ApiOperation({
     summary: 'CSV 메뉴 등록',
   })
@@ -1069,6 +1071,12 @@ export class HomeController {
     message: 'Invalid or expired accessToken',
     error: 'UnauthorizedException',
   })
+  @ErrorApiResponse({
+    status: 403,
+    description: '관리자 회원이 아님 (관리자만 호출 가능)',
+    message: 'Not a member of the ADMIN (only ADMIN can call this api)',
+    error: 'ForbiddenException',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     description: '메뉴 CSV 업로드',
@@ -1084,7 +1092,8 @@ export class HomeController {
       required: ['csv'],
     },
   })
-  // @UseGuards(AuthGuard())
+  @UseGuards(AuthGuard(), RolesGuard)
+  @Roles('ADMIN')
   @UseInterceptors(FileInterceptor('csv'))
   @ResponseMsg('Menus imported successfully')
   @Post('/importMenusCsv')
@@ -1094,7 +1103,8 @@ export class HomeController {
     return await this.homeService.importMenusCsv(file);
   }
 
-  // CSV 운동 등록
+  // CSV 운동 등록 (관리자 전용)
+  @ApiBearerAuth('accessToken')
   @ApiOperation({
     summary: 'CSV 운동 등록',
   })
@@ -1109,6 +1119,18 @@ export class HomeController {
     description: 'Bad Request  \ncsv 파일 누락 또는 CSV 형식 오류',
     message: 'csv file is required',
     error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 403,
+    description: '관리자 회원이 아님 (관리자만 호출 가능)',
+    message: 'Not a member of the ADMIN (only ADMIN can call this api)',
+    error: 'ForbiddenException',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -1125,6 +1147,8 @@ export class HomeController {
       required: ['csv'],
     },
   })
+  @UseGuards(AuthGuard(), RolesGuard)
+  @Roles('ADMIN')
   @UseInterceptors(FileInterceptor('csv'))
   @ResponseMsg('Workouts imported successfully')
   @Post('/importWorkoutsCsv')

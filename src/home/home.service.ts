@@ -13,7 +13,14 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Brackets, In, LessThan, Repository } from 'typeorm';
+import {
+  Between,
+  Brackets,
+  In,
+  LessThan,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -2987,12 +2994,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       }
 
       const uniqueMenuIds = Array.from(new Set(menu_ids));
-      const menus = await this.menuRepository.find({
-        where: {
-          id: In(uniqueMenuIds),
-          is_deleted: 0,
-        },
-      });
+      const menus = await this.accessibleMenusQuery(
+        user,
+        uniqueMenuIds,
+      ).getMany();
 
       if (menus.length !== uniqueMenuIds.length) {
         throw new BadRequestException('Some menu_ids do not exist');
@@ -4776,12 +4781,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     this.validateFolderMenuArrays(dto);
 
     const uniqueMenuIds = Array.from(new Set(dto.menu_ids));
-    const menuCount = await this.menuRepository.count({
-      where: {
-        id: In(uniqueMenuIds),
-        is_deleted: 0,
-      },
-    });
+    const menuCount = await this.accessibleMenusQuery(
+      user,
+      uniqueMenuIds,
+    ).getCount();
 
     if (menuCount !== uniqueMenuIds.length) {
       throw new NotFoundException('Menu not found');
@@ -4964,6 +4967,27 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     await this.folderRepository.delete(folder.id);
   }
 
+  // 공용 메뉴(user 없음)와 본인 개인 메뉴만 조회한다. 다른 사용자의 개인 메뉴 id는 없는 메뉴로 취급한다.
+  private accessibleMenusQuery(
+    user: UserEntity,
+    menuIds: number[],
+  ): SelectQueryBuilder<MenuEntity> {
+    return this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .where(menuIds.length > 0 ? 'menu.id IN (:...menuIds)' : '1 = 0', {
+        menuIds,
+      })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+            userId: user.id,
+          });
+        }),
+      );
+  }
+
   private validateFolderMenuArrays(dto: UpsertFolderRequestDto): void {
     const menuCount = dto.menu_ids.length;
 
@@ -4990,12 +5014,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     this.validateMenuSetMenuArrays(dto);
 
     const uniqueMenuIds = Array.from(new Set(dto.menu_ids));
-    const menuCount = await this.menuRepository.count({
-      where: {
-        id: In(uniqueMenuIds),
-        is_deleted: 0,
-      },
-    });
+    const menuCount = await this.accessibleMenusQuery(
+      user,
+      uniqueMenuIds,
+    ).getCount();
 
     if (menuCount !== uniqueMenuIds.length) {
       throw new NotFoundException('Menu not found');

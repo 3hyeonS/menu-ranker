@@ -1,7 +1,15 @@
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ResponseDto } from '../../response-dto';
 import { AuthService } from '../auth.service';
-import { Body, Controller, Post, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Post,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { ResponseTransformInterceptor } from '../../interceptors/response-transform-interceptor';
 import { ApiExtraModels } from '@nestjs/swagger';
 import { UserResponseDto } from '../dto/user-dto/response-dto/user-response-dto';
@@ -9,13 +17,14 @@ import { ErrorApiResponse } from '../../decorators/error-api-response-decorator'
 import { GenericApiResponse } from '../../decorators/generic-api-response-decorator';
 import { ResponseMsg } from '../../decorators/response-message-decorator';
 import { AdminSignUpRequestDto } from '../dto/user-dto/request-dto/user-sign-up-request-dto';
-import { UserTokenResponseDto } from '../dto/token-dto/response-dto/user-token-response-dto';
 import { SubscriptionService } from '../subscription.service';
 import {
   CreateSubscriptionCodeRequestDto,
   CreateSubscriptionCodesRequestDto,
 } from '../dto/subscription-code-dto/request-dto/create-subscription-code-request-dto';
 import { SubscriptionCodeResponseDto } from '../dto/subscription-code-dto/response-dto/subscription-code-response-dto';
+import { Roles } from '../../decorators/roles-decorator';
+import { RolesGuard } from '../custom-role.guard';
 
 @ApiTags('관리자 인증')
 @UseInterceptors(ResponseTransformInterceptor)
@@ -43,7 +52,22 @@ export class AdminAuthController {
     message: 'email must be an email',
     error: 'BadRequestException',
   })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 403,
+    description: '관리자 회원이 아님 (관리자만 호출 가능)',
+    message: 'Not a member of the ADMIN (only ADMIN can call this api)',
+    error: 'ForbiddenException',
+  })
   @ResponseMsg('Administer signed up successfully')
+  @ApiBearerAuth('accessToken')
+  @UseGuards(AuthGuard(), RolesGuard)
+  @Roles('ADMIN')
   @Post('/signup')
   async adminSignUp(
     @Body() userSignUpRequestDto: AdminSignUpRequestDto,
@@ -53,52 +77,21 @@ export class AdminAuthController {
     return userResponseDto;
   }
 
-  // 2. 관리자 로그인 엔드포인트
+  // 2. 관리자 로그인 엔드포인트 (비활성화: 관리자는 Kakao/Apple 로그인 후 DB에서 ADMIN으로 지정)
   @ApiOperation({
-    summary: '관리자 로그인',
-  })
-  @GenericApiResponse({
-    status: 201,
-    description: '로그인 성공',
-    message: 'Admin signed in successfully',
-    model: UserTokenResponseDto,
+    summary: '관리자 로그인 (비활성화)',
+    description:
+      '항상 403을 반환. 관리자는 Kakao/Apple 로그인 후 DB에서 role을 ADMIN으로 지정해 사용',
   })
   @ErrorApiResponse({
-    status: 400,
-    description: 'Bad Request  \nbody 입력값의 필드 조건 및 JSON 형식 오류',
-    message: 'adminId should not be empty',
-    error: 'BadRequestException',
+    status: 403,
+    description: '관리자 로그인 비활성화',
+    message: 'Admin sign-in is disabled',
+    error: 'ForbiddenException',
   })
-  @ErrorApiResponse({
-    status: 401,
-    description: '잘못된 adminId 혹은 email',
-    message: 'Incorrect adminId or email',
-    error: 'UnauthorizedException',
-  })
-  @ResponseMsg('Admin signed in successfully')
   @Post('/signin')
-  async adminSignIn(
-    @Body() adminSignInRequestDto: AdminSignUpRequestDto,
-  ): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    user: UserResponseDto;
-  }> {
-    // [1] 로그인 처리
-    const { accessToken, refreshToken, admin } =
-      await this.authService.adminSignIn(
-        adminSignInRequestDto.adminId,
-        adminSignInRequestDto.email,
-      );
-
-    const userResponseDto = new UserResponseDto(admin);
-
-    // [2] 응답 반환 JSON으로 토큰 전송
-    return {
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-      user: userResponseDto,
-    };
+  adminSignIn(): never {
+    throw new ForbiddenException('Admin sign-in is disabled');
   }
 
   @ApiOperation({
@@ -140,7 +133,22 @@ export class AdminAuthController {
     message: 'Subscription code already exists',
     error: 'ConflictException',
   })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 403,
+    description: '관리자 회원이 아님 (관리자만 호출 가능)',
+    message: 'Not a member of the ADMIN (only ADMIN can call this api)',
+    error: 'ForbiddenException',
+  })
   @ResponseMsg('Subscription code created successfully')
+  @ApiBearerAuth('accessToken')
+  @UseGuards(AuthGuard(), RolesGuard)
+  @Roles('ADMIN')
   @Post('/subscriptionCodes')
   async createSubscriptionCode(
     @Body() dto: CreateSubscriptionCodeRequestDto,
@@ -191,7 +199,22 @@ export class AdminAuthController {
     message: 'Subscription code already exists',
     error: 'ConflictException',
   })
+  @ErrorApiResponse({
+    status: 401,
+    description: '유효하지 않거나 기간이 만료된 accessToken',
+    message: 'Invalid or expired accessToken',
+    error: 'UnauthorizedException',
+  })
+  @ErrorApiResponse({
+    status: 403,
+    description: '관리자 회원이 아님 (관리자만 호출 가능)',
+    message: 'Not a member of the ADMIN (only ADMIN can call this api)',
+    error: 'ForbiddenException',
+  })
   @ResponseMsg('Subscription codes created successfully')
+  @ApiBearerAuth('accessToken')
+  @UseGuards(AuthGuard(), RolesGuard)
+  @Roles('ADMIN')
   @Post('/subscriptionCodes/bulk')
   async createSubscriptionCodes(
     @Body() dto: CreateSubscriptionCodesRequestDto,

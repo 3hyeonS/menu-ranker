@@ -9,17 +9,18 @@ exports[`API route contract AdminAuthController routes 1`] = `
     "interceptors": [
       "ResponseTransformInterceptor",
     ],
-    "params": [
-      "0: @Body() AdminSignUpRequestDto",
-    ],
+    "params": [],
     "pipes": [],
-    "responseMessage": "Admin signed in successfully",
+    "responseMessage": null,
     "roles": null,
     "status": 201,
   },
   "POST /adminAuth/signup": {
     "filters": [],
-    "guards": [],
+    "guards": [
+      "AuthGuard()",
+      "RolesGuard",
+    ],
     "handler": "adminSignUp",
     "interceptors": [
       "ResponseTransformInterceptor",
@@ -29,12 +30,17 @@ exports[`API route contract AdminAuthController routes 1`] = `
     ],
     "pipes": [],
     "responseMessage": "Administer signed up successfully",
-    "roles": null,
+    "roles": [
+      "ADMIN",
+    ],
     "status": 201,
   },
   "POST /adminAuth/subscriptionCodes": {
     "filters": [],
-    "guards": [],
+    "guards": [
+      "AuthGuard()",
+      "RolesGuard",
+    ],
     "handler": "createSubscriptionCode",
     "interceptors": [
       "ResponseTransformInterceptor",
@@ -44,12 +50,17 @@ exports[`API route contract AdminAuthController routes 1`] = `
     ],
     "pipes": [],
     "responseMessage": "Subscription code created successfully",
-    "roles": null,
+    "roles": [
+      "ADMIN",
+    ],
     "status": 201,
   },
   "POST /adminAuth/subscriptionCodes/bulk": {
     "filters": [],
-    "guards": [],
+    "guards": [
+      "AuthGuard()",
+      "RolesGuard",
+    ],
     "handler": "createSubscriptionCodes",
     "interceptors": [
       "ResponseTransformInterceptor",
@@ -59,7 +70,9 @@ exports[`API route contract AdminAuthController routes 1`] = `
     ],
     "pipes": [],
     "responseMessage": "Subscription codes created successfully",
-    "roles": null,
+    "roles": [
+      "ADMIN",
+    ],
     "status": 201,
   },
 }
@@ -607,7 +620,10 @@ exports[`API route contract HomeController routes 1`] = `
   },
   "POST /home/importMenusCsv": {
     "filters": [],
-    "guards": [],
+    "guards": [
+      "AuthGuard()",
+      "RolesGuard",
+    ],
     "handler": "importMenusCsv",
     "interceptors": [
       "ResponseTransformInterceptor",
@@ -618,12 +634,17 @@ exports[`API route contract HomeController routes 1`] = `
     ],
     "pipes": [],
     "responseMessage": "Menus imported successfully",
-    "roles": null,
+    "roles": [
+      "ADMIN",
+    ],
     "status": 201,
   },
   "POST /home/importWorkoutsCsv": {
     "filters": [],
-    "guards": [],
+    "guards": [
+      "AuthGuard()",
+      "RolesGuard",
+    ],
     "handler": "importWorkoutsCsv",
     "interceptors": [
       "ResponseTransformInterceptor",
@@ -634,7 +655,9 @@ exports[`API route contract HomeController routes 1`] = `
     ],
     "pipes": [],
     "responseMessage": "Workouts imported successfully",
-    "roles": null,
+    "roles": [
+      "ADMIN",
+    ],
     "status": 201,
   },
   "POST /home/menuDetail": {

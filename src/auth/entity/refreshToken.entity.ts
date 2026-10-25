@@ -12,7 +12,13 @@ export class RefreshTokenEntity {
   @PrimaryGeneratedColumn({ type: 'int', name: 'id' })
   id: number;
 
-  @Column({ type: 'varchar', name: 'token', unique: true, nullable: false })
+  @Column({
+    type: 'varchar',
+    name: 'token',
+    length: 512,
+    unique: true,
+    nullable: false,
+  })
   token: string;
 
   @CreateDateColumn({
