@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles-decorator';
@@ -29,7 +30,11 @@ export class RolesGuard implements CanActivate {
     const { user }: { user: UserEntity } = context.switchToHttp().getRequest();
 
     // 사용자가 없을 경우 true 반환 (optionalUser 비로그인 처리)
+    // 단, ADMIN 전용 API는 AuthGuard 누락 등으로 사용자가 없으면 거부한다
     if (!user) {
+      if (requiredRoles.includes('ADMIN')) {
+        throw new UnauthorizedException('Invalid or expired accessToken');
+      }
       return true;
     }
 

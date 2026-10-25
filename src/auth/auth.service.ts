@@ -9,7 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import { randomUUID } from 'crypto';
+import { randomBytes } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom, lastValueFrom, retry } from 'rxjs';
@@ -372,12 +372,13 @@ export class AuthService {
 
   // Refresh Token 생성 및 저장
   async generateRefreshToken(member: UserEntity): Promise<string> {
-    // jti: 같은 초에 같은 사용자로 두 번 발급해도 토큰이 달라 UNIQUE 충돌이 나지 않게 한다
+    // jti: 같은 초에 같은 사용자로 두 번 발급해도 토큰이 달라 UNIQUE 충돌이 나지 않게 한다.
+    // token 컬럼 길이(varchar)를 넘지 않도록 8자(48bit)로 짧게 둔다.
     const payload = {
       id: member.id,
       email: member.email,
       role: member.authority.role,
-      jti: randomUUID(),
+      jti: randomBytes(6).toString('base64url'),
     };
     const refreshToken = this.jwtService.sign(payload, {
       secret: process.env.REFRESH_SECRET,

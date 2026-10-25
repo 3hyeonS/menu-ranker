@@ -1,4 +1,8 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
@@ -78,6 +82,17 @@ describe('ADMIN-only routes', () => {
     ).toBeUndefined();
   });
 
+  it('rejects ADMIN routes when no authenticated user is attached', () => {
+    const handler = AdminAuthController.prototype.adminSignUp;
+    const guard = new RolesGuard(new Reflector());
+    const context = {
+      getHandler: () => handler,
+      getClass: () => AdminAuthController,
+      switchToHttp: () => ({ getRequest: () => ({}) }),
+    } as unknown as ExecutionContext;
+    expect(() => guard.canActivate(context)).toThrow(UnauthorizedException);
+  });
+
   it('always rejects admin sign-in', () => {
     const controller = new AdminAuthController({} as never, {} as never);
     expect(() => controller.adminSignIn()).toThrow(
@@ -131,6 +146,7 @@ describe('AuthService token and Apple security', () => {
           jti: expect.any(String),
         }),
       );
+      expect(payload.jti).toHaveLength(8);
       expect(service.refreshTokenRepository.save).toHaveBeenCalledTimes(2);
     } finally {
       jest.useRealTimers();

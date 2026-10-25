@@ -15,6 +15,7 @@ describe('HomeService menu ownership', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       getMany: jest.fn().mockResolvedValue(menus),
+      getCount: jest.fn().mockResolvedValue(menus.length),
     };
     service.menuRepository = {
       createQueryBuilder: jest.fn().mockReturnValue(query),
@@ -36,7 +37,7 @@ describe('HomeService menu ownership', () => {
   it('limits accessible menus to public menus and the user own menus', async () => {
     mockAccessibleMenus([{ id: 10 }]);
 
-    await service.findAccessibleMenus(user, [10]);
+    await service.accessibleMenusQuery(user, [10]).getMany();
 
     const brackets = query.andWhere.mock.calls
       .map(([condition]) => condition)
