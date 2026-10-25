@@ -7,6 +7,7 @@ describe('HomeService menu ownership', () => {
   const user = { id: 1 } as UserEntity;
   let service: any;
   let query: any;
+  let txMealRepository: any;
 
   // 공용 메뉴(10)와 본인 메뉴(11)만 조회되고, 다른 사용자의 개인 메뉴(99)는 조회 결과에 없는 상황
   function mockAccessibleMenus(menus: { id: number }[]) {
@@ -24,10 +25,16 @@ describe('HomeService menu ownership', () => {
 
   beforeEach(() => {
     service = Object.create(HomeService.prototype);
-    service.mealRepository = {
+    txMealRepository = {
       findOne: jest.fn().mockResolvedValue(null),
       create: jest.fn((value) => value),
       save: jest.fn(),
+    };
+    const txManager = {
+      getRepository: jest.fn(() => txMealRepository),
+    };
+    service.mealRepository = {
+      manager: { transaction: jest.fn((work) => work(txManager)) },
     };
     service.mealMenuRepository = { create: jest.fn((value) => value) };
     service.folderRepository = { manager: { transaction: jest.fn() } };
@@ -70,7 +77,7 @@ describe('HomeService menu ownership', () => {
         menu_input_modes: [0, 0],
       }),
     ).rejects.toThrow(new BadRequestException('Some menu_ids do not exist'));
-    expect(service.mealRepository.save).not.toHaveBeenCalled();
+    expect(service.mealRepository.manager.transaction).not.toHaveBeenCalled();
   });
 
   it('registers a meal with public and own menus', async () => {
@@ -84,7 +91,7 @@ describe('HomeService menu ownership', () => {
       menu_input_modes: [0, 0],
     });
 
-    expect(service.mealRepository.save).toHaveBeenCalled();
+    expect(txMealRepository.save).toHaveBeenCalled();
   });
 
   it.each([

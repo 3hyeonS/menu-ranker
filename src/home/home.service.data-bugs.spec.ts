@@ -50,8 +50,14 @@ function createService() {
   const service = Object.create(HomeService.prototype) as any;
   service.mealMenuRepository = { create: jest.fn((value) => value) };
   service.mealSetRepository = { create: jest.fn((value) => value) };
+  const menuQuery = {
+    leftJoin: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([{ id: 1, name: '현미밥' }]),
+  };
   service.menuRepository = {
-    find: jest.fn().mockResolvedValue([{ id: 1, name: '현미밥' }]),
+    createQueryBuilder: jest.fn().mockReturnValue(menuQuery),
   };
   return service;
 }
