@@ -36,6 +36,7 @@ npm run db:migration:show                           # 적용 상태 확인 (run/
 - `npm run lint`는 `--fix`로 파일을 수정한다. 포맷 변경이 괜찮을 때만 실행하고 diff를 확인한다.
 - Prettier: 작은따옴표, trailing comma.
 - 보고할 때는 실행한 검사와, 서비스·자격 증명이 없어 건너뛴 검사를 구분해 적는다.
+- API 계약 스냅샷 테스트는 `src/contract/`에 있다(`npm test -- --runInBand src/contract`). 라우트·guard·응답 메시지, 요청 DTO validation, 주요 엔드포인트 응답 shape·에러 형식을 `__snapshots__/`에 고정한다. 스냅샷이 깨지면 계약 변경을 먼저 의심한다. 의도한 변경(예: 이슈에서 허용한 guard 추가)일 때만 `npm test -- --runInBand src/contract -u`로 갱신하고, PR 본문에 바뀐 스냅샷과 이유를 적는다. `src/main.ts`의 전역 pipe·filter·interceptor 설정을 바꾸면 `response-contract.spec.ts`의 같은 설정도 맞춘다.
 - CI(`.github/workflows/deploy.yml`)는 `npm ci` → `npm test -- --runInBand` → `npm run build`만 돌린다. lint와 e2e는 CI에 없다.
 
 ## 코드 구조

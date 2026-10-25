@@ -1,0 +1,1561 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`API route contract AdminAuthController routes 1`] = `
+{
+  "POST /adminAuth/signin": {
+    "filters": [],
+    "guards": [],
+    "handler": "adminSignIn",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() AdminSignUpRequestDto",
+    ],
+    "responseMessage": "Admin signed in successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /adminAuth/signup": {
+    "filters": [],
+    "guards": [],
+    "handler": "adminSignUp",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() AdminSignUpRequestDto",
+    ],
+    "responseMessage": "Administer signed up successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /adminAuth/subscriptionCodes": {
+    "filters": [],
+    "guards": [],
+    "handler": "createSubscriptionCode",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() CreateSubscriptionCodeRequestDto",
+    ],
+    "responseMessage": "Subscription code created successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /adminAuth/subscriptionCodes/bulk": {
+    "filters": [],
+    "guards": [],
+    "handler": "createSubscriptionCodes",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() CreateSubscriptionCodesRequestDto",
+    ],
+    "responseMessage": "Subscription codes created successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract AppController routes 1`] = `
+{
+  "GET /": {
+    "filters": [],
+    "guards": [],
+    "handler": "getHello",
+    "interceptors": [],
+    "params": [],
+    "responseMessage": null,
+    "roles": null,
+    "status": 200,
+  },
+  "GET /health": {
+    "filters": [],
+    "guards": [],
+    "handler": "health",
+    "interceptors": [],
+    "params": [],
+    "responseMessage": null,
+    "roles": null,
+    "status": 200,
+  },
+}
+`;
+
+exports[`API route contract ChatController routes 1`] = `
+{
+  "GET /chat/history": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getChatHistory",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Chat history returned successfully",
+    "roles": null,
+    "status": 200,
+  },
+  "POST /chat/food-image-feedback": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "feedbackMenusFromFoodImage",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('image')",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @File() Object",
+    ],
+    "responseMessage": "Food image feedback generated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/management-pattern-analysis": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "managementPatternAnalysis",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Management pattern analysis generated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/meal-feedback": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "mealFeedback",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ChatMealFeedbackRequestDto",
+    ],
+    "responseMessage": "Meal feedback generated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/meal-record": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "recordMealFromChat",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ChatMealRecordRequestDto",
+    ],
+    "responseMessage": "Chat meal record saved successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/meal-record/delete": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "deleteMealRecordFromChat",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ChatMealRecordDeleteRequestDto",
+    ],
+    "responseMessage": "Chat meal record deleted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/meal-record/parse": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "parseMealRecordFromChatText",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ChatMealRecordParseRequestDto",
+    ],
+    "responseMessage": "Chat meal record candidates parsed successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/menu-board": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "recommendMenusFromMenuBoard",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('image')",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @File() Object",
+    ],
+    "responseMessage": "Menu board recommendations generated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/menu/search": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "searchUserMenusForChat",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ChatUserMenuSearchRequestDto",
+    ],
+    "responseMessage": "Chat user menu search completed successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/nutrition-label-feedback": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "feedbackFromNutritionLabel",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('image')",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @File() Object",
+    ],
+    "responseMessage": "Nutrition label feedback generated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/nutrition-label-feedback/register-menu": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerNutritionLabelMenu",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ChatNutritionLabelMenuRegisterRequestDto",
+    ],
+    "responseMessage": "Nutrition label menu registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/personalized-management": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "personalizedManagement",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Personalized management feedback generated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /chat/recommend": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "recommendMenus",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ChatRecommendRequestDto",
+    ],
+    "responseMessage": "Menu recommendations generated successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract CommonAuthController routes 1`] = `
+{
+  "POST /commonAuth/delete": {
+    "filters": [
+      "CustomUnauthorizedExceptionFilter",
+    ],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "deleteUser",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Account deleted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /commonAuth/refresh": {
+    "filters": [],
+    "guards": [],
+    "handler": "refresh",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() RefreshTokenRequestDto",
+    ],
+    "responseMessage": "Token refreshed successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /commonAuth/signout": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "signout",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RefreshTokenRequestDto",
+    ],
+    "responseMessage": "Signed out successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract HomeController routes 1`] = `
+{
+  "POST /home/brandAddRequest": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "brandAddRequest",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() SearchBrandRequestDto",
+    ],
+    "responseMessage": "Brand request registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/deleteMeal": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "deleteMeal",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() DeleteMealRequestDto",
+    ],
+    "responseMessage": "Meal deleted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/deleteMenu": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "deleteMenu",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() MenuIdRequestDto",
+    ],
+    "responseMessage": "Menu deleted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/deleteWorkoutRecord": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "deleteWorkoutRecord",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() DeleteWorkoutRecordRequestDto",
+    ],
+    "responseMessage": "Workout record deleted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/folder": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "upsertFolder",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpsertFolderRequestDto",
+    ],
+    "responseMessage": "Folder saved successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/folder/delete": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "deleteFolder",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() DeleteFolderRequestDto",
+    ],
+    "responseMessage": "Folder deleted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/folder/detail": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getFolderDetail",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() FolderDetailRequestDto",
+    ],
+    "responseMessage": "Folder detail returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/folders": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getFolders",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() FolderListRequestDto",
+    ],
+    "responseMessage": "Folder list returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/frequentlyRecordedMenus": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "frequentlyRecordedMenus",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Frequently recorded menus returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/getMealRecord": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getMealRecord",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() DateRequestDto",
+    ],
+    "responseMessage": "Meal record returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/getMealRecordedDates": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getMealRecordedDates",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() MealRecordedDatesRequestDto",
+    ],
+    "responseMessage": "Meal recorded dates returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/getWorkoutRecord": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getWorkoutRecord",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() GetWorkoutRecordRequestDto",
+    ],
+    "responseMessage": "Workout record returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/importMenusCsv": {
+    "filters": [],
+    "guards": [],
+    "handler": "importMenusCsv",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('csv')",
+    ],
+    "params": [
+      "0: @File() Object",
+    ],
+    "responseMessage": "Menus imported successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/importWorkoutsCsv": {
+    "filters": [],
+    "guards": [],
+    "handler": "importWorkoutsCsv",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('csv')",
+    ],
+    "params": [
+      "0: @File() Object",
+    ],
+    "responseMessage": "Workouts imported successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/menuDetail": {
+    "filters": [],
+    "guards": [],
+    "handler": "menuDetail",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() MenuIdRequestDto",
+    ],
+    "responseMessage": "Menu detail returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/modifyMenu": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "modifyMenu",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() ModifyMenuRequestDto",
+    ],
+    "responseMessage": "Menu modified successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/monthlyCalendar": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getMonthlyCalendar",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() MonthlyCalendarRequestDto",
+    ],
+    "responseMessage": "Monthly calendar records returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/recent30DaysAnalysis": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getRecentAnalysis",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RecentAnalysisRequestDto",
+    ],
+    "responseMessage": "Recent analysis records returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/recentMenus": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getRecentMenus",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Recent menus returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/recognizeFoodImage": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "recognizeFoodImage",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('image')",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @File() Object",
+    ],
+    "responseMessage": "Food image recognized successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/recognizeNutritionLabel": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "recognizeNutritionLabel",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('image')",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @File() Object",
+    ],
+    "responseMessage": "Nutrition label recognized successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/registerMeal": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerMeal",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisterMealRequestDto",
+    ],
+    "responseMessage": "Meal registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/registerMenu": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerMenu",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisterMenuRequestDto",
+    ],
+    "responseMessage": "Menu registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/registerSteps": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerSteps",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisterStepsRequestDto",
+    ],
+    "responseMessage": "Steps registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/registerWeight": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerWeight",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisterWeightRequestDto",
+    ],
+    "responseMessage": "Weight registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/registerWorkout": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerWorkout",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpsertWorkoutRecordRequestDto",
+    ],
+    "responseMessage": "Workout record registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/registeredMenus": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registeredMenus",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisteredMenuListRequestDto",
+    ],
+    "responseMessage": "Registered menus returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/search": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "signout",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() SearchMenuRequestDto",
+    ],
+    "responseMessage": "Menu searched successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/searchBrand": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "searchBrand",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() SearchBrandRequestDto",
+    ],
+    "responseMessage": "Brand searched successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/searchInBrand": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "searchInBrand",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() SearchInBrandRequestDto",
+    ],
+    "responseMessage": "Menus in the brand searched successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/searchWorkout": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "searchWorkout",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() SearchWorkoutRequestDto",
+    ],
+    "responseMessage": "Workout searched successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/set": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "upsertMenuSet",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpsertMenuSetRequestDto",
+    ],
+    "responseMessage": "Menu set saved successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/set/delete": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "deleteMenuSet",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() DeleteMenuSetRequestDto",
+    ],
+    "responseMessage": "Menu set deleted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/set/detail": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getMenuSetDetail",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() MenuSetDetailRequestDto",
+    ],
+    "responseMessage": "Menu set detail returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/sets": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getMenuSets",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() MenuSetListRequestDto",
+    ],
+    "responseMessage": "Menu set list returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/uploadMealImage": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "uploadMealImage",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+      "FileInterceptor('image')",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @File() Object",
+      "2: @Body() MealImageUploadRequestDto",
+    ],
+    "responseMessage": "Meal image uploaded successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/water": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getWaterIntake",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() WaterDateRequestDto",
+    ],
+    "responseMessage": "Water intake returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/water/cup-size": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateWaterCupSize",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateWaterCupSizeRequestDto",
+    ],
+    "responseMessage": "Water cup size updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/water/register": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerWaterIntake",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpsertWaterIntakeRequestDto",
+    ],
+    "responseMessage": "Water intake registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/weightSteps": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "weightSteps",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() DateRequestDto",
+    ],
+    "responseMessage": "Weight and steps returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /home/workout/detail": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getWorkoutDetail",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() WorkoutDetailRequestDto",
+    ],
+    "responseMessage": "Workout detail returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract MenstrualController routes 1`] = `
+{
+  "POST /menstrual/records": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getRecords",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() GetMenstrualRecordsRequestDto",
+    ],
+    "responseMessage": "Menstrual records returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /menstrual/records/save": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "saveRecords",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() SaveMenstrualRecordsRequestDto",
+    ],
+    "responseMessage": "Menstrual records saved successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract ProfileController routes 1`] = `
+{
+  "GET /profile/getProfile": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getProfile",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Profile returned successfully",
+    "roles": null,
+    "status": 200,
+  },
+  "POST /profile/getUserGoalSnapshot": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "getUserGoalSnapshot",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() GetUserGoalSnapshotRequestDto",
+    ],
+    "responseMessage": "User goal snapshot returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/inquiry": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "inquiry",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() CreateInquiryRequestDto",
+    ],
+    "responseMessage": "Inquiry submitted successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/registerSubCode": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerSubCode",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisterSubCodeRequestDto",
+    ],
+    "responseMessage": "Subscription code updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateActivity": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateActivity",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateActivityRequestDto",
+    ],
+    "responseMessage": "Activity updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateBirthYear": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateBirthYear",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateBirthYearRequestDto",
+    ],
+    "responseMessage": "Birth year updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateGender": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateGender",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateGenderRequestDto",
+    ],
+    "responseMessage": "Gender updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateGoal": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateGoal",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateGoalRequestDto",
+    ],
+    "responseMessage": "Goal updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateHeight": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateHeight",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateHeightRequestDto",
+    ],
+    "responseMessage": "Height updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateNickname": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateNickname",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateNicknameRequestDto",
+    ],
+    "responseMessage": "Nickname updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateTargetCalories": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateTargetCalories",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateTargetCaloriesRequestDto",
+    ],
+    "responseMessage": "Target calories updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateTargetRatio": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateTargetRatio",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateTargetRatioRequestDto",
+    ],
+    "responseMessage": "Target ratio updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateTargetWeight": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateTargetWeight",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateTargetWeightRequestDto",
+    ],
+    "responseMessage": "Target weight updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /profile/updateWeight": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "updateWeight",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() UpdateWeightRequestDto",
+    ],
+    "responseMessage": "Weight updated successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract RestaurantController routes 1`] = `
+{
+  "POST /restaurant/detail": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "detail",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() RestaurantDetailRequestDto",
+      "1: @GetUser() UserEntity",
+    ],
+    "responseMessage": "Restaurant recommendations returned successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /restaurant/search": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "search",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() RestaurantSearchRequestDto",
+    ],
+    "responseMessage": "Restaurants searched successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract UserAuthController routes 1`] = `
+{
+  "GET /userAuth/apple": {
+    "filters": [],
+    "guards": [
+      "AuthGuard('apple')",
+    ],
+    "handler": "appleLogin",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [],
+    "responseMessage": null,
+    "roles": null,
+    "status": 200,
+  },
+  "GET /userAuth/kakao": {
+    "filters": [],
+    "guards": [
+      "AuthGuard('kakao')",
+    ],
+    "handler": "kakaoLogin",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [],
+    "responseMessage": null,
+    "roles": null,
+    "status": 200,
+  },
+  "GET /userAuth/kakao/web": {
+    "filters": [],
+    "guards": [],
+    "handler": "kakaoWebLogin",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Response() Object",
+    ],
+    "responseMessage": null,
+    "roles": null,
+    "status": 200,
+  },
+  "POST /userAuth/apple/callback": {
+    "filters": [],
+    "guards": [],
+    "handler": "appleCallback",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() Object",
+    ],
+    "responseMessage": "Signed in successfully with Apple Account",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /userAuth/authorizeSubCode": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "authorizeSubCode",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisterSubCodeRequestDto",
+    ],
+    "responseMessage": "Subscription code authorized successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /userAuth/defaltRatio": {
+    "filters": [],
+    "guards": [],
+    "handler": "defaltRatio",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() DefaltRatioRequestDto",
+    ],
+    "responseMessage": "defalt target calories calculated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /userAuth/defaltTargetCalories": {
+    "filters": [],
+    "guards": [],
+    "handler": "defaltTargetCalories",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() DefaltTargetCaloriesRequestDto",
+    ],
+    "responseMessage": "defalt target calories calculated successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /userAuth/hasUserInfo": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "hasUserInfo",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+    ],
+    "responseMessage": "User info registration verified successfully",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /userAuth/kakao/callback": {
+    "filters": [],
+    "guards": [],
+    "handler": "kakaoCallback",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Query('code') String",
+    ],
+    "responseMessage": "Signed in successfully with KaKao Account",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /userAuth/kakao/web/callback": {
+    "filters": [],
+    "guards": [],
+    "handler": "kakaoWebCallback",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Query('code') String",
+    ],
+    "responseMessage": "Signed in successfully with Kakao Web Account",
+    "roles": null,
+    "status": 201,
+  },
+  "POST /userAuth/registerUserInfo": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "registerUserInfo",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @GetUser() UserEntity",
+      "1: @Body() RegisterUserInfoRequestDto",
+    ],
+    "responseMessage": "User Info registered successfully",
+    "roles": null,
+    "status": 201,
+  },
+}
+`;
+
+exports[`API route contract registers every controller 1`] = `
+[
+  "AdminAuthController",
+  "AppController",
+  "ChatController",
+  "CommonAuthController",
+  "HomeController",
+  "MenstrualController",
+  "ProfileController",
+  "RestaurantController",
+  "UserAuthController",
+]
+`;

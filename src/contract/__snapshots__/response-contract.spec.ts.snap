@@ -1,0 +1,493 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`API response contract error responses 400 when a non-whitelisted field is sent 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "property extra should not exist",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when a required field is missing 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "id must be a number conforming to the specified constraints",
+      "id should not be empty",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when the JSON body is malformed 1`] = `
+{
+  "error": "string",
+  "message": "string",
+  "statusCode": "number",
+}
+`;
+
+exports[`API response contract error responses 401 through CustomUnauthorizedExceptionFilter on /commonAuth/delete 1`] = `
+{
+  "body": {
+    "error": "UnauthorizedException",
+    "message": "No, invalid or expired accessToken",
+    "statusCode": 401,
+  },
+  "httpStatus": 401,
+}
+`;
+
+exports[`API response contract error responses 401 when the access token is invalid 1`] = `
+{
+  "body": {
+    "error": "UnauthorizedException",
+    "message": "Unauthorized",
+    "statusCode": 401,
+  },
+  "httpStatus": 401,
+}
+`;
+
+exports[`API response contract error responses 401 when the access token is missing 1`] = `
+{
+  "body": {
+    "error": "UnauthorizedException",
+    "message": "Unauthorized",
+    "statusCode": 401,
+  },
+  "httpStatus": 401,
+}
+`;
+
+exports[`API response contract error responses 401 when the refresh token has no email 1`] = `
+{
+  "body": {
+    "error": "UnauthorizedException",
+    "message": "Invalid or expired refreshToken",
+    "statusCode": 401,
+  },
+  "httpStatus": 401,
+}
+`;
+
+exports[`API response contract error responses 401 when the token user no longer exists 1`] = `
+{
+  "body": {
+    "error": "UnauthorizedException",
+    "message": "Invalid or expired accessToken",
+    "statusCode": 401,
+  },
+  "httpStatus": 401,
+}
+`;
+
+exports[`API response contract error responses 403 HttpException from a service keeps its message 1`] = `
+{
+  "body": {
+    "error": "ForbiddenException",
+    "message": "Not allowed",
+    "statusCode": 403,
+  },
+  "httpStatus": 403,
+}
+`;
+
+exports[`API response contract error responses 404 for an unknown route 1`] = `
+{
+  "body": {
+    "error": "NotFoundException",
+    "message": "Cannot POST /home/unknown-route",
+    "statusCode": 404,
+  },
+  "httpStatus": 404,
+}
+`;
+
+exports[`API response contract error responses 500 for a non-HTTP error 1`] = `
+{
+  "body": {
+    "error": "Error",
+    "message": "boom",
+    "statusCode": 500,
+  },
+  "httpStatus": 500,
+}
+`;
+
+exports[`API response contract success responses GET /chat/history 1`] = `
+{
+  "data": {
+    "chat_list": [
+      {
+        "createdAt": "string",
+        "id": "number",
+        "image_url": "string",
+        "input_text": "string",
+        "meal_record": {
+          "menu_ids": [
+            "number",
+          ],
+          "menu_input_modes": [
+            "number",
+          ],
+          "menu_quantities": [
+            "number",
+          ],
+          "time": "number",
+        },
+        "response_payload": {
+          "image_url": "string",
+          "menus": [
+            {
+              "id": "number",
+              "name": "string",
+            },
+          ],
+        },
+      },
+    ],
+  },
+  "extraKeys": [],
+  "httpStatus": 200,
+  "message": "Chat history returned successfully",
+  "statusCode": 200,
+}
+`;
+
+exports[`API response contract success responses GET /profile/getProfile 1`] = `
+{
+  "data": {
+    "activity": "number",
+    "birthYear": "number",
+    "diet_management_status": [
+      "number",
+    ],
+    "eating_out_freq_weekly": "number",
+    "gender": "number",
+    "goal": "number",
+    "height": "number",
+    "is_subscribed": "boolean",
+    "job_type": "number",
+    "lunch_location": "number",
+    "name": "string",
+    "nickname": "string",
+    "persona_type": "number",
+    "role": "string",
+    "target_calories": "number",
+    "target_ratio": [
+      "number",
+    ],
+    "target_weight": "number",
+    "user_id": "number",
+    "weight": "number",
+  },
+  "extraKeys": [],
+  "httpStatus": 200,
+  "message": "Profile returned successfully",
+  "statusCode": 200,
+}
+`;
+
+exports[`API response contract success responses POST /commonAuth/delete returns data null 1`] = `
+{
+  "data": "null",
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Account deleted successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /commonAuth/refresh 1`] = `
+{
+  "data": {
+    "accessToken": "string",
+    "member": {
+      "email": "string",
+      "id": "number",
+      "is_subscribed": "boolean",
+      "name": "string",
+      "nickname": "string",
+      "platform": "string",
+      "role": "string",
+    },
+    "refreshToken": "string",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Token refreshed successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /commonAuth/signout returns data null 1`] = `
+{
+  "data": "null",
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Signed out successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /home/getMealRecord 1`] = `
+{
+  "data": {
+    "meal_list": [
+      {
+        "createdAt": "string",
+        "image": "string",
+        "meal_time": "string",
+        "menu_input_modes": [
+          "number",
+        ],
+        "menu_list": [
+          {
+            "brand": "string",
+            "calories": "number",
+            "carbs": "number",
+            "category": "string",
+            "data_source": "number",
+            "fat": "number",
+            "id": "number",
+            "name": "string",
+            "protein": "number",
+            "sat_fat": "null",
+            "sugars": "null",
+            "trans_fat": "null",
+            "un_sat_fat": "null",
+            "unit": "number",
+            "unit_quantity": "string",
+            "weight": "number",
+          },
+        ],
+        "menu_quantities": [
+          "number",
+        ],
+        "set_list": [
+          {
+            "menu_list": [
+              {
+                "brand": "string",
+                "calories": "number",
+                "carbs": "number",
+                "category": "string",
+                "data_source": "number",
+                "fat": "number",
+                "id": "number",
+                "name": "string",
+                "protein": "number",
+                "sat_fat": "null",
+                "sugars": "null",
+                "trans_fat": "null",
+                "un_sat_fat": "null",
+                "unit": "number",
+                "unit_quantity": "string",
+                "weight": "number",
+              },
+            ],
+            "set_id": "number",
+            "set_name": "string",
+            "total_calories": "number",
+          },
+        ],
+        "time": "number",
+        "updatedAt": "string",
+      },
+    ],
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Meal record returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /home/getMealRecordedDates 1`] = `
+{
+  "data": {
+    "recorded-dates": [
+      "string",
+    ],
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Meal recorded dates returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /home/menuDetail 1`] = `
+{
+  "data": {
+    "alcohol": "number",
+    "brand": "string",
+    "caffeine": "number",
+    "calories": "number",
+    "carbs": "number",
+    "category": "string",
+    "cholesterol": "number",
+    "data_source": "number",
+    "dietary_fiber": "number",
+    "fat": "number",
+    "id": "number",
+    "is_deleted": "number",
+    "name": "string",
+    "potassium": "number",
+    "protein": "number",
+    "sat_fat": "number",
+    "sodium": "number",
+    "sugar_alchol": "number",
+    "sugars": "number",
+    "trans_fat": "number",
+    "un_sat_fat": "number",
+    "unit": "number",
+    "unit_quantity": "string",
+    "weight": "number",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Menu detail returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /home/search 1`] = `
+{
+  "data": {
+    "has_result": "boolean",
+    "menu_list": [
+      {
+        "brand": "string",
+        "calories": "number",
+        "carbs": "number",
+        "category": "string",
+        "data_source": "number",
+        "fat": "number",
+        "id": "number",
+        "name": "string",
+        "protein": "number",
+        "sat_fat": "null",
+        "sugars": "null",
+        "trans_fat": "null",
+        "un_sat_fat": "null",
+        "unit": "number",
+        "unit_quantity": "string",
+        "weight": "number",
+      },
+    ],
+    "next_cursor": "number",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Menu searched successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /home/water 1`] = `
+{
+  "data": {
+    "cup_size": "number",
+    "water_intake": "number",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Water intake returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /home/weightSteps 1`] = `
+{
+  "data": {
+    "steps": "number",
+    "weight": "number",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Weight and steps returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /menstrual/records 1`] = `
+{
+  "data": {
+    "has_older": "boolean",
+    "recorded_ranges": [
+      {
+        "end_date": "string",
+        "start_date": "string",
+      },
+    ],
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Menstrual records returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /userAuth/apple/callback 1`] = `
+{
+  "data": {
+    "accessToken": "string",
+    "refreshToken": "string",
+    "user": {
+      "email": "string",
+      "id": "number",
+      "is_subscribed": "boolean",
+      "name": "string",
+      "nickname": "string",
+      "platform": "string",
+      "role": "string",
+    },
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Signed in successfully with Apple Account",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /userAuth/hasUserInfo 1`] = `
+{
+  "data": "boolean",
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "User info registration verified successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /userAuth/kakao/callback 1`] = `
+{
+  "data": {
+    "accessToken": "string",
+    "refreshToken": "string",
+    "user": {
+      "email": "string",
+      "id": "number",
+      "is_subscribed": "boolean",
+      "name": "string",
+      "nickname": "string",
+      "platform": "string",
+      "role": "string",
+    },
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Signed in successfully with KaKao Account",
+  "statusCode": 201,
+}
+`;
