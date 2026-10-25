@@ -170,6 +170,23 @@ VECTOR_TEST_MAX_CALORIES=500
 VECTOR_TEST_MIN_PROTEIN=20
 ```
 
+## Brand menu nutrition data
+
+브랜드 메뉴·영양정보 수집 데이터는 git에 커밋하지 않고 메인 체크아웃의
+`brand-nutrition/`(`.gitignore` 대상)에 둔다. 폴더 구성·열 형식·수집 규칙은
+`docs/brand-nutrition-collection-rules.md`를 따른다.
+
+```bash
+# CSV 형식만 검증 (DB 변경 없음)
+$ npm run restaurant:import -- brand-nutrition/all-menus.csv --validate-only
+
+# restaurant 테이블을 전부 지우고 다시 넣는다. 명시적으로 결정한 뒤에만 실행한다.
+$ npm run restaurant:import -- brand-nutrition/all-menus.csv
+```
+
+import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 없다. import는 첫 번째
+인자로, 나머지는 `--csv=<경로>`로 반드시 지정한다.
+
 ## Compile and run the project
 
 ```bash

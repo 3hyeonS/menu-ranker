@@ -64,3 +64,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Public benchmark datasets (downloaded, reproducible, and too large for Git)
 /benchmark-inputs/public/
+
+# Brand nutrition collection data (kept only in the main checkout, never committed)
+/brand-nutrition/
