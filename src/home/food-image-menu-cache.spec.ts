@@ -137,15 +137,14 @@ describe('HomeService food image public menu cache', () => {
     expect(otherUserMenus.map((menu) => menu.id)).toEqual([1, 5, 9]);
   });
 
-  it('does not let one request mutate the cached rows of another', async () => {
+  it('returns a new array each time so one request cannot reorder another', async () => {
     const { service } = createService();
 
     const first = await service.getAllFoodImageRecognitionCandidateMenus(7);
-    first[0].name = 'changed';
     first.splice(0, 1);
     const second = await service.getAllFoodImageRecognitionCandidateMenus(7);
 
-    expect(second[0]).toEqual(expect.objectContaining({ id: 1, name: '밥' }));
+    expect(second.map((menu) => menu.id)).toEqual([1, 3, 5, 9, 12]);
   });
 
   it('reloads public menus after a CSV menu import', async () => {

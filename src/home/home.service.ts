@@ -405,7 +405,7 @@ const ALTERNATIVE_NUTRITION_GOAL_RULES: AlternativeNutritionGoalRule[] = [
 export class HomeService {
   // 음식 사진 인식 후보용 공용 메뉴 목록. 앱 안에서 공용 메뉴를 바꾸면 invalidate()한다.
   private readonly publicFoodImageMenuCache = new AsyncTtlCache(
-    () => this.loadFoodImageRecognitionMenuRows(null),
+    () => this.loadFoodImageRecognitionMenus(null),
     () => this.getFoodImagePublicMenuCacheTtlMs(),
   );
 
@@ -2811,23 +2811,35 @@ ${JSON.stringify(
 
   // 공용 메뉴는 TTL 캐시(publicFoodImageMenuCache)에서, 개인 메뉴는 매번 DB에서 읽어
   // 예전 단일 쿼리(공용 + 내 메뉴, ORDER BY menu.id)와 같은 순서로 합친다.
+  // 돌려주는 원소는 캐시와 공유하므로 호출부는 원소를 수정하지 말고 복사해서 쓴다.
   private async getAllFoodImageRecognitionCandidateMenus(
     userId: number,
   ): Promise<HomeFoodImageRecognitionCandidate[]> {
-    const [publicRows, personalRows] = await Promise.all([
+    const [publicMenus, personalMenus] = await Promise.all([
       this.publicFoodImageMenuCache.get(),
-      this.loadFoodImageRecognitionMenuRows(userId),
+      this.loadFoodImageRecognitionMenus(userId),
     ]);
-    const rows = [...publicRows, ...personalRows].sort(
-      (left, right) => Number(left.id) - Number(right.id),
-    );
+    const merged: HomeFoodImageRecognitionCandidate[] = [];
+    let publicIndex = 0;
+    let personalIndex = 0;
 
-    return rows.map((menu) => ({
-      ...menu,
-      id: Number(menu.id),
-      weight: this.asNullableNumber(menu.weight),
-      unit: this.asNullableNumber(menu.unit),
-    }));
+    // 두 목록 모두 id 오름차순이므로 선형 병합한다.
+    while (
+      publicIndex < publicMenus.length ||
+      personalIndex < personalMenus.length
+    ) {
+      if (
+        personalIndex >= personalMenus.length ||
+        (publicIndex < publicMenus.length &&
+          publicMenus[publicIndex].id < personalMenus[personalIndex].id)
+      ) {
+        merged.push(publicMenus[publicIndex++]);
+      } else {
+        merged.push(personalMenus[personalIndex++]);
+      }
+    }
+
+    return merged;
   }
 
   private isVectorSearchEnabled(): boolean {
@@ -2847,10 +2859,10 @@ ${JSON.stringify(
   }
 
   // ownerUserId가 null이면 공용 메뉴, 아니면 해당 사용자의 개인 메뉴만 읽는다.
-  private async loadFoodImageRecognitionMenuRows(
+  private async loadFoodImageRecognitionMenus(
     ownerUserId: number | null,
-  ): Promise<FoodImageRecognitionMenuRow[]> {
-    return await this.menuRepository
+  ): Promise<HomeFoodImageRecognitionCandidate[]> {
+    const rows = await this.menuRepository
       .createQueryBuilder('menu')
       .leftJoin('menu.user', 'user')
       .select([
@@ -2868,6 +2880,13 @@ ${JSON.stringify(
       .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
       .orderBy('menu.id', 'ASC')
       .getRawMany<FoodImageRecognitionMenuRow>();
+
+    return rows.map((menu) => ({
+      ...menu,
+      id: Number(menu.id),
+      weight: this.asNullableNumber(menu.weight),
+      unit: this.asNullableNumber(menu.unit),
+    }));
   }
 
   private getFoodImagePublicMenuCacheTtlMs(): number {
