@@ -10,8 +10,9 @@ describe('buildGeminiGenerateContentUrl', () => {
     );
   });
 
-  it('appends the model path to an API base override', () => {
-    const override = 'https://proxy.example.com/v1beta/';
+  it('substitutes {model} in the override for each attempt', () => {
+    const override =
+      'https://proxy.example.com/v1beta/models/{model}:generateContent';
 
     expect(buildGeminiGenerateContentUrl('model-a', override)).toBe(
       'https://proxy.example.com/v1beta/models/model-a:generateContent',
@@ -19,6 +20,12 @@ describe('buildGeminiGenerateContentUrl', () => {
     expect(buildGeminiGenerateContentUrl('model-b', override)).toBe(
       'https://proxy.example.com/v1beta/models/model-b:generateContent',
     );
+  });
+
+  it('keeps any other override unchanged as before', () => {
+    expect(
+      buildGeminiGenerateContentUrl('model-a', 'https://proxy.internal/gemini'),
+    ).toBe('https://proxy.internal/gemini');
   });
 
   it('replaces the model in a full generateContent URL so fallback models are really called', () => {

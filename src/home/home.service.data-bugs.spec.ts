@@ -21,8 +21,14 @@ function createMealTransaction(existingMeal: any = null) {
     create: jest.fn((value) => value),
     save: jest.fn(async (value) => value),
   };
-  const txMealMenuRepository = { remove: jest.fn() };
-  const txMealSetRepository = { remove: jest.fn() };
+  const txMealMenuRepository = {
+    remove: jest.fn(),
+    create: jest.fn((value) => ({ ...value })),
+  };
+  const txMealSetRepository = {
+    remove: jest.fn(),
+    create: jest.fn((value) => ({ ...value })),
+  };
   const manager = {
     getRepository: jest.fn((entity) => {
       if (entity === MealEntity) return txMealRepository;
@@ -109,6 +115,9 @@ describe('HomeService data bug fixes', () => {
         meal_time: '09:10',
       });
 
+      expect(tx.txMealRepository.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
+      );
       expect(tx.txMealMenuRepository.remove).toHaveBeenCalledWith(oldMenus);
       expect(tx.txMealSetRepository.remove).toHaveBeenCalledWith(oldSets);
       expect(tx.txMealRepository.save).toHaveBeenCalledWith(
@@ -292,7 +301,8 @@ describe('HomeService data bug fixes', () => {
 
     it('calls the fallback model even when GEMINI_BASE_URL is set', async () => {
       process.env.GEMINI_API_KEY = 'test-key';
-      process.env.GEMINI_BASE_URL = 'https://proxy.example.com/v1beta';
+      process.env.GEMINI_BASE_URL =
+        'https://proxy.example.com/v1beta/models/{model}:generateContent';
       process.env.GEMINI_IMAGE_MODEL = 'primary-model';
       process.env.GEMINI_IMAGE_FALLBACK_MODELS = 'fallback-model';
       const service = createService();

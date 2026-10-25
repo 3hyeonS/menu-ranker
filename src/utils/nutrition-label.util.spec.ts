@@ -12,7 +12,7 @@ describe('isGramUnitText', () => {
     expect(isGramUnitText(text)).toBe(true);
   });
 
-  it.each(['1kg', '나트륨 200mg', 'ml', 'kcal', ''])(
+  it.each(['1kg', '나트륨 200mg', '비타민D 5μg', 'ml', 'kcal', ''])(
     'does not treat %s as grams',
     (text) => {
       expect(isGramUnitText(text)).toBe(false);

@@ -3073,7 +3073,17 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
             mealMenus: true,
             mealSets: true,
           },
+          // 같은 끼니 동시 요청이 기존 메뉴를 각자 지우고 각자 추가해 메뉴가 합쳐지지 않게 잠근다.
+          lock: { mode: 'pessimistic_write' },
         });
+        // 재시도 때 첫 시도에서 TypeORM이 채운 상태가 섞이지 않게 시도마다 새 엔티티를 만든다.
+        const attemptMealMenus = mealMenus.map(
+          ({ menu, quantity, menu_input_mode }) =>
+            mealMenuRepository.create({ menu, quantity, menu_input_mode }),
+        );
+        const attemptMealSets = mealSets.map(({ menuSet, sort_order }) =>
+          mealSetRepository.create({ menuSet, sort_order }),
+        );
 
         if (existingMeal) {
           if (existingMeal.mealMenus?.length) {
@@ -3087,8 +3097,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
           if (meal_time !== undefined) {
             existingMeal.mealTime = meal_time;
           }
-          existingMeal.mealMenus = mealMenus;
-          existingMeal.mealSets = mealSets;
+          existingMeal.mealMenus = attemptMealMenus;
+          existingMeal.mealSets = attemptMealSets;
           existingMeal.updatedAt = new Date();
 
           await mealRepository.save(existingMeal);
@@ -3100,8 +3110,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
           time,
           mealTime: meal_time ?? null,
           image: hasAnyRecordField ? image : null,
-          mealMenus,
-          mealSets,
+          mealMenus: attemptMealMenus,
+          mealSets: attemptMealSets,
           user,
         });
 

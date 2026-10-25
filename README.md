@@ -182,10 +182,11 @@ VECTOR_HNSW_EF_SEARCH=40
 ## Gemini endpoint override
 
 `GEMINI_BASE_URL`(모든 Gemini 호출)과 `GEMINI_IMAGE_BASE_URL`(이미지 호출, 없으면
-`GEMINI_BASE_URL` 사용)은 선택값이다. `https://proxy.example.com/v1beta` 같은 API
-베이스를 넣으면 서버가 시도마다 `/models/{model}:generateContent`를 붙여 모델
-fallback이 그대로 동작한다. 이미 `/models/<모델>:generateContent`로 끝나는 전체
-URL도 받으며, 이때는 모델 부분만 시도하는 모델로 바꾼다.
+`GEMINI_BASE_URL` 사용)은 선택값이다. 모델 fallback이 동작하려면 URL에 모델이 들어가야 한다.
+
+- `https://proxy.example.com/v1beta/models/{model}:generateContent`: 시도마다 `{model}`을 모델명으로 치환한다.
+- `.../models/<모델>:generateContent`로 끝나는 전체 URL: 모델 부분만 시도하는 모델로 바꾼다.
+- 그 밖의 값: 예전처럼 그대로 쓴다(모든 fallback 시도가 같은 URL을 부른다).
 
 ## Brand menu nutrition data
 

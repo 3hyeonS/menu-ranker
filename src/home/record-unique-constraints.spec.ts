@@ -21,26 +21,42 @@ describe('record UNIQUE constraints', () => {
     expect(index).toEqual(expect.objectContaining({ unique: true, columns }));
   });
 
-  function createQueryRunner(workoutIndexCount: number) {
+  function createQueryRunner(workoutIndexCount: number, duplicateCount = 0) {
     return {
-      query: jest.fn(async (sql: string) =>
-        sql.includes('information_schema.statistics')
-          ? [{ count: workoutIndexCount }]
-          : undefined,
-      ),
+      query: jest.fn(async (sql: string) => {
+        if (sql.includes('information_schema.statistics')) {
+          return [{ count: workoutIndexCount }];
+        }
+        if (sql.includes('HAVING COUNT(*) > 1')) {
+          return [{ count: duplicateCount }];
+        }
+        return undefined;
+      }),
     };
   }
+
+  const ddlStatements = (queryRunner: { query: jest.Mock }) =>
+    queryRunner.query.mock.calls
+      .map((call) => call[0] as string)
+      .filter((sql) => sql.startsWith('ALTER TABLE'));
+
+  it('stops before any DDL when duplicate rows exist', async () => {
+    const queryRunner = createQueryRunner(1, 2);
+
+    await expect(
+      new AddRecordUniqueConstraints1783720000000().up(queryRunner as any),
+    ).rejects.toThrow('meal에 (userId, date, time) 중복 2건');
+    expect(ddlStatements(queryRunner)).toEqual([]);
+  });
 
   it('adds meal and weight_steps unique indexes and skips the existing workout_record index', async () => {
     const queryRunner = createQueryRunner(1);
 
     await new AddRecordUniqueConstraints1783720000000().up(queryRunner as any);
 
-    const statements = queryRunner.query.mock.calls.map((call) => call[0]);
-    expect(statements).toEqual([
+    expect(ddlStatements(queryRunner)).toEqual([
       'ALTER TABLE `meal` ADD UNIQUE INDEX `UQ_meal_user_date_time` (`userId`, `date`, `time`)',
       'ALTER TABLE `weight_steps` ADD UNIQUE INDEX `UQ_weight_steps_user_date` (`userId`, `date`)',
-      expect.stringContaining('information_schema.statistics'),
     ]);
   });
 

@@ -6,6 +6,22 @@ export class AddRecordUniqueConstraints1783720000000 implements MigrationInterfa
   name = 'AddRecordUniqueConstraints1783720000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // MySQL DDL은 롤백되지 않으므로, 인덱스를 하나라도 만들기 전에 중복을 모두 확인한다.
+    await this.assertNoDuplicates(queryRunner, 'meal', [
+      'userId',
+      'date',
+      'time',
+    ]);
+    await this.assertNoDuplicates(queryRunner, 'weight_steps', [
+      'userId',
+      'date',
+    ]);
+    await this.assertNoDuplicates(queryRunner, 'workout_record', [
+      'userId',
+      'date',
+      'workoutId',
+    ]);
+
     await queryRunner.query(
       'ALTER TABLE `meal` ADD UNIQUE INDEX `UQ_meal_user_date_time` (`userId`, `date`, `time`)',
     );
@@ -38,6 +54,30 @@ export class AddRecordUniqueConstraints1783720000000 implements MigrationInterfa
       'ALTER TABLE `meal` ADD INDEX `IDX_meal_user` (`userId`), DROP INDEX `UQ_meal_user_date_time`',
     );
     // workout_record 인덱스는 1781000000000-AddWorkoutTables 소유라 지우지 않는다.
+  }
+
+  private async assertNoDuplicates(
+    queryRunner: QueryRunner,
+    tableName: string,
+    columns: string[],
+  ): Promise<void> {
+    const columnList = columns.map((column) => `\`${column}\``).join(', ');
+    const rows: Array<{ count: string | number }> = await queryRunner.query(`
+      SELECT COUNT(*) AS \`count\`
+      FROM (
+        SELECT 1
+        FROM \`${tableName}\`
+        GROUP BY ${columnList}
+        HAVING COUNT(*) > 1
+      ) AS duplicated
+    `);
+    const duplicateGroupCount = Number(rows[0]?.count ?? 0);
+
+    if (duplicateGroupCount > 0) {
+      throw new Error(
+        `${tableName}에 (${columns.join(', ')}) 중복 ${duplicateGroupCount}건이 있어 UNIQUE 인덱스를 추가하지 않았습니다. 중복을 정리한 뒤 다시 실행하세요.`,
+      );
+    }
   }
 
   private async hasIndex(

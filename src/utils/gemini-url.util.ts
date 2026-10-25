@@ -1,23 +1,31 @@
-const DEFAULT_GEMINI_API_BASE_URL =
-  'https://generativelanguage.googleapis.com/v1beta';
 const MODEL_GENERATE_CONTENT_PATH_PATTERN = /\/models\/[^/]+:generateContent$/;
 
-// GEMINI_BASE_URL(또는 GEMINI_IMAGE_BASE_URL)을 모델별 generateContent URL로 만든다.
+// GEMINI_BASE_URL(또는 GEMINI_IMAGE_BASE_URL)로 시도할 모델의 generateContent URL을 만든다.
 // - 미설정: Google 기본 엔드포인트
-// - API 베이스(예: https://proxy.example.com/v1beta): 뒤에 /models/{model}:generateContent를 붙인다
-// - 특정 모델이 박힌 전체 URL(.../models/x:generateContent): 모델 부분만 현재 모델로 바꾼다
-// 예전에는 설정값을 그대로 써서 fallback 모델로 넘어가도 같은 모델만 다시 호출했다.
+// - `{model}`이 들어간 값: 시도하는 모델명으로 치환한다
+// - .../models/<모델>:generateContent로 끝나는 값: 모델 부분만 시도하는 모델로 바꾼다
+// - 그 밖의 값: 예전처럼 그대로 쓴다(모델을 URL로 고를 수 없는 프록시 엔드포인트 호환)
+// 예전에는 설정값을 항상 그대로 써서 fallback 모델로 넘어가도 같은 모델만 다시 호출했다.
 export function buildGeminiGenerateContentUrl(
   model: string,
   baseUrlOverride?: string,
 ): string {
-  const baseUrl =
-    baseUrlOverride?.trim().replace(/\/+$/, '') || DEFAULT_GEMINI_API_BASE_URL;
-  const modelPath = `/models/${model}:generateContent`;
+  const baseUrl = baseUrlOverride?.trim();
 
-  if (MODEL_GENERATE_CONTENT_PATH_PATTERN.test(baseUrl)) {
-    return baseUrl.replace(MODEL_GENERATE_CONTENT_PATH_PATTERN, modelPath);
+  if (!baseUrl) {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   }
 
-  return `${baseUrl}${modelPath}`;
+  if (baseUrl.includes('{model}')) {
+    return baseUrl.split('{model}').join(model);
+  }
+
+  if (MODEL_GENERATE_CONTENT_PATH_PATTERN.test(baseUrl)) {
+    return baseUrl.replace(
+      MODEL_GENERATE_CONTENT_PATH_PATTERN,
+      `/models/${model}:generateContent`,
+    );
+  }
+
+  return baseUrl;
 }
