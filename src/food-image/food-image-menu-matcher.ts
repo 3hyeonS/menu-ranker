@@ -213,24 +213,18 @@ export class FoodImageMenuMatcher {
           menus,
           perFoodLimit,
         );
+        // 전체 목록을 복사하지 않도록 정제염 후보와 전체 목록을 따로 거른다(순서는 같다).
+        const isPreferredGenericMenu = (menu: FoodImageMenuCandidate) =>
+          isPreferredGenericFriedEggMenu(prediction.foodName, menu.name) ||
+          isPreferredGenericPlainRiceMenu(prediction.foodName, menu.name) ||
+          isPreferredGenericSweetPotatoMenu(prediction.foodName, menu.name) ||
+          isPreferredGenericRefinedSaltMenu(prediction.foodName, menu);
         const preferredMenus = prediction.brand
           ? []
-          : [...preferredRefinedSaltMenus, ...menus].filter(
-              (menu) =>
-                isPreferredGenericFriedEggMenu(
-                  prediction.foodName,
-                  menu.name,
-                ) ||
-                isPreferredGenericPlainRiceMenu(
-                  prediction.foodName,
-                  menu.name,
-                ) ||
-                isPreferredGenericSweetPotatoMenu(
-                  prediction.foodName,
-                  menu.name,
-                ) ||
-                isPreferredGenericRefinedSaltMenu(prediction.foodName, menu),
-            );
+          : [
+              ...preferredRefinedSaltMenus.filter(isPreferredGenericMenu),
+              ...menus.filter(isPreferredGenericMenu),
+            ];
 
         const candidates = prioritizeGenericFoodImageCandidate(
           prediction.foodName,
@@ -328,9 +322,10 @@ export class FoodImageMenuMatcher {
       return [];
     }
 
+    const compactBrand = normalizeCompactFoodImageText(brand);
+
     return menus
       .filter((menu) => {
-        const compactBrand = normalizeCompactFoodImageText(brand);
         const compactMenuName = normalizeCompactFoodImageText(
           stripPublicMenuSourcePrefix(menu.name),
         );
