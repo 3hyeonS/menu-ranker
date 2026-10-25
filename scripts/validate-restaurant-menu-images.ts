@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { readMenus } from './benchmark-restaurant-nutrition';
+import { readMenus, requiredCsvPath } from './benchmark-restaurant-nutrition';
 
 const REQUIRED_HEADERS = ['브랜드', '메뉴', '이미지 URL', '출처 URL'] as const;
 
@@ -45,8 +45,9 @@ function main(): void {
       'benchmark-inputs/restaurant-menu-images.csv',
   );
   const csvPath = resolve(
-    process.argv.find((arg) => arg.startsWith('--csv='))?.slice(6) ??
-      'menu-import-template.csv',
+    requiredCsvPath(
+      process.argv.find((arg) => arg.startsWith('--csv='))?.slice(6),
+    ),
   );
   const rows = parseCsv(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));
   const headers = rows[0]?.map((value) => value.trim()) ?? [];

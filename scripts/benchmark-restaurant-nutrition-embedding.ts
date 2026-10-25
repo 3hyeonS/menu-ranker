@@ -10,6 +10,7 @@ import {
   NUTRIENTS,
   Prediction,
   readMenus,
+  requiredCsvPath,
   sampleMenus,
   scaledValue,
   Split,
@@ -39,7 +40,7 @@ function parseOptions(): Options {
     return args.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
   };
   return {
-    csvPath: resolve(value('csv') ?? 'menu-import-template.csv'),
+    csvPath: resolve(requiredCsvPath(value('csv'))),
     outputPath: resolve(
       value('output') ??
         'benchmark-results/restaurant-nutrition-embedding.json',

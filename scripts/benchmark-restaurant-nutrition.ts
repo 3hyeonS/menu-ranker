@@ -155,6 +155,13 @@ function stableScore(value: string, seed: string): number {
   return hash.readUInt32BE(0) / 0xffffffff;
 }
 
+export function requiredCsvPath(csvPath: string | undefined): string {
+  if (!csvPath) {
+    throw new Error('--csv=<메뉴 CSV 경로>를 지정해야 합니다.');
+  }
+  return csvPath;
+}
+
 export function readMenus(csvPath: string): MenuRow[] {
   const rows = parseCsv(readFileSync(csvPath, 'utf8').replace(/^\uFEFF/, ''));
   const header = rows[0];
@@ -486,7 +493,7 @@ function parseOptions(): BenchmarkOptions {
     .map(Number)
     .filter((size) => Number.isInteger(size) && size > 0);
   return {
-    csvPath: resolve(value('csv') ?? 'menu-import-template.csv'),
+    csvPath: resolve(requiredCsvPath(value('csv'))),
     outputPath: resolve(
       value('output') ?? 'benchmark-results/restaurant-nutrition-baseline.json',
     ),

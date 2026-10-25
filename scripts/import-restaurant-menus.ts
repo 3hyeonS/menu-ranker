@@ -13,6 +13,7 @@ const HEADERS = [
   '메뉴 카테고리',
   '중량 단위',
   '중량',
+  '총중량',
   '단위량',
   '칼로리',
   '탄수화물',
@@ -218,7 +219,11 @@ function readCatalog(filePath: string): {
       throw new Error(`${line}행의 중량 단위는 0(g) 또는 1(ml)이어야 합니다.`);
     }
 
-    const canonicalValues = HEADERS.map((header) => row[header].trim());
+    // 총중량은 DB에 저장하지 않으므로 형식만 검증하고 sourceKey 계산에서도 뺀다.
+    nullableNumber(row['총중량'], '총중량', line);
+    const canonicalValues = HEADERS.filter((header) => header !== '총중량').map(
+      (header) => row[header].trim(),
+    );
     const canonical = JSON.stringify(canonicalValues);
     const occurrence = (occurrenceMap.get(canonical) ?? 0) + 1;
     occurrenceMap.set(canonical, occurrence);
@@ -307,10 +312,12 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const validateOnly = args.includes('--validate-only');
   const suppliedPath = args.find((argument) => !argument.startsWith('--'));
-  const filePath = resolve(
-    process.cwd(),
-    suppliedPath ?? 'menu-import-template.csv',
-  );
+  if (!suppliedPath) {
+    throw new Error(
+      'import할 CSV 경로를 지정해야 합니다. 예: npm run restaurant:import -- <CSV 경로> --validate-only',
+    );
+  }
+  const filePath = resolve(process.cwd(), suppliedPath);
   const { restaurants, menus } = readCatalog(filePath);
   const categoryCounts = restaurants.reduce<Record<string, number>>(
     (counts, restaurant) => {

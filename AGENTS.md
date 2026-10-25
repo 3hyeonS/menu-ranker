@@ -69,7 +69,7 @@ npm run db:migration:show                           # 적용 상태 확인 (run/
 ## 데이터·스키마 메모
 
 - `authority`(USER/ADMIN/TESTER), `sign_with`(KAKAO/APPLE/LOCAL) 시드는 마이그레이션에 없다. 새 DB에는 수동으로 넣는다.
-- 메뉴 import CSV는 22열 표준(`menu-import-template.csv`, 수집 규칙 문서 2절)이다.
+- 메뉴 import CSV는 23열 표준(`총중량` 포함, 수집 규칙 문서 2절)이다. 수집 데이터는 메인 체크아웃의 `brand-nutrition/`(git 미추적)에 있고, import·벤치마크 스크립트는 CSV 경로를 반드시 인자로 받는다.
 - `docs/`의 영양 추정 프로토콜·벤치마크·프롬프트 데이터 경계 문서는 관련 스크립트(`scripts/*restaurant-nutrition*`)와 함께 갱신한다.
 - `dist/`, 커버리지, `benchmark-results/`, 로컬 캐시는 사용자가 요청하고 이미 추적 중인 종류일 때만 커밋한다.
 

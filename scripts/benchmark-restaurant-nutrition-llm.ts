@@ -8,6 +8,7 @@ import {
   Nutrient,
   NUTRIENTS,
   readMenus,
+  requiredCsvPath,
   sampleMenus,
   Split,
   splitMenus,
@@ -225,7 +226,11 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const arg = (name: string, fallback: string): string =>
     args.find((item) => item.startsWith(`--${name}=`))?.split('=').slice(1).join('=') ?? fallback;
-  const csvPath = resolve(arg('csv', 'menu-import-template.csv'));
+  const csvPath = resolve(
+    requiredCsvPath(
+      args.find((item) => item.startsWith('--csv='))?.split('=').slice(1).join('='),
+    ),
+  );
   const outputPath = resolve(arg('output', 'benchmark-results/restaurant-nutrition-llm.json'));
   const cachePath = resolve(arg('embedding-cache', 'benchmark-results/cache/menu-embeddings.json'));
   const checkpointPath = resolve(arg('checkpoint', 'benchmark-results/cache/llm-predictions.json'));
