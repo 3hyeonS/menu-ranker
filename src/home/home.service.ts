@@ -3031,12 +3031,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       }
 
       const uniqueMenuIds = Array.from(new Set(menu_ids));
-      const menus = await this.menuRepository.find({
-        where: {
-          id: In(uniqueMenuIds),
-          is_deleted: 0,
-        },
-      });
+      const menus = await this.findAccessibleMenus(user, uniqueMenuIds);
 
       if (menus.length !== uniqueMenuIds.length) {
         throw new BadRequestException('Some menu_ids do not exist');
@@ -4785,12 +4780,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     this.validateFolderMenuArrays(dto);
 
     const uniqueMenuIds = Array.from(new Set(dto.menu_ids));
-    const menuCount = await this.menuRepository.count({
-      where: {
-        id: In(uniqueMenuIds),
-        is_deleted: 0,
-      },
-    });
+    const menuCount = (await this.findAccessibleMenus(user, uniqueMenuIds))
+      .length;
 
     if (menuCount !== uniqueMenuIds.length) {
       throw new NotFoundException('Menu not found');
@@ -4973,6 +4964,30 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     await this.folderRepository.delete(folder.id);
   }
 
+  // 공용 메뉴(user 없음)와 본인 개인 메뉴만 조회한다. 다른 사용자의 개인 메뉴 id는 없는 메뉴로 취급한다.
+  private async findAccessibleMenus(
+    user: UserEntity,
+    menuIds: number[],
+  ): Promise<MenuEntity[]> {
+    if (menuIds.length === 0) {
+      return [];
+    }
+
+    return await this.menuRepository
+      .createQueryBuilder('menu')
+      .leftJoin('menu.user', 'user')
+      .where('menu.id IN (:...menuIds)', { menuIds })
+      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('user.id IS NULL').orWhere('user.id = :userId', {
+            userId: user.id,
+          });
+        }),
+      )
+      .getMany();
+  }
+
   private validateFolderMenuArrays(dto: UpsertFolderRequestDto): void {
     const menuCount = dto.menu_ids.length;
 
@@ -4999,12 +5014,8 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     this.validateMenuSetMenuArrays(dto);
 
     const uniqueMenuIds = Array.from(new Set(dto.menu_ids));
-    const menuCount = await this.menuRepository.count({
-      where: {
-        id: In(uniqueMenuIds),
-        is_deleted: 0,
-      },
-    });
+    const menuCount = (await this.findAccessibleMenus(user, uniqueMenuIds))
+      .length;
 
     if (menuCount !== uniqueMenuIds.length) {
       throw new NotFoundException('Menu not found');

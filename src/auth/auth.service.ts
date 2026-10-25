@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom, lastValueFrom, retry } from 'rxjs';
@@ -240,6 +241,8 @@ export class AuthService {
       );
 
       const { sub: appleId } = appleIdTokenClaims;
+      // 클라이언트가 보낸 user.email은 위조할 수 있으므로 서명 검증된 identity token의 email만 쓴다
+      const verifiedEmail = appleIdTokenClaims.email || '';
 
       const clientSecret = appleSignin.getClientSecret({
         clientID: process.env.APPLE_CLIENT_ID, // Apple Client ID
@@ -261,7 +264,6 @@ export class AuthService {
 
       if (payload.hasOwnProperty('user')) {
         const userData = JSON.parse(payload.user);
-        const email = userData.email || '';
         const firstName = userData.name?.firstName || '';
         const lastName = userData.name?.lastName || '';
         const name = lastName + firstName;
@@ -271,7 +273,7 @@ export class AuthService {
           await appleSignin.getAuthorizationToken(payload.code, options);
         user = await this.signUpWithApple(
           name,
-          email,
+          verifiedEmail,
           appleId,
           appleRefreshToken,
         );
@@ -352,34 +354,6 @@ export class AuthService {
     });
   }
 
-  // 관리자 로그인 메서드
-  async adminSignIn(
-    adminId: string,
-    email: string,
-  ): Promise<{
-    accessToken: string;
-    refreshToken: string;
-    admin: UserEntity;
-  }> {
-    const existingAdmin = await this.userRepository.findOneBy({
-      nickname: adminId,
-      email,
-    });
-
-    if (
-      !existingAdmin ||
-      existingAdmin.signWith.platform != 'LOCAL' ||
-      existingAdmin.authority.role != 'ADMIN'
-    ) {
-      throw new UnauthorizedException('Incorrect adminId or email');
-    }
-
-    const accessToken = await this.generateAccessToken(existingAdmin);
-    const refreshToken = await this.generateRefreshToken(existingAdmin);
-
-    return { accessToken, refreshToken, admin: existingAdmin };
-  }
-
   // commonAuth controller
   // accessToken 생성 공통 메서드
   async generateAccessToken(member: UserEntity): Promise<string> {
@@ -398,10 +372,12 @@ export class AuthService {
 
   // Refresh Token 생성 및 저장
   async generateRefreshToken(member: UserEntity): Promise<string> {
+    // jti: 같은 초에 같은 사용자로 두 번 발급해도 토큰이 달라 UNIQUE 충돌이 나지 않게 한다
     const payload = {
       id: member.id,
       email: member.email,
       role: member.authority.role,
+      jti: randomUUID(),
     };
     const refreshToken = this.jwtService.sign(payload, {
       secret: process.env.REFRESH_SECRET,
