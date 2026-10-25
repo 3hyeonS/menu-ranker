@@ -55,6 +55,8 @@ import {
   throwIfRequestAborted,
 } from '../utils/request-abort.util';
 import { getRecordedWeightMultiplier } from '../utils/recorded-nutrition.util';
+import { buildGeminiGenerateContentUrl } from '../utils/gemini-url.util';
+import { retryOnceOnDuplicateEntry } from '../utils/duplicate-entry.util';
 import { BrandAddEntity } from './entity/brand-add.entity';
 import {
   DeleteObjectCommand,
@@ -87,6 +89,7 @@ import {
 import {
   SUGAR_ALTERNATIVE_KEYWORDS,
   SUGAR_ALTERNATIVE_PROMPT_SECTION,
+  isGramUnitText,
 } from '../utils/nutrition-label.util';
 import {
   calculateFoodImageCandidateScore,
@@ -1592,7 +1595,7 @@ export class HomeService {
     });
 
     // 해당 식사의 사진이 이미 있으면 삭제
-    if (existingMeal.image) {
+    if (existingMeal?.image) {
       const fileKey = existingMeal.image.split('com/')[1];
       const params = {
         Bucket: this.bucketName,
@@ -2971,53 +2974,6 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       );
     }
 
-    const existingMeal = await this.mealRepository.findOne({
-      where: {
-        date,
-        time,
-        user: { id: user.id },
-      },
-      relations: {
-        mealMenus: true,
-        mealSets: true,
-      },
-    });
-
-    if (!hasAnyRecordField) {
-      if (existingMeal) {
-        if (existingMeal.mealMenus?.length) {
-          await this.mealMenuRepository.remove(existingMeal.mealMenus);
-        }
-        if (existingMeal.mealSets?.length) {
-          await this.mealSetRepository.remove(existingMeal.mealSets);
-        }
-
-        existingMeal.image = null;
-        if (meal_time !== undefined) {
-          existingMeal.mealTime = meal_time;
-        }
-        existingMeal.mealMenus = [];
-        existingMeal.mealSets = [];
-        existingMeal.updatedAt = new Date();
-
-        await this.mealRepository.save(existingMeal);
-        return;
-      }
-
-      const meal = this.mealRepository.create({
-        date,
-        time,
-        mealTime: meal_time ?? null,
-        image: null,
-        mealMenus: [],
-        mealSets: [],
-        user,
-      });
-
-      await this.mealRepository.save(meal);
-      return;
-    }
-
     let mealMenus: MealMenuEntity[] = [];
 
     if (hasAnyMenuField) {
@@ -3100,37 +3056,68 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       });
     }
 
-    if (existingMeal) {
-      if (existingMeal.mealMenus?.length) {
-        await this.mealMenuRepository.remove(existingMeal.mealMenus);
-      }
-      if (existingMeal.mealSets?.length) {
-        await this.mealSetRepository.remove(existingMeal.mealSets);
-      }
+    // 기존 식사의 메뉴·세트 삭제와 새 기록 저장을 한 트랜잭션으로 묶어 중간 실패 시 기록이 비지 않게 한다.
+    await retryOnceOnDuplicateEntry(() =>
+      this.mealRepository.manager.transaction(async (manager) => {
+        const mealRepository = manager.getRepository(MealEntity);
+        const mealMenuRepository = manager.getRepository(MealMenuEntity);
+        const mealSetRepository = manager.getRepository(MealSetEntity);
 
-      existingMeal.image = image ?? null;
-      if (meal_time !== undefined) {
-        existingMeal.mealTime = meal_time;
-      }
-      existingMeal.mealMenus = mealMenus;
-      existingMeal.mealSets = mealSets;
-      existingMeal.updatedAt = new Date();
+        const existingMeal = await mealRepository.findOne({
+          where: {
+            date,
+            time,
+            user: { id: user.id },
+          },
+          relations: {
+            mealMenus: true,
+            mealSets: true,
+          },
+          // 같은 끼니 동시 요청이 기존 메뉴를 각자 지우고 각자 추가해 메뉴가 합쳐지지 않게 잠근다.
+          lock: { mode: 'pessimistic_write' },
+        });
+        // 재시도 때 첫 시도에서 TypeORM이 채운 상태가 섞이지 않게 시도마다 새 엔티티를 만든다.
+        const attemptMealMenus = mealMenus.map(
+          ({ menu, quantity, menu_input_mode }) =>
+            mealMenuRepository.create({ menu, quantity, menu_input_mode }),
+        );
+        const attemptMealSets = mealSets.map(({ menuSet, sort_order }) =>
+          mealSetRepository.create({ menuSet, sort_order }),
+        );
 
-      await this.mealRepository.save(existingMeal);
-      return;
-    }
+        if (existingMeal) {
+          if (existingMeal.mealMenus?.length) {
+            await mealMenuRepository.remove(existingMeal.mealMenus);
+          }
+          if (existingMeal.mealSets?.length) {
+            await mealSetRepository.remove(existingMeal.mealSets);
+          }
 
-    const meal = this.mealRepository.create({
-      date,
-      time,
-      mealTime: meal_time ?? null,
-      image,
-      mealMenus,
-      mealSets,
-      user,
-    });
+          existingMeal.image = hasAnyRecordField ? (image ?? null) : null;
+          if (meal_time !== undefined) {
+            existingMeal.mealTime = meal_time;
+          }
+          existingMeal.mealMenus = attemptMealMenus;
+          existingMeal.mealSets = attemptMealSets;
+          existingMeal.updatedAt = new Date();
 
-    await this.mealRepository.save(meal);
+          await mealRepository.save(existingMeal);
+          return;
+        }
+
+        const meal = mealRepository.create({
+          date,
+          time,
+          mealTime: meal_time ?? null,
+          image: hasAnyRecordField ? image : null,
+          mealMenus: attemptMealMenus,
+          mealSets: attemptMealSets,
+          user,
+        });
+
+        await mealRepository.save(meal);
+      }),
+    );
   }
 
   // 오늘의 식사 삭제
@@ -3586,27 +3573,30 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     startOfDay.setHours(0, 0, 0, 0);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const weightSteps = await this.weightStepsRepository.findOne({
-      where: {
-        date: Between(startOfDay, endOfDay),
-        user: { id: user.id },
-      },
+    // 동시 요청으로 UNIQUE(userId, date) 충돌이 나면 다시 조회해 기존 행을 갱신한다.
+    await retryOnceOnDuplicateEntry(async () => {
+      const weightSteps = await this.weightStepsRepository.findOne({
+        where: {
+          date: Between(startOfDay, endOfDay),
+          user: { id: user.id },
+        },
+      });
+
+      if (weightSteps) {
+        weightSteps.weight = roundToOneDecimal(weight);
+        await this.weightStepsRepository.save(weightSteps);
+        return;
+      }
+
+      await this.weightStepsRepository.save(
+        this.weightStepsRepository.create({
+          date,
+          weight: roundToOneDecimal(weight),
+          steps: null,
+          user,
+        }),
+      );
     });
-
-    if (weightSteps) {
-      weightSteps.weight = roundToOneDecimal(weight);
-      await this.weightStepsRepository.save(weightSteps);
-      return;
-    }
-
-    await this.weightStepsRepository.save(
-      this.weightStepsRepository.create({
-        date,
-        weight: roundToOneDecimal(weight),
-        steps: null,
-        user,
-      }),
-    );
   }
 
   // 오늘의 걸음 수 등록
@@ -3621,27 +3611,30 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
     startOfDay.setHours(0, 0, 0, 0);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const weightSteps = await this.weightStepsRepository.findOne({
-      where: {
-        date: Between(startOfDay, endOfDay),
-        user: { id: user.id },
-      },
+    // 동시 요청으로 UNIQUE(userId, date) 충돌이 나면 다시 조회해 기존 행을 갱신한다.
+    await retryOnceOnDuplicateEntry(async () => {
+      const weightSteps = await this.weightStepsRepository.findOne({
+        where: {
+          date: Between(startOfDay, endOfDay),
+          user: { id: user.id },
+        },
+      });
+
+      if (weightSteps) {
+        weightSteps.steps = roundToOneDecimal(steps);
+        await this.weightStepsRepository.save(weightSteps);
+        return;
+      }
+
+      await this.weightStepsRepository.save(
+        this.weightStepsRepository.create({
+          date,
+          weight: null,
+          steps: roundToOneDecimal(steps),
+          user,
+        }),
+      );
     });
-
-    if (weightSteps) {
-      weightSteps.steps = roundToOneDecimal(steps);
-      await this.weightStepsRepository.save(weightSteps);
-      return;
-    }
-
-    await this.weightStepsRepository.save(
-      this.weightStepsRepository.create({
-        date,
-        weight: null,
-        steps: roundToOneDecimal(steps),
-        user,
-      }),
-    );
   }
 
   // CSV 버퍼 디코딩
@@ -3833,9 +3826,10 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       { field: 'dietary_fiber', keywords: ['식이섬유', '식이 섬유'] },
       { field: 'protein', keywords: ['단백질'] },
       { field: 'calories', keywords: ['칼로리'] },
+      // '불포화지방' 헤더에도 '포화지방'이 포함되므로 불포화지방을 먼저 검사한다.
+      { field: 'un_sat_fat', keywords: ['불포화지방', '불포화 지방'] },
       { field: 'sat_fat', keywords: ['포화지방', '포화 지방'] },
       { field: 'trans_fat', keywords: ['트랜스지방', '트랜스 지방'] },
-      { field: 'un_sat_fat', keywords: ['불포화지방', '불포화 지방'] },
       { field: 'sodium', keywords: ['나트륨'] },
       { field: 'caffeine', keywords: ['카페인'] },
       { field: 'potassium', keywords: ['칼륨'] },
@@ -4498,10 +4492,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
   }
 
   private buildGeminiBaseUrl(model: string, baseUrlOverride?: string): string {
-    return (
-      baseUrlOverride ??
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-    );
+    return buildGeminiGenerateContentUrl(model, baseUrlOverride);
   }
 
   // 인식용 음식 사진 S3 업로드
@@ -4641,7 +4632,7 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
       return 1;
     }
 
-    if (texts.some((text) => /\bg\b/.test(text) || text.includes('그램'))) {
+    if (texts.some((text) => isGramUnitText(text))) {
       return 0;
     }
 
@@ -5502,55 +5493,57 @@ ${SUGAR_ALTERNATIVE_PROMPT_SECTION}
 
     const date = dto.date;
 
-    await this.workoutRecordRepository.manager.transaction(async (manager) => {
-      const workoutRecordRepository =
-        manager.getRepository(WorkoutRecordEntity);
-      const workoutRecordSetRepository = manager.getRepository(
-        WorkoutRecordSetEntity,
-      );
-
-      let record = await workoutRecordRepository
-        .createQueryBuilder('record')
-        .innerJoin('record.user', 'user')
-        .innerJoin('record.workout', 'workout')
-        .where('user.id = :userId', { userId: user.id })
-        .andWhere('workout.id = :workoutId', { workoutId: workout.id })
-        .andWhere('record.date = :date', { date })
-        .getOne();
-
-      if (!record) {
-        record = workoutRecordRepository.create({
-          user,
-          workout,
-          date,
-        });
-      }
-
-      record.workout_duration = roundToOneDecimal(dto.workout_duration);
-      record.burned_calories = roundToOneDecimal(dto.burned_calories);
-      record.workout_type = dto.workout_type;
-      record.intensity =
-        dto.workout_type === 'cardio' ? (dto.intensity ?? null) : null;
-
-      const savedRecord = await workoutRecordRepository.save(record);
-
-      await workoutRecordSetRepository.delete({
-        workoutRecord: { id: savedRecord.id },
-      });
-
-      if (dto.workout_type === 'weight') {
-        const setRows = (dto.set_list ?? []).map((set) =>
-          workoutRecordSetRepository.create({
-            workoutRecord: savedRecord,
-            set_order: set.set_order,
-            weight: roundToOneDecimal(set.weight),
-            reps: set.reps,
-          }),
+    await retryOnceOnDuplicateEntry(() =>
+      this.workoutRecordRepository.manager.transaction(async (manager) => {
+        const workoutRecordRepository =
+          manager.getRepository(WorkoutRecordEntity);
+        const workoutRecordSetRepository = manager.getRepository(
+          WorkoutRecordSetEntity,
         );
 
-        await workoutRecordSetRepository.save(setRows);
-      }
-    });
+        let record = await workoutRecordRepository
+          .createQueryBuilder('record')
+          .innerJoin('record.user', 'user')
+          .innerJoin('record.workout', 'workout')
+          .where('user.id = :userId', { userId: user.id })
+          .andWhere('workout.id = :workoutId', { workoutId: workout.id })
+          .andWhere('record.date = :date', { date })
+          .getOne();
+
+        if (!record) {
+          record = workoutRecordRepository.create({
+            user,
+            workout,
+            date,
+          });
+        }
+
+        record.workout_duration = roundToOneDecimal(dto.workout_duration);
+        record.burned_calories = roundToOneDecimal(dto.burned_calories);
+        record.workout_type = dto.workout_type;
+        record.intensity =
+          dto.workout_type === 'cardio' ? (dto.intensity ?? null) : null;
+
+        const savedRecord = await workoutRecordRepository.save(record);
+
+        await workoutRecordSetRepository.delete({
+          workoutRecord: { id: savedRecord.id },
+        });
+
+        if (dto.workout_type === 'weight') {
+          const setRows = (dto.set_list ?? []).map((set) =>
+            workoutRecordSetRepository.create({
+              workoutRecord: savedRecord,
+              set_order: set.set_order,
+              weight: roundToOneDecimal(set.weight),
+              reps: set.reps,
+            }),
+          );
+
+          await workoutRecordSetRepository.save(setRows);
+        }
+      }),
+    );
 
     return new WorkoutIdResponseDto(workout.id);
   }

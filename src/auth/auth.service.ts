@@ -787,45 +787,59 @@ export class AuthService {
       );
     }
 
-    const newUserInfo = await this.userInfoRepository.save({
-      gender: registerUserInfoRequestDto.gender,
-      birthYear: registerUserInfoRequestDto.birthYear,
-      height: roundToOneDecimal(registerUserInfoRequestDto.height),
-      weight: roundToOneDecimal(registerUserInfoRequestDto.weight),
-      activity: registerUserInfoRequestDto.activity,
-      goal: registerUserInfoRequestDto.goal,
-      target_weight: roundToOneDecimal(
-        registerUserInfoRequestDto.target_weight,
-      ),
-      target_calories: registerUserInfoRequestDto.target_calories,
-      target_ratio: registerUserInfoRequestDto.target_ratio,
-      subCode: null,
-      diet_management_status: registerUserInfoRequestDto.diet_management_status,
-      persona_type: registerUserInfoRequestDto.persona_type,
-      eating_out_freq_weekly: registerUserInfoRequestDto.eating_out_freq_weekly,
-      job_type: registerUserInfoRequestDto.job_type,
-      lunch_location: registerUserInfoRequestDto.lunch_location ?? null,
-      user: user,
-    });
+    // user_info·user_goal 저장과 구독 코드 사용 처리를 한 트랜잭션으로 묶어
+    // 중간에 실패하면 온보딩 데이터가 일부만 남지 않게 한다.
+    const newUserInfo = await this.userInfoRepository.manager.transaction(
+      async (manager) => {
+        const userInfoRepository = manager.getRepository(UserInfoEntity);
+        const userGoalRepository = manager.getRepository(UserGoalEntity);
 
-    const newUserGoal = this.userGoalRepository.create({
-      activity: newUserInfo.activity,
-      goal: newUserInfo.goal,
-      target_calories: newUserInfo.target_calories,
-      target_ratio: newUserInfo.target_ratio,
-      target_weight: newUserInfo.target_weight,
-      user: user,
-    });
+        const savedUserInfo = await userInfoRepository.save({
+          gender: registerUserInfoRequestDto.gender,
+          birthYear: registerUserInfoRequestDto.birthYear,
+          height: roundToOneDecimal(registerUserInfoRequestDto.height),
+          weight: roundToOneDecimal(registerUserInfoRequestDto.weight),
+          activity: registerUserInfoRequestDto.activity,
+          goal: registerUserInfoRequestDto.goal,
+          target_weight: roundToOneDecimal(
+            registerUserInfoRequestDto.target_weight,
+          ),
+          target_calories: registerUserInfoRequestDto.target_calories,
+          target_ratio: registerUserInfoRequestDto.target_ratio,
+          subCode: null,
+          diet_management_status:
+            registerUserInfoRequestDto.diet_management_status,
+          persona_type: registerUserInfoRequestDto.persona_type,
+          eating_out_freq_weekly:
+            registerUserInfoRequestDto.eating_out_freq_weekly,
+          job_type: registerUserInfoRequestDto.job_type,
+          lunch_location: registerUserInfoRequestDto.lunch_location ?? null,
+          user: user,
+        });
 
-    await this.userGoalRepository.save(newUserGoal);
+        const newUserGoal = userGoalRepository.create({
+          activity: savedUserInfo.activity,
+          goal: savedUserInfo.goal,
+          target_calories: savedUserInfo.target_calories,
+          target_ratio: savedUserInfo.target_ratio,
+          target_weight: savedUserInfo.target_weight,
+          user: user,
+        });
 
-    if (normalizedSubCode) {
-      await this.subscriptionService.authorizeSubscriptionCode(
-        user,
-        normalizedSubCode,
-      );
-      newUserInfo.subCode = normalizedSubCode;
-    }
+        await userGoalRepository.save(newUserGoal);
+
+        if (normalizedSubCode) {
+          await this.subscriptionService.authorizeSubscriptionCode(
+            user,
+            normalizedSubCode,
+            manager,
+          );
+          savedUserInfo.subCode = normalizedSubCode;
+        }
+
+        return savedUserInfo;
+      },
+    );
 
     const isSubscribed = await this.subscriptionService.hasActiveSubscription(
       user.id,

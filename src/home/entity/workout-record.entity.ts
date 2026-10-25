@@ -3,6 +3,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -13,6 +14,10 @@ import { WorkoutEntity, WorkoutType } from './workout.entity';
 import { WorkoutRecordSetEntity } from './workout-record-set.entity';
 
 @Entity('workout_record')
+// 1781000000000-AddWorkoutTables에서 이미 만든 UNIQUE 인덱스를 엔티티에 반영한다.
+@Index('IDX_workout_record_user_date_workout', ['user', 'date', 'workout'], {
+  unique: true,
+})
 export class WorkoutRecordEntity {
   @PrimaryGeneratedColumn({ type: 'int', name: 'id' })
   id: number;

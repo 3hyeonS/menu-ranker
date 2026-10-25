@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class ChatRecommendRequestDto {
   @ApiProperty({
@@ -9,5 +9,6 @@ export class ChatRecommendRequestDto {
   })
   @IsNotEmpty()
   @IsString()
+  @MaxLength(1000)
   input: string;
 }

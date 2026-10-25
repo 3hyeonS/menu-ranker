@@ -170,6 +170,25 @@ VECTOR_TEST_MAX_CALORIES=500
 VECTOR_TEST_MIN_PROTEIN=20
 ```
 
+검색 튜닝(런타임): 메뉴 벡터 인덱스는 HNSW이므로 탐색 폭은 `hnsw.ef_search`로
+정한다. HNSW는 최대 `ef_search`개까지만 돌려주므로, 검색마다
+`max(VECTOR_HNSW_EF_SEARCH, limit × VECTOR_SEARCH_OVERFETCH_MULTIPLIER)`를
+1~1000으로 제한해 쓴다(`VECTOR_HNSW_EF_SEARCH` 기본 40 = pgvector 기본값).
+`VECTOR_IVFFLAT_PROBES`는 더 이상 읽지 않는다.
+
+```env
+VECTOR_HNSW_EF_SEARCH=40
+```
+
+## Gemini endpoint override
+
+`GEMINI_BASE_URL`(모든 Gemini 호출)과 `GEMINI_IMAGE_BASE_URL`(이미지 호출, 없으면
+`GEMINI_BASE_URL` 사용)은 선택값이다. 모델 fallback이 동작하려면 URL에 모델이 들어가야 한다.
+
+- `https://proxy.example.com/v1beta/models/{model}:generateContent`: 시도마다 `{model}`을 모델명으로 치환한다.
+- `.../models/<모델>:generateContent`로 끝나는 전체 URL: 모델 부분만 시도하는 모델로 바꾼다.
+- 그 밖의 값: 예전처럼 그대로 쓴다(모든 fallback 시도가 같은 URL을 부른다).
+
 ## Brand menu nutrition data
 
 브랜드 메뉴·영양정보 수집 데이터는 git에 커밋하지 않고 메인 체크아웃의

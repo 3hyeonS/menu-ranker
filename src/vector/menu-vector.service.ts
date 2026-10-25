@@ -243,6 +243,7 @@ export class MenuVectorService {
       LIMIT $2
       `,
       params,
+      overfetchLimit,
     );
 
     return rows.map((row: { menuId: number | string; distance: number | string }) => ({
@@ -251,14 +252,14 @@ export class MenuVectorService {
     }));
   }
 
-  private getIvfflatProbes(): number {
-    const parsed = Number(process.env.VECTOR_IVFFLAT_PROBES ?? 10);
+  // 인덱스가 HNSW(scripts/vector-db/001_create_menu_vector_index.sql)이므로 ivfflat.probes가 아니라
+  // hnsw.ef_search가 탐색 폭을 정한다. HNSW는 ef_search개까지만 돌려주므로 overfetch 개수보다
+  // 작으면 후보가 잘린다. max(VECTOR_HNSW_EF_SEARCH(기본 40, pgvector 기본값), 필요 행 수)를 1~1000으로 쓴다.
+  private getHnswEfSearch(requiredRowCount = 0): number {
+    const parsed = Number(process.env.VECTOR_HNSW_EF_SEARCH ?? 40);
+    const configured = Number.isFinite(parsed) ? Math.floor(parsed) : 40;
 
-    if (!Number.isFinite(parsed)) {
-      return 10;
-    }
-
-    return Math.max(1, Math.min(Math.floor(parsed), 1000));
+    return Math.max(1, Math.min(Math.max(configured, requiredRowCount), 1000));
   }
 
   private getVectorSearchOverfetchMultiplier(): number {
@@ -335,6 +336,7 @@ export class MenuVectorService {
   private async queryVectorSearch<T = any>(
     sql: string,
     params?: unknown[],
+    requiredRowCount = 0,
   ): Promise<T> {
     if (!this.vectorDataSource.isInitialized) {
       await this.vectorDataSource.initialize();
@@ -348,7 +350,7 @@ export class MenuVectorService {
       const forceIndex = this.isVectorSearchForceIndexEnabled();
 
       await queryRunner.query(
-        `SET ivfflat.probes = ${this.getIvfflatProbes()}`,
+        `SET hnsw.ef_search = ${this.getHnswEfSearch(requiredRowCount)}`,
       );
       await queryRunner.query(`SET enable_seqscan = ${forceIndex ? 'off' : 'on'}`);
       await queryRunner.query(
@@ -363,7 +365,7 @@ export class MenuVectorService {
           .map((line) => this.redactVectorLiterals(line));
 
         console.log('[VECTOR_SEARCH_EXPLAIN]', {
-          ivfflatProbes: this.getIvfflatProbes(),
+          hnswEfSearch: this.getHnswEfSearch(requiredRowCount),
           forceIndex,
           plan,
         });

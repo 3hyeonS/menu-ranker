@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, MoreThan, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, MoreThan, Repository } from 'typeorm';
 import { UserEntity } from './entity/user/user.entity';
 import { UserInfoEntity } from './entity/user/userInfo.entity';
 import { SubscriptionCodeEntity } from './entity/subscription-code.entity';
@@ -149,9 +149,11 @@ export class SubscriptionService {
     });
   }
 
+  // transactionManager를 넘기면 호출자의 트랜잭션 안에서 실행한다(예: 온보딩 저장과 함께 롤백).
   async authorizeSubscriptionCode(
     user: UserEntity,
     rawCode: string,
+    transactionManager?: EntityManager,
   ): Promise<UserSubscriptionEntity> {
     const code = this.normalizeCode(rawCode ?? '');
 
@@ -159,7 +161,14 @@ export class SubscriptionService {
       throw new BadRequestException('subCode must not be empty');
     }
 
-    return await this.dataSource.transaction(async (manager) => {
+    const runInTransaction = <T>(
+      work: (manager: EntityManager) => Promise<T>,
+    ): Promise<T> =>
+      transactionManager
+        ? work(transactionManager)
+        : this.dataSource.transaction(work);
+
+    return await runInTransaction(async (manager) => {
       const subscriptionCode = await manager.findOne(SubscriptionCodeEntity, {
         where: { code },
         lock: { mode: 'pessimistic_write' },

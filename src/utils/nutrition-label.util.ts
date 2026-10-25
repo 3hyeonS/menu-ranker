@@ -51,3 +51,11 @@ export const SUGAR_ALTERNATIVE_PROMPT_SECTION = `
 - 대체당 성분명만 보이고 함량 숫자가 보이지 않으면 sugar_alchol은 null로 둬.
 - 대상 성분: 에리스리톨, 자일리톨, 소르비톨, 말티톨, 락티톨, 만니톨, 이소말트, 팔라티니트, 알룰로오스, 스테비아, 스테비올배당체, 나한과 추출물, 모그로사이드, 수크랄로스, 아스파탐, 아세설팜칼륨, 아세설팜K, 타가토스, 네오탐.
 `.trim();
+
+// "g", "100g", "100 g", "grams", "그램"은 그램 단위로 보고 "kg", "mg", "μg"는 제외한다.
+// \bg\b는 숫자 뒤 단위("100g")를 놓친다(숫자와 g가 모두 단어 문자라 경계가 없음).
+const GRAM_UNIT_PATTERN = /(?:^|[^a-zµμ])g(?:rams?)?(?![a-z])/i;
+
+export function isGramUnitText(text: string): boolean {
+  return GRAM_UNIT_PATTERN.test(text) || text.includes('그램');
+}

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class ChatMealRecordParseRequestDto {
   @ApiProperty({
@@ -9,5 +9,6 @@ export class ChatMealRecordParseRequestDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1000)
   text: string;
 }
