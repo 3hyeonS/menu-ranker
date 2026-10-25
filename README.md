@@ -171,9 +171,10 @@ VECTOR_TEST_MIN_PROTEIN=20
 ```
 
 검색 튜닝(런타임): 메뉴 벡터 인덱스는 HNSW이므로 탐색 폭은 `hnsw.ef_search`로
-정한다(pgvector 기본값 40, 1~1000으로 제한). HNSW는 최대 `ef_search`개까지만
-돌려주므로 `limit × VECTOR_SEARCH_OVERFETCH_MULTIPLIER`가 40을 넘어야 하면 값을
-올린다. `VECTOR_IVFFLAT_PROBES`는 더 이상 읽지 않는다.
+정한다. HNSW는 최대 `ef_search`개까지만 돌려주므로, 검색마다
+`max(VECTOR_HNSW_EF_SEARCH, limit × VECTOR_SEARCH_OVERFETCH_MULTIPLIER)`를
+1~1000으로 제한해 쓴다(`VECTOR_HNSW_EF_SEARCH` 기본 40 = pgvector 기본값).
+`VECTOR_IVFFLAT_PROBES`는 더 이상 읽지 않는다.
 
 ```env
 VECTOR_HNSW_EF_SEARCH=40
