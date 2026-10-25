@@ -1,9 +1,15 @@
 import { ChatService } from './chat.service';
 import { ChatHistoryEntity } from './entity/chat-history.entity';
 import { of } from 'rxjs';
+import { HttpGeminiClient } from '../gemini/http-gemini.client';
+import { GeminiClient } from '../gemini/gemini-client';
+import { FakeFileStorage } from '../storage/fake-file-storage';
 
 describe('ChatService conversation memory', () => {
-  const createService = (httpService: unknown = {}): ChatService =>
+  const createService = (
+    geminiClient: GeminiClient = new HttpGeminiClient({} as never),
+    fileStorage = new FakeFileStorage(),
+  ): ChatService =>
     new ChatService(
       {} as never,
       {} as never,
@@ -18,7 +24,8 @@ describe('ChatService conversation memory', () => {
       {} as never,
       {} as never,
       {} as never,
-      httpService as never,
+      geminiClient,
+      fileStorage,
     );
 
   it('returns zero when chat nutrition-label weight cannot be recognized', () => {
@@ -865,7 +872,9 @@ describe('ChatService conversation memory', () => {
         },
       }),
     );
-    const service = createService({ post }) as any;
+    const service = createService(
+      new HttpGeminiClient({ post } as never),
+    ) as any;
     const previousApiKey = process.env.GEMINI_API_KEY;
     const previousModel = process.env.GEMINI_MODEL;
     process.env.GEMINI_API_KEY = 'test-key';

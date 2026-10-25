@@ -3,7 +3,6 @@ import {
   prioritizeUserFoodImageMenus,
 } from '../utils/food-image-menu-priority.util';
 import { getFrequentlyRecordedMenuIds } from '../utils/frequent-menu.util';
-import { buildGeminiGenerateContentUrl } from '../utils/gemini-url.util';
 import {
   BadRequestException,
   Injectable,
@@ -12,10 +11,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import { Brackets, Between, IsNull, Not, Repository } from 'typeorm';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { UserEntity } from '../auth/entity/user/user.entity';
 import { UserInfoEntity } from '../auth/entity/user/userInfo.entity';
 import { MenuEntity } from '../home/entity/menu.entity';
@@ -94,6 +90,10 @@ import {
   isRequestCancellationError,
   throwIfRequestAborted,
 } from '../utils/request-abort.util';
+import { GeminiClient } from '../gemini/gemini-client';
+import { FileStorage } from '../storage/file-storage';
+import { buildDatedImageKey } from '../storage/image-key.util';
+import { calculateMifflinStJeorBmr } from '../utils/bmr.util';
 
 const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   LOW_IMAGE_QUALITY: 'food image quality is too low',
@@ -105,10 +105,8 @@ const FOOD_IMAGE_RECOGNITION_FAILURE_MESSAGES = {
   NO_MATCHING_MENU: 'no recognizable menu matched candidates',
 } as const;
 const DEFAULT_RECOMMENDATION_MENU_NAME_PREFIX = '(식약처_음식)';
-const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
-const DEFAULT_GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
-const DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
-const GEMINI_HIGH_DEMAND_FALLBACK_MODEL = 'gemini-2.5-flash-lite';
+const GEMINI_UNAVAILABLE_MESSAGE =
+  'Gemini recommendation pipeline is unavailable';
 const CHAT_SESSION_IDLE_MS = 3 * 60 * 60 * 1000;
 const CHAT_SESSION_SUMMARY_RETENTION_MS = 5 * 24 * 60 * 60 * 1000;
 const CHAT_LONG_TERM_COMPACTION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -674,9 +672,6 @@ export class ChatService {
     number,
     ReturnType<typeof setTimeout>
   >();
-  private readonly s3: S3Client;
-  private readonly bucketName: string;
-
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepository: Repository<UserEntity>,
@@ -704,20 +699,11 @@ export class ChatService {
     private readonly conversationSessionRepository: Repository<ChatConversationSessionEntity>,
     @InjectRepository(ChatUserMemoryEntity)
     private readonly chatUserMemoryRepository: Repository<ChatUserMemoryEntity>,
-    private readonly httpService: HttpService,
+    private readonly geminiClient: GeminiClient,
+    private readonly fileStorage: FileStorage,
     @Optional()
     private readonly menuVectorService?: MenuVectorService,
-  ) {
-    this.s3 = new S3Client({
-      region: process.env.AWS_REGION,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      },
-    });
-
-    this.bucketName = process.env.AWS_S3_BUCKET_NAME;
-  }
+  ) {}
 
   private maskSecret(value?: string): string {
     return value ? `${value.slice(0, 8)}...(${value.length})` : 'NOT_SET';
@@ -797,40 +783,6 @@ export class ChatService {
         null,
       networkCode: geminiError.code ?? null,
     });
-  }
-
-  private shouldRetryGeminiWithFallback(error: unknown): boolean {
-    if (isRequestCancellationError(error)) {
-      return false;
-    }
-    const geminiError = error as {
-      code?: string;
-      response?: {
-        status?: number;
-        data?: {
-          error?: {
-            status?: string;
-          };
-        };
-      };
-    };
-    const httpStatus = geminiError.response?.status;
-    const errorStatus = geminiError.response?.data?.error?.status;
-
-    return (
-      httpStatus === 404 ||
-      httpStatus === 429 ||
-      httpStatus === 500 ||
-      httpStatus === 503 ||
-      httpStatus === 504 ||
-      errorStatus === 'NOT_FOUND' ||
-      errorStatus === 'RESOURCE_EXHAUSTED' ||
-      geminiError.code === 'ECONNABORTED'
-    );
-  }
-
-  private buildGeminiBaseUrl(model: string, baseUrlOverride?: string): string {
-    return buildGeminiGenerateContentUrl(model, baseUrlOverride);
   }
 
   async recommend(
@@ -1094,16 +1046,15 @@ ${JSON.stringify({
   ): number {
     const referenceYear = Number(referenceDate.slice(0, 4));
     const age = referenceYear - userInfo.birthYear - 1;
-    let bmr =
-      10 * Number(userInfo.weight) +
-      6.25 * Number(userInfo.height) -
-      5 * age +
-      5;
-    if (userInfo.gender === 1) {
-      bmr -= 166;
-    }
 
-    return roundToOneDecimal(bmr);
+    return roundToOneDecimal(
+      calculateMifflinStJeorBmr({
+        weight: Number(userInfo.weight),
+        height: Number(userInfo.height),
+        age,
+        gender: userInfo.gender,
+      }),
+    );
   }
 
   async mealFeedback(
@@ -13253,38 +13204,6 @@ ${JSON.stringify(candidates)}
     currentRequestContext?: string,
     includeGeneralChatRecordBoundary = false,
   ): Promise<string> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    const primaryModel = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
-    const configuredFallbackModels = [
-      ...(process.env.GEMINI_FALLBACK_MODELS?.split(',').map((model) =>
-        model.trim(),
-      ) ?? []),
-      process.env.GEMINI_FALLBACK_MODEL,
-    ];
-    const hasConfiguredFallbackModels =
-      process.env.GEMINI_FALLBACK_MODELS !== undefined ||
-      process.env.GEMINI_FALLBACK_MODEL !== undefined;
-    const fallbackModels = hasConfiguredFallbackModels
-      ? configuredFallbackModels
-      : DEFAULT_GEMINI_FALLBACK_MODELS;
-    const baseUrlOverride = process.env.GEMINI_BASE_URL;
-
-    if (!apiKey) {
-      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
-    }
-
-    const attempts = Array.from(
-      new Set(
-        [
-          primaryModel,
-          ...fallbackModels,
-          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
-        ].filter(
-          (model): model is string =>
-            typeof model === 'string' && model.trim().length > 0,
-        ),
-      ),
-    );
     const previousContents = chatContext.messages.flatMap((message) => {
       const assistantMessage = this.asNonEmptyString(message.intro_message);
 
@@ -13463,21 +13382,10 @@ ${JSON.stringify(candidates)}
       .filter((value): value is string => !!value)
       .join('\n\n');
 
-    for (const [index, model] of attempts.entries()) {
-      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
-
-      try {
-        throwIfRequestAborted();
-        const response = await firstValueFrom(
-          this.httpService.post(
-            `${baseUrl}?key=${apiKey}`,
-            {
-              ...(storedContext
-                ? {
-                    system_instruction: {
-                      parts: [
-                        {
-                          text: `다음은 앱에 저장된 사용자 정보와 기록, 과거 대화 맥락이야. 현재 메시지에 답할 때 필요한 경우에만 자연스럽게 참고하고, 없는 사실은 만들지 마.
+    return await this.geminiClient.generateText({
+      modelGroup: 'text',
+      systemInstruction: storedContext
+        ? `다음은 앱에 저장된 사용자 정보와 기록, 과거 대화 맥락이야. 현재 메시지에 답할 때 필요한 경우에만 자연스럽게 참고하고, 없는 사실은 만들지 마.
 
 [현재 질문 우선 규칙]
 - 가장 최근 사용자 메시지의 질문이나 요청을 최우선으로 해석하고, 요청한 결론부터 직접 답해.
@@ -13553,68 +13461,28 @@ ${CHAT_USER_FACT_PROVENANCE_RULES}
 - "사용자님", "고객님", "회원님" 같은 일반 호칭도 쓰지 말고 별도의 호칭 없이 바로 답해.
 - 말투 외에는 Gemini가 질문에 자연스럽게 직접 답해.
 
-${storedContext}`,
-                        },
-                      ],
-                    },
-                  }
-                : {}),
-              contents: [
-                ...previousContents,
-                {
-                  role: 'user',
-                  parts: [{ text: input }],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.7,
-                responseMimeType: 'text/plain',
-                maxOutputTokens: this.getGeminiTextMaxOutputTokens(),
-              },
-            },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              timeout: this.getGeminiTextTimeoutMs(),
-              signal: getRequestAbortSignal(),
-            },
-          ),
-        );
-
-        throwIfRequestAborted();
-
-        const text = response.data?.candidates?.[0]?.content?.parts
-          ?.map((part) => part.text ?? '')
-          .join('')
-          ?.trim();
-
-        if (!text) {
-          throw new Error('Gemini returned empty content');
-        }
-
-        return text;
-      } catch (error) {
-        if (isRequestCancellationError(error)) {
-          throw error;
-        }
+${storedContext}`
+        : undefined,
+      contents: [
+        ...previousContents,
+        {
+          role: 'user',
+          parts: [{ text: input }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        responseMimeType: 'text/plain',
+        maxOutputTokens: this.getGeminiTextMaxOutputTokens(),
+      },
+      timeoutMs: this.getGeminiTextTimeoutMs(),
+      unavailableMessage: GEMINI_UNAVAILABLE_MESSAGE,
+      onAttemptError: (error, { index, model }) =>
         this.logGeminiError(
           index === 0 ? 'pure-chat' : `pure-chat-fallback:${model}`,
           error,
-        );
-
-        if (
-          index === attempts.length - 1 ||
-          !this.shouldRetryGeminiWithFallback(error)
-        ) {
-          break;
-        }
-      }
-    }
-
-    throw new ServiceUnavailableException(
-      'Gemini recommendation pipeline is unavailable',
-    );
+        ),
+    });
   }
 
   private async callGeminiJson(
@@ -13626,111 +13494,29 @@ ${storedContext}`,
     } = {},
   ): Promise<any> {
     // Gemini 공통 호출부: JSON 응답 강제와 에러 변환을 한곳에서 처리합니다.
-    const apiKey = process.env.GEMINI_API_KEY;
-    const primaryModel = process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL;
-    const configuredFallbackModels = [
-      ...(process.env.GEMINI_FALLBACK_MODELS?.split(',').map((model) =>
-        model.trim(),
-      ) ?? []),
-      process.env.GEMINI_FALLBACK_MODEL,
-    ];
-    const hasConfiguredFallbackModels =
-      process.env.GEMINI_FALLBACK_MODELS !== undefined ||
-      process.env.GEMINI_FALLBACK_MODEL !== undefined;
-    const fallbackModels = hasConfiguredFallbackModels
-      ? configuredFallbackModels
-      : DEFAULT_GEMINI_FALLBACK_MODELS;
-    const baseUrlOverride = process.env.GEMINI_BASE_URL;
+    const context = options.context ?? 'text-json';
 
-    if (!apiKey) {
-      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
-    }
-
-    const attempts = Array.from(
-      new Set(
-        [
-          primaryModel,
-          ...fallbackModels,
-          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
-        ].filter(
-          (model): model is string =>
-            typeof model === 'string' && model.trim().length > 0,
-        ),
-      ),
-    );
-
-    for (const [index, model] of attempts.entries()) {
-      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
-
-      try {
-        throwIfRequestAborted();
-        const response = await firstValueFrom(
-          this.httpService.post(
-            `${baseUrl}?key=${apiKey}`,
-            {
-              ...(options.systemInstruction
-                ? {
-                    system_instruction: {
-                      parts: [{ text: options.systemInstruction }],
-                    },
-                  }
-                : {}),
-              contents: [
-                {
-                  role: 'user',
-                  parts: [{ text: prompt }],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.2,
-                responseMimeType: 'application/json',
-              },
-            },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              timeout: options.timeoutMs ?? this.getGeminiTextTimeoutMs(),
-              signal: getRequestAbortSignal(),
-            },
-          ),
-        );
-
-        throwIfRequestAborted();
-
-        const text = response.data?.candidates?.[0]?.content?.parts
-          ?.map((part) => part.text ?? '')
-          .join('')
-          ?.trim();
-
-        if (!text) {
-          throw new Error('Gemini returned empty content');
-        }
-
-        return JSON.parse(this.stripCodeFence(text));
-      } catch (error) {
-        if (isRequestCancellationError(error)) {
-          throw error;
-        }
+    return await this.geminiClient.generateJson({
+      modelGroup: 'text',
+      systemInstruction: options.systemInstruction,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+      },
+      timeoutMs: options.timeoutMs ?? this.getGeminiTextTimeoutMs(),
+      unavailableMessage: GEMINI_UNAVAILABLE_MESSAGE,
+      onAttemptError: (error, { index, model }) =>
         this.logGeminiError(
-          index === 0
-            ? (options.context ?? 'text-json')
-            : `${options.context ?? 'text-json'}-fallback:${model}`,
+          index === 0 ? context : `${context}-fallback:${model}`,
           error,
-        );
-
-        if (
-          index === attempts.length - 1 ||
-          !this.shouldRetryGeminiWithFallback(error)
-        ) {
-          break;
-        }
-      }
-    }
-
-    throw new ServiceUnavailableException(
-      'Gemini recommendation pipeline is unavailable',
-    );
+        ),
+    });
   }
 
   private getGeminiTextTimeoutMs(): number {
@@ -13757,130 +13543,35 @@ ${storedContext}`,
     prompt: string,
     file: Express.Multer.File,
   ): Promise<any> {
-    const apiKey = process.env.GEMINI_API_KEY;
-    const primaryModel =
-      process.env.GEMINI_IMAGE_MODEL ??
-      process.env.GEMINI_MODEL ??
-      DEFAULT_GEMINI_MODEL;
-    const configuredFallbackModels = [
-      ...(process.env.GEMINI_IMAGE_FALLBACK_MODELS?.split(',').map((model) =>
-        model.trim(),
-      ) ?? []),
-      process.env.GEMINI_IMAGE_FALLBACK_MODEL,
-    ];
-    const hasConfiguredFallbackModels =
-      process.env.GEMINI_IMAGE_FALLBACK_MODELS !== undefined ||
-      process.env.GEMINI_IMAGE_FALLBACK_MODEL !== undefined;
-    const fallbackModels = hasConfiguredFallbackModels
-      ? configuredFallbackModels
-      : DEFAULT_GEMINI_IMAGE_FALLBACK_MODELS;
-    const baseUrlOverride =
-      process.env.GEMINI_IMAGE_BASE_URL ?? process.env.GEMINI_BASE_URL;
-
-    if (!apiKey) {
-      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
-    }
-
-    const attempts = Array.from(
-      new Set(
-        [
-          primaryModel,
-          ...fallbackModels,
-          GEMINI_HIGH_DEMAND_FALLBACK_MODEL,
-        ].filter(
-          (model): model is string =>
-            typeof model === 'string' && model.trim().length > 0,
-        ),
-      ),
-    );
-    for (const [index, model] of attempts.entries()) {
-      const baseUrl = this.buildGeminiBaseUrl(model, baseUrlOverride);
-
-      try {
-        throwIfRequestAborted();
-        return await this.postGeminiImageJson(prompt, file, apiKey, baseUrl);
-      } catch (error) {
-        if (isRequestCancellationError(error)) {
-          throw error;
-        }
+    return await this.geminiClient.generateJson({
+      modelGroup: 'image',
+      systemInstruction: CHAT_RESPONSE_SYSTEM_INSTRUCTION,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: file.mimetype,
+                data: file.buffer.toString('base64'),
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      },
+      timeoutMs: 30000,
+      unavailableMessage: GEMINI_UNAVAILABLE_MESSAGE,
+      onAttemptError: (error, { index, model }) =>
         this.logGeminiError(
           index === 0 ? 'image-json' : `image-json-fallback:${model}`,
           error,
-        );
-
-        if (
-          index === attempts.length - 1 ||
-          !this.shouldRetryGeminiWithFallback(error)
-        ) {
-          break;
-        }
-      }
-    }
-
-    throw new ServiceUnavailableException(
-      'Gemini recommendation pipeline is unavailable',
-    );
-  }
-
-  private async postGeminiImageJson(
-    prompt: string,
-    file: Express.Multer.File,
-    apiKey: string,
-    baseUrl: string,
-  ): Promise<any> {
-    try {
-      throwIfRequestAborted();
-      const response = await firstValueFrom(
-        this.httpService.post(
-          `${baseUrl}?key=${apiKey}`,
-          {
-            system_instruction: {
-              parts: [{ text: CHAT_RESPONSE_SYSTEM_INSTRUCTION }],
-            },
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: prompt },
-                  {
-                    inline_data: {
-                      mime_type: file.mimetype,
-                      data: file.buffer.toString('base64'),
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: 'application/json',
-            },
-          },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            timeout: 30000,
-            signal: getRequestAbortSignal(),
-          },
         ),
-      );
-
-      throwIfRequestAborted();
-
-      const text = response.data?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
-        .join('')
-        ?.trim();
-
-      if (!text) {
-        throw new Error('Gemini returned empty content');
-      }
-
-      return JSON.parse(this.stripCodeFence(text));
-    } catch (error) {
-      throw error;
-    }
+    });
   }
 
   private async uploadChatImage(
@@ -13892,24 +13583,19 @@ ${storedContext}`,
       | 'nutrition-label-feedback',
   ): Promise<string> {
     throwIfRequestAborted();
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomString = Math.random().toString(36).substring(2, 12);
-    const fileExtension = this.getImageExtension(file.mimetype);
-    const fileKey = `chat-images/${imageType}/${user.id}/${date}/${randomString}.${fileExtension}`;
-
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: fileKey,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      }),
-      { abortSignal: getRequestAbortSignal() },
-    );
+    const imageUrl = await this.fileStorage.upload({
+      key: buildDatedImageKey(
+        `chat-images/${imageType}/${user.id}`,
+        file.mimetype,
+      ),
+      body: file.buffer,
+      contentType: file.mimetype,
+      abortSignal: getRequestAbortSignal(),
+    });
 
     throwIfRequestAborted();
 
-    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+    return imageUrl;
   }
 
   private async uploadFailedChatImageIfPossible(
@@ -13950,45 +13636,14 @@ ${storedContext}`,
     file: Express.Multer.File,
     imageType: 'food-image-feedback' | 'nutrition-label-feedback',
   ): Promise<string> {
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const randomString = Math.random().toString(36).substring(2, 12);
-    const fileExtension = this.getImageExtension(file.mimetype);
-    const fileKey = `chat-images/failed/${imageType}/${user.id}/${date}/${randomString}.${fileExtension}`;
-
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucketName,
-        Key: fileKey,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-      }),
-    );
-
-    return `https://${this.bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
-  }
-
-  private getImageExtension(mimeType?: string): string {
-    switch (mimeType) {
-      case 'image/jpeg':
-      case 'image/jpg':
-        return 'jpg';
-      case 'image/png':
-        return 'png';
-      case 'image/webp':
-        return 'webp';
-      case 'image/heic':
-        return 'heic';
-      default:
-        return 'bin';
-    }
-  }
-
-  private stripCodeFence(value: string): string {
-    return value
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim();
+    return await this.fileStorage.upload({
+      key: buildDatedImageKey(
+        `chat-images/failed/${imageType}/${user.id}`,
+        file.mimetype,
+      ),
+      body: file.buffer,
+      contentType: file.mimetype,
+    });
   }
 
   private asNonEmptyString(value: unknown): string | null {

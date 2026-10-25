@@ -189,6 +189,21 @@ VECTOR_HNSW_EF_SEARCH=40
 - `.../models/<모델>:generateContent`로 끝나는 전체 URL: 모델 부분만 시도하는 모델로 바꾼다.
 - 그 밖의 값: 예전처럼 그대로 쓴다(모든 fallback 시도가 같은 URL을 부른다).
 
+Gemini generateContent 호출(모델 fallback·요청 취소 포함)은 `src/gemini`의 `GeminiClient`
+(구현 `HttpGeminiClient`)가 맡는다. 테스트에서는 `FakeGeminiClient`로 응답·오류를 주입한다.
+
+## Food image menu cache
+
+음식 사진 인식(`POST /home/recognizeFoodImage` 계열)은 후보 계산에 공용 메뉴 전체 목록을 쓴다.
+공용 메뉴(`menu.user`가 null)는 프로세스 메모리에 캐시하고, 개인 메뉴는 요청마다 DB에서 읽는다.
+
+```env
+FOOD_IMAGE_PUBLIC_MENU_CACHE_TTL_MS=300000  # 기본 5분, 0이면 캐시하지 않음
+```
+
+`/home/importMenusCsv`로 메뉴를 넣으면 캐시를 바로 비운다. 스크립트나 SQL로 DB를 직접 바꾸면
+최대 TTL 동안 이전 목록이 쓰이므로, 즉시 반영해야 하면 서버(pm2)를 재시작한다.
+
 ## Brand menu nutrition data
 
 브랜드 메뉴·영양정보 수집 데이터는 git에 커밋하지 않고 메인 체크아웃의
