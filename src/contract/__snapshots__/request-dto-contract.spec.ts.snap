@@ -656,7 +656,7 @@ exports[`API request DTO contract DeleteMealRequestDto 1`] = `
     "hasTransform": false,
     "transformType": null,
     "validators": [
-      "conditionalValidation ["[Function ]"]",
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
       "isNumber [{}]",
     ],
   },
@@ -1205,7 +1205,7 @@ exports[`API request DTO contract RegisterMealRequestDto 1`] = `
     "transformType": null,
     "validators": [
       "arrayNotEmpty",
-      "conditionalValidation ["[Function ]"]",
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
       "isArray",
       "isNumber [{}] each",
     ],
@@ -1216,7 +1216,7 @@ exports[`API request DTO contract RegisterMealRequestDto 1`] = `
     "transformType": null,
     "validators": [
       "arrayNotEmpty",
-      "conditionalValidation ["[Function ]"]",
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
       "isArray",
       "isIn [[0,1]] each message="each value in menu_input_modes must be 0 or 1"",
       "isNumber [{}] each",
@@ -1228,7 +1228,7 @@ exports[`API request DTO contract RegisterMealRequestDto 1`] = `
     "transformType": null,
     "validators": [
       "arrayNotEmpty",
-      "conditionalValidation ["[Function ]"]",
+      "conditionalValidation ["[Function (_, value) => value !== undefined]"]",
       "isArray",
       "isNumber [{"allowNaN":false,"allowInfinity":false,"maxDecimalPlaces":1}] each",
     ],
@@ -1239,7 +1239,7 @@ exports[`API request DTO contract RegisterMealRequestDto 1`] = `
     "transformType": null,
     "validators": [
       "arrayNotEmpty",
-      "conditionalValidation ["[Function ]"]",
+      "conditionalValidation ["[Function (_, value) => value !== undefined && value !== null]"]",
       "isArray",
       "isNumber [{}] each",
     ],
@@ -1556,7 +1556,7 @@ exports[`API request DTO contract RegisterUserInfoRequestDto 1`] = `
     "hasTransform": true,
     "transformType": null,
     "validators": [
-      "conditionalValidation ["[Function ]"]",
+      "conditionalValidation ["[Function (dto) => dto.job_type === WORKER_JOB_TYPE]"]",
       "isInt",
       "isNotEmpty",
     ],
