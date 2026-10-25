@@ -7,11 +7,13 @@ import {
   OneToMany,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import { MealMenuEntity } from './meal-menu.entity';
 import { MealSetEntity } from './meal-set.entity';
 
 @Entity('meal')
+@Index('UQ_meal_user_date_time', ['user', 'date', 'time'], { unique: true })
 export class MealEntity {
   @PrimaryGeneratedColumn({ type: 'int', name: 'id' })
   id: number;

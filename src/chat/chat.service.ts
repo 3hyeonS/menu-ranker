@@ -3,6 +3,7 @@ import {
   prioritizeUserFoodImageMenus,
 } from '../utils/food-image-menu-priority.util';
 import { getFrequentlyRecordedMenuIds } from '../utils/frequent-menu.util';
+import { buildGeminiGenerateContentUrl } from '../utils/gemini-url.util';
 import {
   BadRequestException,
   Injectable,
@@ -76,7 +77,10 @@ import {
   prioritizeGenericFoodImageCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
-import { SUGAR_ALTERNATIVE_PROMPT_SECTION } from '../utils/nutrition-label.util';
+import {
+  SUGAR_ALTERNATIVE_PROMPT_SECTION,
+  isGramUnitText,
+} from '../utils/nutrition-label.util';
 import {
   calculateFoodImageCandidateScore,
   FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES,
@@ -826,10 +830,7 @@ export class ChatService {
   }
 
   private buildGeminiBaseUrl(model: string, baseUrlOverride?: string): string {
-    return (
-      baseUrlOverride ??
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
-    );
+    return buildGeminiGenerateContentUrl(model, baseUrlOverride);
   }
 
   async recommend(
@@ -2731,7 +2732,7 @@ ${JSON.stringify(params.menus)}
     const activeSession = await this.conversationSessionRepository.findOne({
       where: {
         userId,
-        closedAt: null,
+        closedAt: IsNull(),
       },
       order: {
         lastMessageAt: 'DESC',
@@ -14250,7 +14251,7 @@ ${storedContext}`,
       return 1;
     }
 
-    if (texts.some((text) => /\bg\b/.test(text) || text.includes('그램'))) {
+    if (texts.some((text) => isGramUnitText(text))) {
       return 0;
     }
 

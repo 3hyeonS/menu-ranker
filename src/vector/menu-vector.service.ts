@@ -251,11 +251,13 @@ export class MenuVectorService {
     }));
   }
 
-  private getIvfflatProbes(): number {
-    const parsed = Number(process.env.VECTOR_IVFFLAT_PROBES ?? 10);
+  // 인덱스가 HNSW(scripts/vector-db/001_create_menu_vector_index.sql)이므로 ivfflat.probes가 아니라
+  // hnsw.ef_search가 탐색 폭을 정한다. 기본값 40은 pgvector 기본값과 같다(1~1000).
+  private getHnswEfSearch(): number {
+    const parsed = Number(process.env.VECTOR_HNSW_EF_SEARCH ?? 40);
 
     if (!Number.isFinite(parsed)) {
-      return 10;
+      return 40;
     }
 
     return Math.max(1, Math.min(Math.floor(parsed), 1000));
@@ -347,9 +349,7 @@ export class MenuVectorService {
     try {
       const forceIndex = this.isVectorSearchForceIndexEnabled();
 
-      await queryRunner.query(
-        `SET ivfflat.probes = ${this.getIvfflatProbes()}`,
-      );
+      await queryRunner.query(`SET hnsw.ef_search = ${this.getHnswEfSearch()}`);
       await queryRunner.query(`SET enable_seqscan = ${forceIndex ? 'off' : 'on'}`);
       await queryRunner.query(
         `SET enable_bitmapscan = ${forceIndex ? 'off' : 'on'}`,
@@ -363,7 +363,7 @@ export class MenuVectorService {
           .map((line) => this.redactVectorLiterals(line));
 
         console.log('[VECTOR_SEARCH_EXPLAIN]', {
-          ivfflatProbes: this.getIvfflatProbes(),
+          hnswEfSearch: this.getHnswEfSearch(),
           forceIndex,
           plan,
         });

@@ -1,8 +1,15 @@
 import { UserEntity } from '../../auth/entity/user/user.entity';
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  Index,
+} from 'typeorm';
 import { singleDecimalTransformer } from '../../utils/number.util';
 
 @Entity('weight_steps')
+@Index('UQ_weight_steps_user_date', ['user', 'date'], { unique: true })
 export class WeightStepsEntity {
   @PrimaryGeneratedColumn({ type: 'int', name: 'id' })
   id: number;
