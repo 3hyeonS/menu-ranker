@@ -42,11 +42,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const arg = (name: string, fallback: string): string =>
     args.find((item) => item.startsWith(`--${name}=`))?.split('=').slice(1).join('=') ?? fallback;
-  const csvPath = resolve(
-    requiredCsvPath(
-      args.find((item) => item.startsWith('--csv='))?.split('=').slice(1).join('='),
-    ),
-  );
+  const csvPath = resolve(requiredCsvPath(arg('csv', '') || undefined));
   const cachePath = resolve(arg('embedding-cache', 'benchmark-results/cache/menu-embeddings.json'));
   const outputPath = resolve(arg('output', 'benchmark-results/restaurant-nutrition-load-test.json'));
   const sampleSize = Number(arg('sample-size', '20'));

@@ -7,8 +7,11 @@
 ## 1차 기준선 실행
 
 ```bash
-npm run restaurant:nutrition-benchmark
+npm run restaurant:nutrition-benchmark -- \
+  --csv=/home/sehyeon/menu-ranker/brand-nutrition/all-menus.csv
 ```
+
+모든 벤치마크·부하 테스트 스크립트는 `--csv=<메뉴 CSV 경로>`가 필수다.
 
 기본 설정은 기준 데이터 250, 500, 1,000, 2,000, 4,000개와 테스트 메뉴 최대
 500개를 사용한다. 알려진 브랜드 내 메뉴 분할과 처음 보는 브랜드 분할을 각각
@@ -16,6 +19,7 @@ npm run restaurant:nutrition-benchmark
 
 ```bash
 npm run restaurant:nutrition-benchmark -- \
+  --csv=/home/sehyeon/menu-ranker/brand-nutrition/all-menus.csv \
   --sizes=250,500,1000,2000,4000 \
   --test-limit=500 \
   --top-k=5 \

@@ -10,7 +10,8 @@ HTTPS URL이어야 하며, 브랜드·메뉴 조합은 정답 CSV에 정확히 �
 검증 명령:
 
 ```bash
-npm run restaurant:nutrition-images:validate
+npm run restaurant:nutrition-images:validate -- \
+  --csv=/home/sehyeon/menu-ranker/brand-nutrition/all-menus.csv
 ```
 
 검증을 통과한 뒤 고정 분할별 최대 100개를 뽑아 텍스트 전용과 텍스트+이미지를
