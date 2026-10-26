@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
-import { MenuEntity } from '../../entity/menu.entity';
 import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
 export class ModifyMenuRequestDto {

@@ -45,14 +45,15 @@ npm run db:migration:show                           # 적용 상태 확인 (run/
 
 | 모듈 | 역할 |
 |---|---|
-| `src/chat` | Gemini 코칭: 일반 대화, 개인화 관리, 30일 패턴 분석, 식단 점수 피드백, 메뉴판·음식 사진·영양성분표 이미지 분석, 자연어 식사 기록, 대화 세션 요약·장기 기억. `chat.service.ts` 하나가 매우 크다(약 14,500줄) |
+| `src/chat` | Gemini 코칭: 일반 대화, 개인화 관리, 30일 패턴 분석, 식단 점수 피드백, 메뉴판·음식 사진·영양성분표 이미지 분석, 자연어 식사 기록, 대화 세션 요약·장기 기억. `chat.service.ts` 하나가 매우 크다(약 11,600줄) |
 | `src/home` | 메뉴 검색, 식사 기록, 폴더·세트, 개인 메뉴, 사진·영양성분표 인식, 운동·체중·걸음·물 기록, 캘린더·30일 분석, CSV import |
 | `src/auth` | Kakao·Apple·관리자 로그인, JWT access/refresh, 구독 코드, 온보딩, 기본 칼로리·탄단지 계산 |
 | `src/restaurant` | 프랜차이즈 식당 검색, 필터별 메뉴 추천(`ChatService.recommendRestaurantMenuIds`, 실패 시 규칙 기반) |
 | `src/profile`, `src/menstrual` | 프로필 수정(수정마다 `user_goal` 스냅샷 추가), 생리 기록 |
 | `src/gemini` | Gemini generateContent 공용 클라이언트. `GeminiClient`(abstract, DI 토큰) / `HttpGeminiClient` / 테스트용 `FakeGeminiClient` |
 | `src/storage` | 파일 업로드·삭제. `FileStorage`(abstract, DI 토큰) / `S3FileStorage` / 테스트용 `FakeFileStorage`, 업로드 키 util |
-| `src/vector` | pgvector DataSource(지연 초기화), 임베딩, 메뉴 검색. `VectorModule`은 Home·Chat 모듈이 import한다 |
+| `src/food-image` | 음식 사진 메뉴 매칭(home·chat 공용). `FoodImageMenuCatalog`(공용 메뉴 TTL 캐시 + 개인 메뉴) / `FoodImageMenuMatcher`(후보 수집 → Gemini rematch → 로컬 보충 → 중복 제거). `FoodImageModule`은 Home·Chat 모듈이 import한다 |
+| `src/vector` | pgvector DataSource(지연 초기화), 임베딩, 메뉴 검색. `VectorModule`은 Chat·FoodImage 모듈이 import한다 |
 | `src/utils` | 메뉴명 정규화·별칭(`menu-name.util`), 음식 사진 후보 점수·우선순위, 자주 먹은 메뉴, 요청 취소, BMR(`bmr.util`, auth·home·chat 공용), TTL 캐시 |
 | `src/migrations` | MySQL 마이그레이션(`src/config/typeorm.datasource.ts`로 CLI 실행) |
 | `scripts/` | import, 벤치마크, 부하 테스트, 운동 데이터 처리, `deploy-ec2.sh`, `vector-db/*.sql` |
@@ -65,7 +66,7 @@ npm run db:migration:show                           # 적용 상태 확인 (run/
 - **Gemini 호출**: chat의 `callGeminiText` / `callGeminiJson` / `callGeminiJsonWithImage`, home의 `callGeminiJsonWithImage`는 프롬프트·설정만 만들고 `GeminiClient`(`src/gemini`)에 넘긴다. 모델 목록은 `GEMINI_MODEL`(이미지는 `GEMINI_IMAGE_MODEL` 우선) → fallback env → `gemini-2.5-flash-lite` 순서이고, 404·429·5xx·타임아웃일 때만 다음 모델로 넘어간다. `responseSchema`는 쓰지 않고 호출부에서 결과를 직접 검증한다. 테스트는 `FakeGeminiClient`로 응답·오류를 주입한다.
 - **메뉴 데이터 모델**: `menu.user`가 null이면 공용 메뉴(`data_source=0`), 아니면 개인 메뉴(`data_source=1`). 삭제는 `is_deleted=1` soft delete. 공용 메뉴명에는 `(식약처_음식)`, `(식약처_가공)` 출처 접두어가 붙어 있고, 응답에서는 `stripPublicMenuSourcePrefix`로 지운다. 검색은 `search_name`·`canonical_name`(별칭 정규화) 컬럼을 함께 쓴다.
 - **섭취 영양 계산**: 기록량은 `meal_menu.quantity`(g/ml)이고 영양값은 `menu.weight` 기준이다. 배수는 `getRecordedWeightMultiplier(quantity, weight)`이며 weight가 0이면 0이 된다.
-- **음식 사진 인식**(home·chat에 비슷한 구현이 두 벌): Gemini 1차 인식 → 음식별 후보 수집(벡터, 로컬 점수, 브랜드, 제품명 정확 일치, 개인·자주 먹은 메뉴, 일반 선호 메뉴: 밥·달걀후라이·찐고구마·정제염 `PREFERRED_REFINED_SALT_MENU_ID=219056`) → 이미지와 후보로 Gemini rematch → 누락분 로컬 보충 → 개인 메뉴 우선 치환. home의 로컬 후보용 공용 메뉴 목록은 TTL 캐시(`FOOD_IMAGE_PUBLIC_MENU_CACHE_TTL_MS`)이고, 앱에서 공용 메뉴를 바꾸는 코드를 추가하면 `publicFoodImageMenuCache.invalidate()`를 불러야 한다.
+- **음식 사진 인식**: home·chat이 각자 Gemini 1차 인식(프롬프트·응답 형식이 다름, chat은 위치 보정 포함)을 한 뒤 공용 `FoodImageMenuMatcher.match()`로 매칭한다. 음식별 후보 수집(벡터, 로컬 점수, 브랜드, 제품명 정확 일치, 개인·자주 먹은 메뉴, 일반 선호 메뉴: 밥·달걀후라이·찐고구마·정제염 `PREFERRED_REFINED_SALT_MENU_ID=219056`) → 이미지와 후보로 Gemini rematch(호출부의 Gemini 설정으로 보냄) → 누락분 로컬 보충 → 개인 메뉴 우선 치환 → 같은 메뉴 중복 제거. 후보 메뉴 목록은 `FoodImageMenuCatalog`가 주고 공용 메뉴는 TTL 캐시(`FOOD_IMAGE_PUBLIC_MENU_CACHE_TTL_MS`)다. chat의 벡터 검색이 꺼졌을 때 일반 메뉴 매칭도 이 목록으로 점수를 매긴다. 앱에서 공용 메뉴를 바꾸는 코드를 추가하면 `FoodImageMenuCatalog.invalidatePublicMenus()`를 불러야 한다.
 - **채팅 대화 기억**: `chat_history`가 원본이고, 3시간 공백으로 `chat_conversation_session`을 나눈다. 닫힌 세션은 백그라운드에서 Gemini로 요약하고, 7일 지난 요약은 `chat_user_memory.profileTraits`로 압축한다. "사용자 직접 진술:"로 시작하는 항목만 장기 기억에 남긴다.
 - **벡터 검색**: `VECTOR_SEARCH_ENABLED`가 켜져 있고 `MenuVectorService`가 주입됐을 때만 사용한다(`@Optional()`). 꺼져 있으면 로컬 문자열 유사도로 대체한다. 검색 대상은 공용 메뉴만이다.
 

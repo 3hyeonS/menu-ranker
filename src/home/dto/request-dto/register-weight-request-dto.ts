@@ -1,16 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsArray,
-  IsDate,
-  IsIn,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-} from 'class-validator';
+import { IsDate, IsNotEmpty, IsNumber, Max, Min } from 'class-validator';
 import { oneDecimalNumberOptions } from '../../../utils/number.util';
 
 export class RegisterWeightRequestDto {

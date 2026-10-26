@@ -2,9 +2,7 @@ import {
   Body,
   Controller,
   Post,
-  UnauthorizedException,
   UploadedFile,
-  UseFilters,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';

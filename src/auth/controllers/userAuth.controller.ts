@@ -25,8 +25,6 @@ import { DefaltTargetCaloriesRequestDto } from '../dto/user-dto/request-dto/defa
 import { DefaltRatioResponseDto } from '../dto/user-dto/response-dto/default-target-ratio-response-dto';
 import { DefaltRatioRequestDto } from '../dto/user-dto/request-dto/default-target-ratio-request-dto';
 import { UserInfoResponseDto } from '../dto/user-dto/response-dto/user-info-response-dto';
-import { Roles } from '../../decorators/roles-decorator';
-import { RolesGuard } from '../custom-role.guard';
 import { GetUser } from '../../decorators/get-user-decorator';
 import { UserEntity } from '../entity/user/user.entity';
 import { RegisterUserInfoRequestDto } from '../dto/user-dto/request-dto/register-user-info-request-dto';

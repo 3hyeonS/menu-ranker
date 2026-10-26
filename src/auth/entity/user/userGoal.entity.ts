@@ -4,8 +4,6 @@ import {
   Column,
   ManyToOne,
   CreateDateColumn,
-  OneToOne,
-  JoinColumn,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
 import { singleDecimalTransformer } from '../../../utils/number.util';

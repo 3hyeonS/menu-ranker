@@ -1,6 +1,5 @@
 import { Brackets } from 'typeorm';
-import { HomeService } from '../home/home.service';
-import { ChatService } from '../chat/chat.service';
+import { FoodImageMenuMatcher } from '../food-image/food-image-menu-matcher';
 import { getFrequentlyRecordedMenuIds } from './frequent-menu.util';
 
 function createRepository() {
@@ -26,12 +25,48 @@ const prediction = {
   foodName: '닭가슴살',
   brand: null,
   confidence: 0.9,
+  estimatedQuantity: null,
+  quantityConfidence: null,
 };
-const frequent = { id: 20, name: '닭가슴살', brand: null, category: null };
-const vector = { id: 30, name: '닭가슴살 구이', brand: null, category: null };
-const unrelated = { id: 40, name: '초콜릿', brand: null, category: null };
+const toMenu = (id: number, name: string) => ({
+  id,
+  name,
+  brand: null,
+  category: null,
+  weight: null,
+  unit: 0,
+});
+const frequent = toMenu(20, '닭가슴살');
+const vector = toMenu(30, '닭가슴살 구이');
+const unrelated = toMenu(40, '초콜릿');
+
+const createMatcher = (
+  repository: ReturnType<typeof createRepository>,
+  vectorCandidates: Array<ReturnType<typeof toMenu>>,
+) => {
+  const matcher = new FoodImageMenuMatcher(
+    {} as never,
+    repository as never,
+  ) as any;
+  matcher.getVectorCandidateGroups = jest.fn().mockResolvedValue([
+    {
+      foodIndex: 0,
+      foodName: prediction.foodName,
+      candidates: vectorCandidates,
+    },
+  ]);
+  return matcher;
+};
 
 describe('frequent menus in food image candidates', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('selects the current user top 20 and excludes deleted and other-user menus', async () => {
     const repository = createRepository();
     expect(await getFrequentlyRecordedMenuIds(repository as never, 7)).toEqual([
@@ -64,51 +99,25 @@ describe('frequent menus in food image candidates', () => {
     expect(repository.query.limit).toHaveBeenCalledWith(20);
   });
 
-  it('includes matching frequent menus even when home vector candidates exist', async () => {
-    const service = Object.create(HomeService.prototype) as any;
-    service.isVectorSearchEnabled = () => true;
-    service.menuVectorService = {
-      searchMenusByText: jest.fn().mockResolvedValue([{ menuId: 30 }]),
-    };
-    service.getFoodImageRecognitionMenusByIds = jest
-      .fn()
-      .mockResolvedValue([vector]);
-    const result = await service.getFoodImageCandidatesForSingleFood(
-      7,
-      prediction,
-      [frequent, vector, unrelated],
-      [frequent, unrelated],
-    );
-    expect(result.candidates.map((menu) => menu.id)).toEqual([20, 30]);
-  });
-
-  it('includes frequent menus alongside chat vector candidates without duplicates or unrelated foods', async () => {
-    const service = Object.create(ChatService.prototype) as any;
+  it('includes matching frequent menus alongside vector candidates without duplicates or unrelated foods', async () => {
     const repository = createRepository();
     repository.query.getRawMany.mockResolvedValue([
       { menu_id: 20 },
       { menu_id: 40 },
     ]);
-    service.mealMenuRepository = repository;
-    service.getFoodImageVectorCandidateGroupsByPrediction = jest
-      .fn()
-      .mockResolvedValue([
-        {
-          foodIndex: 0,
-          foodName: prediction.foodName,
-          candidates: [vector, frequent],
-        },
-      ]);
-    const groups = await service.buildFoodImageCandidateGroupsByPrediction(
-      7,
-      [prediction],
-      [frequent, vector, unrelated],
-      { inferredBrand: null, inferredCategory: null },
-    );
+    const matcher = createMatcher(repository, [vector, frequent]);
+
+    const groups = await matcher.buildCandidateGroups({
+      userId: 7,
+      predictions: [prediction],
+      menus: [frequent, vector, unrelated],
+      logPrefix: '[TEST]',
+    });
+
     expect(groups[0].candidates.map((menu) => menu.id)).toEqual([20, 30]);
   });
-  it('keeps an unrecorded personal food when frequent public duplicates fill the chat candidate limit', async () => {
-    const service = Object.create(ChatService.prototype) as any;
+
+  it('keeps an unrecorded personal food when frequent public duplicates fill the candidate limit', async () => {
     const duplicates = Array.from({ length: 9 }, (_, index) => ({
       ...frequent,
       id: index + 1,
@@ -118,22 +127,15 @@ describe('frequent menus in food image candidates', () => {
     repository.query.getRawMany.mockResolvedValue(
       duplicates.map((menu) => ({ menu_id: menu.id })),
     );
-    service.mealMenuRepository = repository;
-    service.getFoodImageVectorCandidateGroupsByPrediction = jest
-      .fn()
-      .mockResolvedValue([
-        {
-          foodIndex: 0,
-          foodName: prediction.foodName,
-          candidates: duplicates.slice(0, 8),
-        },
-      ]);
-    const groups = await service.buildFoodImageCandidateGroupsByPrediction(
-      7,
-      [prediction],
-      [...duplicates, personal],
-      { inferredBrand: null, inferredCategory: null },
-    );
+    const matcher = createMatcher(repository, duplicates.slice(0, 8));
+
+    const groups = await matcher.buildCandidateGroups({
+      userId: 7,
+      predictions: [prediction],
+      menus: [...duplicates, personal],
+      logPrefix: '[TEST]',
+    });
+
     expect(groups[0].candidates.map((menu) => menu.id)).toEqual([100]);
   });
 });

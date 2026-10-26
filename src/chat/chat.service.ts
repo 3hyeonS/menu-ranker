@@ -1,9 +1,4 @@
 import {
-  preferUserFoodImageMenu,
-  prioritizeUserFoodImageMenus,
-} from '../utils/food-image-menu-priority.util';
-import { getFrequentlyRecordedMenuIds } from '../utils/frequent-menu.util';
-import {
   BadRequestException,
   Injectable,
   NotFoundException,
@@ -29,8 +24,6 @@ import {
 import { getRecordedWeightMultiplier } from '../utils/recorded-nutrition.util';
 import { ChatRecommendRequestDto } from './dto/request-dto/chat-recommend-request-dto';
 import { ChatRecommendResponseDto } from './dto/response-dto/chat-recommend-response-dto';
-import { ChatParsedRequestResponseDto } from './dto/response-dto/chat-parsed-request-response-dto';
-import { ChatRecommendationBasisResponseDto } from './dto/response-dto/chat-recommendation-basis-response-dto';
 import { ChatRecommendItemResponseDto } from './dto/response-dto/chat-recommend-item-response-dto';
 import { ChatRecognizedCandidateResponseDto } from './dto/response-dto/chat-recognized-candidate-response-dto';
 import { ChatHistoryEntity } from './entity/chat-history.entity';
@@ -61,16 +54,9 @@ import { ChatUserMenuSearchResponseDto } from './dto/response-dto/chat-user-menu
 import { MenuVectorService } from '../vector/menu-vector.service';
 import {
   canonicalizeMenuSearchName,
-  findPreferredGenericFoodImageCandidate,
   isGenericPlainSaltName,
-  isGenericSweetPotatoCandidateCompatible,
-  isPreferredGenericFriedEggMenu,
-  isPreferredGenericPlainRiceMenu,
-  isPreferredGenericRefinedSaltMenu,
-  isPreferredGenericSweetPotatoMenu,
   normalizeMenuSearchName,
   PREFERRED_REFINED_SALT_MENU_ID,
-  prioritizeGenericFoodImageCandidate,
   stripPublicMenuSourcePrefix,
 } from '../utils/menu-name.util';
 import {
@@ -78,12 +64,8 @@ import {
   isGramUnitText,
 } from '../utils/nutrition-label.util';
 import {
-  calculateFoodImageCandidateScore,
   FOOD_IMAGE_CORE_DETECTION_PROMPT_RULES,
   FOOD_IMAGE_DISH_GROUPING_PROMPT_RULES,
-  FOOD_IMAGE_REMATCH_PROMPT_RULES,
-  FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS,
-  isFoodImageBrandMatch,
 } from '../utils/food-image-recognition.util';
 import {
   getRequestAbortSignal,
@@ -91,6 +73,13 @@ import {
   throwIfRequestAborted,
 } from '../utils/request-abort.util';
 import { GeminiClient } from '../gemini/gemini-client';
+import { FoodImageMenuCatalog } from '../food-image/food-image-menu-catalog';
+import { FoodImageMenuMatcher } from '../food-image/food-image-menu-matcher';
+import {
+  FoodImageMatchPrediction,
+  FoodImageMenuCandidate,
+  FoodImageMenuMatch,
+} from '../food-image/food-image.types';
 import { FileStorage } from '../storage/file-storage';
 import { buildDatedImageKey } from '../storage/image-key.util';
 import { calculateMifflinStJeorBmr } from '../utils/bmr.util';
@@ -544,11 +533,6 @@ type MenuRecognitionCandidate = {
   frequentRank?: number;
 };
 
-type RecognitionTextMenuMatch = {
-  inputText: string;
-  menu: MenuRecognitionCandidate;
-};
-
 type ComparisonMenuMatch = {
   inputMenuName: string;
   menu: MenuEntity;
@@ -557,22 +541,10 @@ type ComparisonMenuMatch = {
   quantityConfidence?: number | null;
 };
 
-type FoodImageCandidateGroup = {
-  foodIndex: number;
-  foodName: string;
-  candidates: MenuRecognitionCandidate[];
-  preferredCandidateId?: number;
-};
-
 type MenuBoardRecognitionResult = {
   recognizedTexts: string[];
   inferredBrand: string | null;
   inferredCategory: string | null;
-};
-
-type RecognitionCandidateScore = {
-  menu: MenuRecognitionCandidate;
-  score: number;
 };
 
 type FoodImagePosition = {
@@ -585,24 +557,20 @@ type FoodImageDimensions = {
   height: number;
 };
 
-type FoodImagePrediction = {
-  foodName: string;
-  productName?: string | null;
-  brand: string | null;
-  confidence: number | null;
+type FoodImagePrediction = FoodImageMatchPrediction & {
   position: FoodImagePosition;
-  estimatedQuantity: number | null;
   estimatedQuantityUnit: 'g' | 'ml' | null;
-  quantityConfidence: number | null;
 };
 
-type RecognizedFoodImageMenu = MenuRecognitionCandidate & {
-  foodIndex?: number;
-  confidence: number | null;
+type RecognizedFoodImageMenu = FoodImageMenuMatch & {
   position: FoodImagePosition;
-  estimatedQuantity: number | null;
-  estimatedQuantityUnit: 'g' | 'ml';
-  quantityConfidence: number | null;
+};
+
+// 이름 유사도 계산에 필요한 필드. MenuEntity와 FoodImageMenuCandidate 모두 만족한다.
+type SimilarityMenu = {
+  name: string;
+  brand?: string | null;
+  category?: string | null;
 };
 
 type GenericMenuCandidate = {
@@ -701,13 +669,11 @@ export class ChatService {
     private readonly chatUserMemoryRepository: Repository<ChatUserMemoryEntity>,
     private readonly geminiClient: GeminiClient,
     private readonly fileStorage: FileStorage,
+    private readonly foodImageMenuCatalog: FoodImageMenuCatalog,
+    private readonly foodImageMenuMatcher: FoodImageMenuMatcher,
     @Optional()
     private readonly menuVectorService?: MenuVectorService,
   ) {}
-
-  private maskSecret(value?: string): string {
-    return value ? `${value.slice(0, 8)}...(${value.length})` : 'NOT_SET';
-  }
 
   private createChatTimingLogger(
     flow: string,
@@ -1379,7 +1345,7 @@ ${JSON.stringify({
         userInfo,
         baseIntent,
       );
-      const availableMenus = await this.getAvailableMenuRecognitionCandidates(
+      const availableMenus = await this.foodImageMenuCatalog.getCandidateMenus(
         user.id,
       );
       timing.mark('recognition_candidates_loaded', {
@@ -5261,83 +5227,6 @@ ${JSON.stringify(feedbackContext)}
 - 첫 문장에 선택 날짜와 현재 점수를 알려주고, 이어서 점수에 영향을 준 음식과 개선 방법을 4~5개의 짧은 문장이나 불렛으로 정리해.`;
   }
 
-  private async getAvailableMenuRecognitionCandidates(
-    userId: number,
-  ): Promise<MenuRecognitionCandidate[]> {
-    return await this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoin('menu.user', 'user')
-      .select([
-        'user.id AS ownerUserId',
-        'menu.id AS id',
-        'menu.name AS name',
-        'menu.brand AS brand',
-        'menu.category AS category',
-        'menu.unit AS unit',
-      ])
-      .where(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .orderBy('menu.id', 'ASC')
-      .getRawMany<MenuRecognitionCandidate>();
-  }
-
-  private async recognizeMenuBoardCandidatesWithGemini(
-    userId: number,
-    file: Express.Multer.File,
-    menus: MenuRecognitionCandidate[],
-    timing?: ChatTimingLogger,
-  ): Promise<MenuRecognitionCandidate[]> {
-    const prompt = `
-메뉴판 사진을 OCR로 읽고, 사진에 보이는 메뉴명 후보만 JSON object로 반환해.
-
-규칙:
-- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- 메뉴판에 실제로 적힌 메뉴명만 recognized_texts에 넣어
-- 가격, 원산지, 알레르기 안내, 옵션 설명, 광고 문구는 제외해
-- OCR이 불확실한 문구는 제외해
-- 최대 50개까지만 반환해
-- 메뉴판의 브랜드나 카테고리가 보이면 inferred_brand, inferred_category에 넣고 불명확하면 null
-
-반환 shape:
-{
-  "recognized_texts": ["싸이버거", "치즈버거"],
-  "inferred_brand": "맘스터치",
-  "inferred_category": "버거"
-}
-`.trim();
-
-    const data = await this.callGeminiJsonWithImage(prompt, file);
-    timing?.mark('menu_board_gemini_ocr_completed');
-    const recognition = this.normalizeMenuBoardRecognition(data);
-    console.log('[CHAT] menu board Gemini recognized texts', {
-      userId,
-      recognizedTexts: recognition.recognizedTexts,
-      recognizedTextCount: recognition.recognizedTexts.length,
-      inferredBrand: recognition.inferredBrand,
-      inferredCategory: recognition.inferredCategory,
-    });
-    timing?.mark('menu_board_ocr_normalized', {
-      recognizedTextCount: recognition.recognizedTexts.length,
-      inferredBrand: recognition.inferredBrand,
-      inferredCategory: recognition.inferredCategory,
-    });
-    const matchedCandidates = await this.matchMenuBoardRecognizedTextsToDbMenus(
-      userId,
-      recognition,
-      menus,
-      timing,
-    );
-    timing?.mark('menu_board_one_to_one_match_completed', {
-      matchedCount: matchedCandidates.length,
-    });
-
-    return matchedCandidates;
-  }
-
   private async recognizeNutritionLabelWithGemini(
     file: Express.Multer.File,
     userContext: GenericMenuCandidateUserContext,
@@ -5418,7 +5307,7 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext), null, 2)}
   private async recognizeFoodImageMenusWithGemini(
     userId: number,
     file: Express.Multer.File,
-    menus: MenuRecognitionCandidate[],
+    menus: FoodImageMenuCandidate[],
     userContext: GenericMenuCandidateUserContext,
     chatContext: ChatContextSummary,
     timing?: ChatTimingLogger,
@@ -5557,61 +5446,21 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
     timing?.mark('food_image_predictions_normalized', {
       predictionCount: predictions.length,
     });
-    const foodImageContext = {
-      inferredBrand: null,
-      inferredCategory: null,
-    };
-    const candidateGroups =
-      await this.buildFoodImageCandidateGroupsByPrediction(
-        userId,
-        predictions,
-        menus,
-        foodImageContext,
-        timing,
-      );
-    throwIfRequestAborted();
-    this.logFoodImageCandidateGroups(candidateGroups);
-    const rematchCandidatePool = this.mergeRecognitionCandidatesById(
-      candidateGroups.flatMap((group) => group.candidates),
-    );
-    timing?.mark('food_image_candidate_groups_selected', {
-      groupCount: candidateGroups.length,
-      candidateCount: rematchCandidatePool.length,
-      perFoodLimit: this.getFoodImagePerFoodVectorCandidateLimit(),
-    });
-    const rematchedFoods = await this.rematchFoodImageMenusWithGemini(
-      file,
+    const matches = await this.foodImageMenuMatcher.match({
+      userId,
       predictions,
-      candidateGroups,
-      timing,
-    );
-    throwIfRequestAborted();
-    timing?.mark('food_image_gemini_rematch_completed', {
-      rematchedCount: rematchedFoods.length,
-    });
-    const recognizedFoods = this.mergeFoodImageRematchesWithLocalFallback(
-      predictions,
-      candidateGroups,
       menus,
-      rematchedFoods,
-    );
-    const localFallbackCount = Math.max(
-      recognizedFoods.length - rematchedFoods.length,
-      0,
-    );
-    timing?.mark('food_image_final_match_selected', {
-      recognizedFoodCount: recognizedFoods.length,
-      rematchedCount: rematchedFoods.length,
-      localFallbackCount,
-      source:
-        rematchedFoods.length === 0
-          ? 'local'
-          : localFallbackCount > 0
-            ? 'gemini_rematch_with_local_fallback'
-            : 'gemini_rematch',
+      requestRematchJson: (rematchPrompt) =>
+        this.callGeminiJsonWithImage(rematchPrompt, file),
+      logPrefix: '[CHAT]',
+      timing,
     });
-    const uniqueRecognizedFoods =
-      this.deduplicateRecognizedFoodImageMenus(recognizedFoods);
+    const uniqueRecognizedFoods: RecognizedFoodImageMenu[] = matches.map(
+      (match) => ({
+        ...match,
+        position: predictions[match.foodIndex].position,
+      }),
+    );
 
     if (uniqueRecognizedFoods.length === 0) {
       throw new BadRequestException(
@@ -5794,992 +5643,6 @@ ${JSON.stringify(
     }
   }
 
-  private matchFoodImagePredictionLocally(
-    prediction: FoodImagePrediction,
-    menus: MenuRecognitionCandidate[],
-    foodIndex?: number,
-    preferredMenu?: MenuRecognitionCandidate,
-  ): RecognizedFoodImageMenu | null {
-    const preferredGenericMenu = prediction.brand
-      ? undefined
-      : findPreferredGenericFoodImageCandidate(prediction.foodName, menus);
-    const selected =
-      preferredMenu ??
-      preferredGenericMenu ??
-      this.findBestRecognitionCandidate(
-        prediction.foodName,
-        menus,
-        prediction.brand,
-        null,
-        55,
-      );
-
-    const matchedMenu = selected
-      ? preferUserFoodImageMenu(selected, menus)
-      : null;
-
-    return matchedMenu &&
-      this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)
-      ? {
-          ...matchedMenu,
-          foodIndex,
-          confidence: prediction.confidence,
-          position: prediction.position,
-          estimatedQuantity: prediction.estimatedQuantity,
-          estimatedQuantityUnit: Number(matchedMenu.unit) === 1 ? 'ml' : 'g',
-          quantityConfidence: prediction.quantityConfidence,
-        }
-      : null;
-  }
-
-  private mergeFoodImageRematchesWithLocalFallback(
-    predictions: FoodImagePrediction[],
-    candidateGroups: FoodImageCandidateGroup[],
-    menus: MenuRecognitionCandidate[],
-    rematchedFoods: RecognizedFoodImageMenu[],
-  ): RecognizedFoodImageMenu[] {
-    const candidateGroupMap = new Map(
-      candidateGroups.map((group) => [group.foodIndex, group]),
-    );
-    const matchPredictionWithGroup = (
-      prediction: FoodImagePrediction,
-      foodIndex: number,
-    ): RecognizedFoodImageMenu | null => {
-      const group = candidateGroupMap.get(foodIndex);
-      const groupCandidates = group?.candidates ?? menus;
-      const preferredMenu = group?.preferredCandidateId
-        ? groupCandidates.find(
-            (candidate) => candidate.id === group.preferredCandidateId,
-          )
-        : undefined;
-
-      return this.matchFoodImagePredictionLocally(
-        prediction,
-        groupCandidates,
-        foodIndex,
-        preferredMenu,
-      );
-    };
-
-    if (rematchedFoods.length === 0) {
-      return predictions
-        .map((prediction, foodIndex) =>
-          matchPredictionWithGroup(prediction, foodIndex),
-        )
-        .filter((food): food is RecognizedFoodImageMenu => food !== null);
-    }
-
-    const rematchedFoodIndexes = new Set(
-      rematchedFoods
-        .map((food) => food.foodIndex)
-        .filter((foodIndex): foodIndex is number => foodIndex !== undefined),
-    );
-    const fallbackFoods = predictions
-      .map((prediction, foodIndex) => {
-        if (rematchedFoodIndexes.has(foodIndex)) {
-          return null;
-        }
-
-        return matchPredictionWithGroup(prediction, foodIndex);
-      })
-      .filter((food): food is RecognizedFoodImageMenu => food !== null);
-
-    return [...rematchedFoods, ...fallbackFoods];
-  }
-
-  private normalizeMenuBoardRecognition(
-    value: any,
-  ): MenuBoardRecognitionResult {
-    return {
-      recognizedTexts: this.normalizeFreeTextArray(value?.recognized_texts, [])
-        .filter((text) => text.length >= 2)
-        .slice(0, 50),
-      inferredBrand: this.asNonEmptyString(value?.inferred_brand),
-      inferredCategory: this.asNonEmptyString(value?.inferred_category),
-    };
-  }
-
-  private matchRecognitionCandidates(
-    texts: string[],
-    menus: MenuRecognitionCandidate[],
-    context: Pick<
-      MenuBoardRecognitionResult,
-      'inferredBrand' | 'inferredCategory'
-    >,
-    limit: number,
-  ): MenuRecognitionCandidate[] {
-    const matchedById = new Map<number, MenuRecognitionCandidate>();
-
-    texts.forEach((text) => {
-      const matched = this.findBestRecognitionCandidate(
-        text,
-        menus,
-        context.inferredBrand,
-        context.inferredCategory,
-        58,
-      );
-
-      if (matched) {
-        matchedById.set(matched.id, {
-          ...matched,
-          brand: matched.brand ?? context.inferredBrand ?? null,
-          category: matched.category ?? context.inferredCategory ?? null,
-        });
-      }
-    });
-
-    return Array.from(matchedById.values()).slice(0, limit);
-  }
-
-  private async getVectorRecognitionCandidates(params: {
-    userId: number;
-    texts: string[];
-    context: Pick<
-      MenuBoardRecognitionResult,
-      'inferredBrand' | 'inferredCategory'
-    >;
-    limit: number;
-    timing?: ChatTimingLogger;
-    timingPrefix?: string;
-    disableContextFilters?: boolean;
-  }): Promise<MenuRecognitionCandidate[]> {
-    const timingPrefix = params.timingPrefix ?? 'recognition';
-    const texts = params.texts
-      .map((text) => text.trim())
-      .filter((text) => text.length >= 2);
-
-    if (
-      !this.isVectorSearchEnabled() ||
-      !this.menuVectorService ||
-      texts.length === 0
-    ) {
-      params.timing?.mark(`${timingPrefix}_vector_search_skipped`, {
-        textCount: texts.length,
-      });
-      return [];
-    }
-
-    try {
-      const vectorResults = await this.menuVectorService.searchMenusByText(
-        this.buildVectorRecognitionQuery(texts, params.context),
-        {
-          userId: params.userId,
-          limit: params.limit,
-          brand: params.disableContextFilters
-            ? null
-            : params.context.inferredBrand,
-          category: params.disableContextFilters
-            ? null
-            : params.context.inferredCategory,
-        },
-      );
-      params.timing?.mark(`${timingPrefix}_vector_search_completed`, {
-        resultCount: vectorResults.length,
-        textCount: texts.length,
-      });
-      const menuIds = vectorResults.map((result) => result.menuId);
-
-      const candidates = await this.getRecognitionCandidatesByIds(
-        params.userId,
-        menuIds,
-      );
-      params.timing?.mark(`${timingPrefix}_vector_mysql_detail_loaded`, {
-        candidateCount: candidates.length,
-      });
-
-      return candidates;
-    } catch (error) {
-      console.warn(
-        '[CHAT] vector recognition search failed, fallback to local',
-        {
-          message: error instanceof Error ? error.message : String(error),
-        },
-      );
-      params.timing?.mark(`${timingPrefix}_vector_search_failed`);
-
-      return [];
-    }
-  }
-
-  private async buildFoodImageCandidateGroupsByPrediction(
-    userId: number,
-    predictions: FoodImagePrediction[],
-    menus: MenuRecognitionCandidate[],
-    context: Pick<
-      MenuBoardRecognitionResult,
-      'inferredBrand' | 'inferredCategory'
-    >,
-    timing?: ChatTimingLogger,
-  ): Promise<FoodImageCandidateGroup[]> {
-    const frequentMenuIds = await getFrequentlyRecordedMenuIds(
-      this.mealMenuRepository,
-      userId,
-    );
-    const frequentRanks = new Map(
-      frequentMenuIds.map((id, index) => [id, index + 1]),
-    );
-    menus = menus.map((menu) => ({
-      ...menu,
-      frequentRank: frequentRanks.get(menu.id),
-    }));
-    const frequentMenus = menus.filter(
-      (menu) => menu.frequentRank !== undefined,
-    );
-    const personalGroups = this.getFoodImageLocalCandidateGroupsByPrediction(
-      predictions.map((prediction, index) => ({ prediction, index })),
-      menus.filter((menu) => menu.ownerUserId != null),
-      context,
-    );
-    const personalGroupMap = new Map(
-      personalGroups.map((group) => [group.foodIndex, group]),
-    );
-    const frequentGroups = this.getFoodImageLocalCandidateGroupsByPrediction(
-      predictions.map((prediction, index) => ({ prediction, index })),
-      frequentMenus,
-      context,
-    );
-    const frequentGroupMap = new Map(
-      frequentGroups.map((group) => [group.foodIndex, group]),
-    );
-    const preferredRefinedSaltMenus = predictions.some(
-      (prediction) =>
-        !prediction.brand && isGenericPlainSaltName(prediction.foodName),
-    )
-      ? await this.getRecognitionCandidatesByIds(userId, [
-          PREFERRED_REFINED_SALT_MENU_ID,
-        ])
-      : [];
-    const groups = await this.getFoodImageVectorCandidateGroupsByPrediction(
-      userId,
-      predictions,
-      context,
-      timing,
-    );
-    const groupMap = new Map(groups.map((group) => [group.foodIndex, group]));
-    const missingPredictions = predictions
-      .map((prediction, index) => ({ prediction, index }))
-      .filter(({ index }) => !groupMap.has(index));
-
-    if (missingPredictions.length > 0) {
-      const localGroups = this.getFoodImageLocalCandidateGroupsByPrediction(
-        missingPredictions,
-        menus,
-        context,
-      );
-      localGroups.forEach((group) => groupMap.set(group.foodIndex, group));
-      timing?.mark('food_image_local_candidate_groups_completed', {
-        groupCount: localGroups.length,
-      });
-    }
-
-    return predictions
-      .map((prediction, index) => {
-        const group = groupMap.get(index) ?? {
-          foodIndex: index,
-          foodName: prediction.foodName,
-          candidates: [],
-        };
-        const brandMenus = prediction.brand
-          ? this.findFoodImageBrandCandidates(
-              prediction,
-              menus,
-              this.getFoodImagePerFoodVectorCandidateLimit(),
-            )
-          : [];
-        const exactProductMenus = this.findFoodImageExactProductCandidates(
-          prediction,
-          menus,
-          this.getFoodImagePerFoodVectorCandidateLimit(),
-        );
-        const preferredMenus = prediction.brand
-          ? []
-          : [...preferredRefinedSaltMenus, ...menus].filter(
-              (menu) =>
-                isPreferredGenericFriedEggMenu(
-                  prediction.foodName,
-                  menu.name,
-                ) ||
-                isPreferredGenericPlainRiceMenu(
-                  prediction.foodName,
-                  menu.name,
-                ) ||
-                isPreferredGenericSweetPotatoMenu(
-                  prediction.foodName,
-                  menu.name,
-                ) ||
-                isPreferredGenericRefinedSaltMenu(prediction.foodName, menu),
-            );
-
-        const candidates = prioritizeGenericFoodImageCandidate(
-          prediction.foodName,
-          this.mergeRecognitionCandidatesById([
-            ...exactProductMenus,
-            ...brandMenus,
-            ...preferredMenus,
-            ...(personalGroupMap.get(index)?.candidates ?? []),
-            ...(frequentGroupMap.get(index)?.candidates ?? []),
-            ...group.candidates.map(
-              (menu) =>
-                menus.find((candidate) => candidate.id === menu.id) ?? menu,
-            ),
-          ]).filter((candidate) =>
-            this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
-          ),
-        );
-        const prioritizedCandidates = prioritizeUserFoodImageMenus(
-          candidates,
-        ).slice(0, this.getFoodImagePerFoodVectorCandidateLimit());
-        const exactPreferredCandidate = exactProductMenus.find((menu) =>
-          prioritizedCandidates.some((candidate) => candidate.id === menu.id),
-        );
-
-        return {
-          ...group,
-          ...(exactPreferredCandidate
-            ? { preferredCandidateId: exactPreferredCandidate.id }
-            : {}),
-          candidates: prioritizedCandidates,
-        };
-      })
-      .filter((group) => group.candidates.length > 0);
-  }
-
-  private findFoodImageExactProductCandidates(
-    prediction: FoodImagePrediction,
-    menus: MenuRecognitionCandidate[],
-    limit: number,
-  ): MenuRecognitionCandidate[] {
-    if (!prediction.productName) {
-      return [];
-    }
-
-    const productName = this.normalizeCompactText(prediction.productName);
-    const recognizedBrand = this.normalizeCompactText(prediction.brand ?? '');
-    const getBrandRank = (menu: MenuRecognitionCandidate): number => {
-      const candidateBrand = this.normalizeCompactText(menu.brand ?? '');
-
-      if (!recognizedBrand || !candidateBrand) {
-        return 0;
-      }
-      if (recognizedBrand === candidateBrand) {
-        return 2;
-      }
-
-      return recognizedBrand.includes(candidateBrand) ||
-        candidateBrand.includes(recognizedBrand)
-        ? 1
-        : 0;
-    };
-
-    return menus
-      .filter(
-        (menu) =>
-          this.normalizeCompactText(stripPublicMenuSourcePrefix(menu.name)) ===
-          productName,
-      )
-      .sort((left, right) => {
-        const brandRankDifference = getBrandRank(right) - getBrandRank(left);
-        if (brandRankDifference !== 0) {
-          return brandRankDifference;
-        }
-
-        const leftLength = this.normalizeCompactText(
-          stripPublicMenuSourcePrefix(left.name),
-        ).length;
-        const rightLength = this.normalizeCompactText(
-          stripPublicMenuSourcePrefix(right.name),
-        ).length;
-
-        return rightLength - leftLength || left.id - right.id;
-      })
-      .slice(0, limit);
-  }
-
-  private findFoodImageBrandCandidates(
-    prediction: FoodImagePrediction,
-    menus: MenuRecognitionCandidate[],
-    limit: number,
-  ): MenuRecognitionCandidate[] {
-    const brand = prediction.brand ?? '';
-
-    if (!brand) {
-      return [];
-    }
-
-    return menus
-      .filter((menu) => {
-        const compactBrand = this.normalizeCompactText(brand);
-        const compactMenuName = this.normalizeCompactText(
-          stripPublicMenuSourcePrefix(menu.name),
-        );
-
-        return (
-          isFoodImageBrandMatch(brand, menu.brand ?? '') ||
-          compactMenuName.startsWith(compactBrand)
-        );
-      })
-      .map((menu) => ({
-        menu,
-        score: this.calculateRecognitionCandidateScore(
-          prediction.foodName,
-          menu,
-          prediction.brand,
-          null,
-        ),
-      }))
-      .sort((left, right) => right.score - left.score)
-      .slice(0, limit)
-      .map(({ menu }) => menu);
-  }
-
-  private async getFoodImageVectorCandidateGroupsByPrediction(
-    userId: number,
-    predictions: FoodImagePrediction[],
-    context: Pick<
-      MenuBoardRecognitionResult,
-      'inferredBrand' | 'inferredCategory'
-    >,
-    timing?: ChatTimingLogger,
-  ): Promise<FoodImageCandidateGroup[]> {
-    if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
-      timing?.mark('food_image_one_to_one_vector_groups_skipped', {
-        predictionCount: predictions.length,
-      });
-      return [];
-    }
-
-    const menuVectorService = this.menuVectorService;
-    const perFoodLimit = this.getFoodImagePerFoodVectorCandidateLimit();
-
-    try {
-      const groups = await this.mapWithConcurrency(
-        predictions.map((prediction, index) => ({ prediction, index })),
-        this.getFoodImageVectorMatchConcurrency(),
-        async ({ prediction, index }) => {
-          const vectorResults = await menuVectorService.searchMenusByText(
-            this.buildSingleFoodImageMatchVectorQuery(prediction),
-            {
-              userId,
-              limit: perFoodLimit,
-            },
-          );
-          const menuIds = vectorResults.map((result) => result.menuId);
-          const candidates = await this.getRecognitionCandidatesByIds(
-            userId,
-            menuIds,
-          );
-          const compatibleCandidates = this.mergeRecognitionCandidatesById(
-            candidates,
-          ).filter((candidate) =>
-            this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
-          );
-
-          return {
-            foodIndex: index,
-            foodName: prediction.foodName,
-            candidates: compatibleCandidates.slice(0, perFoodLimit),
-          };
-        },
-      );
-      const nonEmptyGroups = groups.filter(
-        (group) => group.candidates.length > 0,
-      );
-      timing?.mark('food_image_one_to_one_vector_groups_completed', {
-        predictionCount: predictions.length,
-        groupCount: nonEmptyGroups.length,
-        perFoodLimit,
-      });
-
-      return nonEmptyGroups;
-    } catch (error) {
-      console.warn('[CHAT] food image one-to-one vector groups failed', {
-        message: error instanceof Error ? error.message : String(error),
-      });
-      timing?.mark('food_image_one_to_one_vector_groups_failed', {
-        predictionCount: predictions.length,
-      });
-
-      return [];
-    }
-  }
-
-  private getFoodImageLocalCandidateGroupsByPrediction(
-    predictionEntries: Array<{
-      prediction: FoodImagePrediction;
-      index: number;
-    }>,
-    menus: MenuRecognitionCandidate[],
-    context: Pick<
-      MenuBoardRecognitionResult,
-      'inferredBrand' | 'inferredCategory'
-    >,
-  ): FoodImageCandidateGroup[] {
-    const perFoodLimit = this.getFoodImagePerFoodVectorCandidateLimit();
-
-    return predictionEntries
-      .map(({ prediction, index }) => ({
-        foodIndex: index,
-        foodName: prediction.foodName,
-        candidates: this.findTopRecognitionCandidates(
-          prediction.foodName,
-          menus,
-          prediction.brand ?? context.inferredBrand,
-          context.inferredCategory,
-          perFoodLimit,
-          32,
-        )
-          .map((candidate) => candidate.menu)
-          .filter((candidate) =>
-            this.isFoodImageDishTypeCompatible(prediction.foodName, candidate),
-          ),
-      }))
-      .filter((group) => group.candidates.length > 0);
-  }
-
-  private buildSingleFoodImageMatchVectorQuery(
-    prediction: FoodImagePrediction,
-  ): string {
-    const brandLine = prediction.brand
-      ? `이미지에서 읽힌 브랜드/라벨: ${prediction.brand}`
-      : '이미지에서 읽힌 브랜드/라벨: 없음';
-    const productLine = prediction.productName
-      ? `이미지에서 읽힌 정확한 제품명: ${prediction.productName}`
-      : '이미지에서 읽힌 정확한 제품명: 없음';
-    const searchIntent = prediction.brand
-      ? `${prediction.brand} ${prediction.productName ?? prediction.foodName}`
-      : prediction.foodName;
-
-    return [
-      `음식 사진에서 인식된 음식명: ${prediction.foodName}`,
-      productLine,
-      brandLine,
-      `검색 의도: ${searchIntent}`,
-      this.getFoodImageStrictDishTypeToken(prediction.foodName)
-        ? `반드시 보존해야 하는 음식 형태: ${this.getFoodImageStrictDishTypeToken(
-            prediction.foodName,
-          )}`
-        : '음식 형태가 명확하지 않으면 음식명 의미가 가장 가까운 메뉴를 찾는다.',
-      prediction.brand
-        ? '브랜드가 확실히 읽힌 경우 같은 브랜드의 DB 메뉴를 우선한다.'
-        : '브랜드가 없으면 음식명/의미가 가장 가까운 DB 메뉴를 찾는다.',
-      '가공식품명보다 실제 음식명과 같은 메뉴를 우선하되, 포장/라벨 브랜드가 보이면 해당 브랜드 제품을 우선한다.',
-    ].join('\n');
-  }
-
-  private getFoodImageStrictDishTypeToken(foodName: string): string | null {
-    const compactFoodName = this.normalizeCompactText(foodName);
-
-    return (
-      FOOD_IMAGE_STRICT_DISH_TYPE_TOKENS.find((token) =>
-        compactFoodName.includes(token),
-      ) ?? null
-    );
-  }
-
-  private isFoodImageDishTypeCompatible(
-    foodName: string,
-    menu: MenuRecognitionCandidate,
-  ): boolean {
-    if (!isGenericSweetPotatoCandidateCompatible(foodName, menu.name)) {
-      return false;
-    }
-
-    const requiredDishType = this.getFoodImageStrictDishTypeToken(foodName);
-
-    if (!requiredDishType) {
-      return true;
-    }
-
-    const menuName = this.normalizeCompactText(menu.name);
-    const menuCategory = this.normalizeCompactText(menu.category ?? '');
-
-    return (
-      menuName.includes(requiredDishType) ||
-      menuCategory.includes(requiredDishType)
-    );
-  }
-
-  private logFoodImageCandidateGroups(
-    candidateGroups: FoodImageCandidateGroup[],
-  ): void {
-    console.log(
-      '[CHAT] food image DB candidate groups',
-      JSON.stringify({
-        groups: candidateGroups.map((group) => ({
-          foodIndex: group.foodIndex,
-          foodName: group.foodName,
-          requiredDishType: this.getFoodImageStrictDishTypeToken(
-            group.foodName,
-          ),
-          candidates: group.candidates.map((candidate) => ({
-            menuId: candidate.id,
-            menuName: candidate.name,
-            menuBrand: candidate.brand,
-            menuCategory: candidate.category,
-          })),
-          preferredCandidateId: group.preferredCandidateId ?? null,
-        })),
-      }),
-    );
-  }
-
-  private mergeRecognitionCandidatesById(
-    menus: MenuRecognitionCandidate[],
-  ): MenuRecognitionCandidate[] {
-    const menuMap = new Map<number, MenuRecognitionCandidate>();
-
-    menus.forEach((menu) => {
-      if (!menuMap.has(menu.id)) {
-        menuMap.set(menu.id, menu);
-      }
-    });
-
-    return Array.from(menuMap.values());
-  }
-
-  private async matchMenuBoardRecognizedTextsToDbMenus(
-    userId: number,
-    recognition: MenuBoardRecognitionResult,
-    menus: MenuRecognitionCandidate[],
-    timing?: ChatTimingLogger,
-  ): Promise<MenuRecognitionCandidate[]> {
-    const texts = recognition.recognizedTexts
-      .map((text) => text.trim())
-      .filter((text) => text.length >= 2);
-
-    if (texts.length === 0) {
-      timing?.mark('menu_board_one_to_one_match_skipped', {
-        textCount: texts.length,
-      });
-      return [];
-    }
-
-    const vectorMatches =
-      await this.matchMenuBoardRecognizedTextsToDbMenusByVector(
-        userId,
-        texts,
-        recognition,
-        timing,
-      );
-    const vectorMatchMap = new Map(
-      vectorMatches.map((match) => [
-        this.normalizeCompactText(match.inputText),
-        match.menu,
-      ]),
-    );
-    const localMatches = texts
-      .filter((text) => !vectorMatchMap.has(this.normalizeCompactText(text)))
-      .map((text) => {
-        const matchText = this.normalizeMenuBoardTextForMatching(
-          text,
-          recognition,
-        );
-
-        return {
-          inputText: text,
-          menu: this.findBestRecognitionCandidateFromTexts(
-            [matchText, text],
-            menus,
-            recognition.inferredBrand,
-            recognition.inferredCategory,
-            58,
-          ),
-        };
-      })
-      .filter(
-        (match): match is RecognitionTextMenuMatch => match.menu !== null,
-      );
-    timing?.mark('menu_board_local_one_to_one_match_completed', {
-      matchedCount: localMatches.length,
-    });
-    const localMatchMap = new Map(
-      localMatches.map((match) => [
-        this.normalizeCompactText(match.inputText),
-        match.menu,
-      ]),
-    );
-    const matchedById = new Map<number, MenuRecognitionCandidate>();
-
-    texts.forEach((text) => {
-      const key = this.normalizeCompactText(text);
-      const matched = vectorMatchMap.get(key) ?? localMatchMap.get(key);
-
-      if (!matched || matchedById.has(matched.id)) {
-        return;
-      }
-
-      matchedById.set(matched.id, {
-        ...matched,
-        brand: matched.brand ?? recognition.inferredBrand ?? null,
-        category: matched.category ?? recognition.inferredCategory ?? null,
-      });
-    });
-
-    return Array.from(matchedById.values()).slice(0, 30);
-  }
-
-  private async matchMenuBoardRecognizedTextsToDbMenusByVector(
-    userId: number,
-    texts: string[],
-    recognition: MenuBoardRecognitionResult,
-    timing?: ChatTimingLogger,
-  ): Promise<RecognitionTextMenuMatch[]> {
-    if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
-      timing?.mark('menu_board_one_to_one_vector_match_skipped', {
-        textCount: texts.length,
-      });
-      return [];
-    }
-
-    const menuVectorService = this.menuVectorService;
-
-    try {
-      const matches = await this.mapWithConcurrency(
-        texts,
-        this.getMenuBoardVectorMatchConcurrency(),
-        async (text) => {
-          const matchText = this.normalizeMenuBoardTextForMatching(
-            text,
-            recognition,
-          );
-          const vectorResults = await menuVectorService.searchMenusByText(
-            this.buildSingleMenuBoardMatchVectorQuery(text, recognition),
-            {
-              userId,
-              limit: this.getMenuBoardPerTextVectorCandidateLimit(),
-            },
-          );
-          const menuIds = vectorResults.map((result) => result.menuId);
-          const candidates = await this.getRecognitionCandidatesByIds(
-            userId,
-            menuIds,
-          );
-          const matchedMenu = this.findBestRecognitionCandidateFromTexts(
-            [matchText, text],
-            candidates,
-            recognition.inferredBrand,
-            recognition.inferredCategory,
-            25,
-          );
-
-          return matchedMenu ? { inputText: text, menu: matchedMenu } : null;
-        },
-      );
-      const matched = matches.filter(
-        (match): match is RecognitionTextMenuMatch => match !== null,
-      );
-      timing?.mark('menu_board_one_to_one_vector_match_completed', {
-        textCount: texts.length,
-        matchedCount: matched.length,
-      });
-
-      return matched;
-    } catch (error) {
-      console.warn('[CHAT] menu board one-to-one vector match failed', {
-        message: error instanceof Error ? error.message : String(error),
-      });
-      timing?.mark('menu_board_one_to_one_vector_match_failed', {
-        textCount: texts.length,
-      });
-
-      return [];
-    }
-  }
-
-  private buildSingleMenuBoardMatchVectorQuery(
-    text: string,
-    recognition: MenuBoardRecognitionResult,
-  ): string {
-    const matchText = this.normalizeMenuBoardTextForMatching(text, recognition);
-    const parts = [
-      `메뉴판 OCR 메뉴명: ${text}`,
-      matchText !== text ? `정제 메뉴명: ${matchText}` : null,
-      '이 메뉴명과 이름/의미가 가장 가까운 DB 메뉴를 찾는다.',
-      '매장명, 브랜드명, 세트/정식/단품 같은 판매 형태 표현보다 실제 음식명을 우선한다.',
-      recognition.inferredBrand
-        ? `메뉴판 추정 브랜드: ${recognition.inferredBrand}`
-        : null,
-      recognition.inferredCategory
-        ? `메뉴판 추정 카테고리: ${recognition.inferredCategory}`
-        : null,
-    ];
-
-    return parts.filter((value): value is string => !!value).join('\n');
-  }
-
-  private buildVectorRecognitionQuery(
-    texts: string[],
-    context: Pick<
-      MenuBoardRecognitionResult,
-      'inferredBrand' | 'inferredCategory'
-    >,
-  ): string {
-    const expandedTexts = this.expandRecognitionTexts(texts);
-    const parts = [
-      `인식된 음식/메뉴 텍스트: ${expandedTexts.join(', ')}`,
-      context.inferredBrand ? `추정 브랜드: ${context.inferredBrand}` : null,
-      context.inferredCategory
-        ? `추정 카테고리: ${context.inferredCategory}`
-        : null,
-    ];
-
-    return parts.filter((value): value is string => !!value).join('\n');
-  }
-
-  private async getRecognitionCandidatesByIds(
-    userId: number,
-    menuIds: number[],
-  ): Promise<MenuRecognitionCandidate[]> {
-    if (menuIds.length === 0) {
-      return [];
-    }
-
-    const rows = await this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoin('menu.user', 'user')
-      .select([
-        'user.id AS ownerUserId',
-        'menu.id AS id',
-        'menu.name AS name',
-        'menu.brand AS brand',
-        'menu.category AS category',
-      ])
-      .where('menu.id IN (:...menuIds)', { menuIds })
-      .andWhere(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .getRawMany<MenuRecognitionCandidate>();
-    const candidates = rows.map((candidate) => ({
-      ...candidate,
-      id: Number(candidate.id),
-    }));
-    const candidateMap = new Map(
-      candidates.map((candidate) => [candidate.id, candidate]),
-    );
-
-    return menuIds
-      .map((menuId) => candidateMap.get(menuId))
-      .filter(
-        (candidate): candidate is MenuRecognitionCandidate => !!candidate,
-      );
-  }
-
-  private buildRecognitionCandidatePool(
-    texts: string[],
-    menus: MenuRecognitionCandidate[],
-    context: Pick<
-      MenuBoardRecognitionResult,
-      'inferredBrand' | 'inferredCategory'
-    >,
-    limit: number,
-    perTextLimit: number,
-    minScore: number,
-  ): MenuRecognitionCandidate[] {
-    const scoredById = new Map<number, RecognitionCandidateScore>();
-
-    this.expandRecognitionTexts(texts).forEach((text) => {
-      this.findTopRecognitionCandidates(
-        text,
-        menus,
-        context.inferredBrand,
-        context.inferredCategory,
-        perTextLimit,
-        minScore,
-      ).forEach((candidate) => {
-        const current = scoredById.get(candidate.menu.id);
-
-        if (!current || candidate.score > current.score) {
-          scoredById.set(candidate.menu.id, {
-            menu: {
-              ...candidate.menu,
-              brand: candidate.menu.brand ?? context.inferredBrand ?? null,
-              category:
-                candidate.menu.category ?? context.inferredCategory ?? null,
-            },
-            score: candidate.score,
-          });
-        }
-      });
-    });
-
-    return Array.from(scoredById.values())
-      .sort((a, b) => b.score - a.score)
-      .map(({ menu }) => menu)
-      .slice(0, limit);
-  }
-
-  private expandRecognitionTexts(texts: string[]): string[] {
-    const expanded = new Set<string>();
-
-    texts.forEach((text) => {
-      const normalized = text.trim();
-      if (!normalized) {
-        return;
-      }
-
-      expanded.add(normalized);
-
-      const compact = this.normalizeCompactText(normalized);
-      if (compact.includes('햄버거') || compact.includes('버거')) {
-        expanded.add('버거');
-        expanded.add(normalized.replace(/햄버거/g, '버거'));
-      }
-      if (compact.includes('베이컨')) {
-        expanded.add('베이컨');
-        expanded.add('샌드위치');
-        expanded.add('서브');
-        expanded.add('비엘티');
-        expanded.add('BLT');
-      }
-      if (compact.includes('샌드위치') || compact.includes('샌드')) {
-        expanded.add('샌드위치');
-        expanded.add('서브');
-      }
-      if (
-        compact.includes('감자튀김') ||
-        compact.includes('프렌치프라이') ||
-        compact.includes('후렌치후라이') ||
-        compact.includes('프라이')
-      ) {
-        expanded.add('감자');
-        expanded.add('프라이');
-        expanded.add('후렌치후라이');
-      }
-      if (compact.includes('치킨')) {
-        expanded.add('치킨');
-      }
-      if (compact.includes('샐러드')) {
-        expanded.add('샐러드');
-      }
-      if (compact.includes('콜라') || compact.includes('음료')) {
-        expanded.add('콜라');
-        expanded.add('음료');
-      }
-    });
-
-    return Array.from(expanded);
-  }
-
-  private isLikelyStandaloneIngredient(value: string): boolean {
-    const compact = this.normalizeCompactText(value);
-    return [
-      '베이컨',
-      '치즈',
-      '토마토',
-      '양상추',
-      '상추',
-      '양파',
-      '피클',
-      '소스',
-      '마요네즈',
-      '마요',
-      '햄',
-    ].includes(compact);
-  }
-
   private async rematchMenuBoardCandidatesWithGemini(
     recognition: MenuBoardRecognitionResult,
     candidates: MenuRecognitionCandidate[],
@@ -6844,356 +5707,6 @@ ${JSON.stringify(candidates)}
       });
       return [];
     }
-  }
-
-  private async rematchFoodImageMenusWithGemini(
-    file: Express.Multer.File,
-    predictions: FoodImagePrediction[],
-    candidateGroups: FoodImageCandidateGroup[],
-    timing?: ChatTimingLogger,
-  ): Promise<RecognizedFoodImageMenu[]> {
-    if (predictions.length === 0 || candidateGroups.length === 0) {
-      timing?.mark('food_image_gemini_rematch_skipped', {
-        predictionCount: predictions.length,
-        groupCount: candidateGroups.length,
-      });
-      return [];
-    }
-    const candidateMap = new Map<number, MenuRecognitionCandidate>();
-    const candidateIdsByFoodIndex = new Map<number, Set<number>>();
-    const preferredCandidateIdsByFoodIndex = new Map<number, number>();
-
-    candidateGroups.forEach((group) => {
-      const candidateIds = new Set<number>();
-      group.candidates.forEach((candidate) => {
-        candidateMap.set(candidate.id, candidate);
-        candidateIds.add(candidate.id);
-      });
-      candidateIdsByFoodIndex.set(group.foodIndex, candidateIds);
-      if (group.preferredCandidateId !== undefined) {
-        preferredCandidateIdsByFoodIndex.set(
-          group.foodIndex,
-          group.preferredCandidateId,
-        );
-      }
-    });
-
-    const prompt = `
-음식 사진, 1차 인식 결과, 서버가 음식별로 추린 후보 메뉴를 함께 보고 각 음식에 가장 잘 맞는 menu_id를 골라 JSON object로 반환해.
-
-규칙:
-- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-- food_index는 입력 detected_foods의 index 값을 그대로 사용해
-- 각 food_index는 자기 candidate_menus 안에 있는 menu_id 중에서만 골라
-- 다른 food_index의 후보 menu_id를 가져와서 쓰지 마
-- 후보 목록에 없는 메뉴 id는 절대 반환하지 마
-${FOOD_IMAGE_REMATCH_PROMPT_RULES}
-- 음식 사진의 시각 정보, 1차 food_name, 해당 food_index의 후보 메뉴명/브랜드/카테고리를 함께 비교해
-- detected_foods.brand가 null이 아니면 이미지에서 읽힌 브랜드/라벨이므로 후보 메뉴의 브랜드/메뉴명과 강하게 비교해 같은 브랜드 제품을 우선해
-- detected_foods.product_name과 brand가 모두 있고 둘이 후보 메뉴의 제품명과 브랜드에 정확히 일치하면 해당 후보를 최우선으로 선택해
-- detected_foods.food_name이 완성 음식 형태를 포함하면 후보 메뉴도 같은 형태여야 해. 예: 김치볶음밥 -> 김치볶음은 불일치, 참치김밥 -> 참치샐러드는 불일치, 된장찌개 -> 된장국은 불일치
-- food_name이 일반적인 "계란 후라이" 또는 "달걀 후라이"이고 냉동 제품이나 패티라는 시각적 단서가 없으면 "(식약처_음식) 달걀후라이"를 우선해
-- "냉동 계란 후라이"나 "계란후라이(패티용)"은 포장·냉동 제품 또는 패티 형태가 명확할 때만 선택해
-- food_name이 일반적인 "밥", "흰밥", "쌀밥", "백미밥"이고 포장이나 브랜드 단서가 없으면 "(식약처_음식) 밥"을 우선해
-- "따끈한 흰쌀밥 득템" 같은 상품 메뉴는 해당 포장이나 브랜드가 사진에서 명확할 때만 선택해
-- food_name이 일반적인 "소금", "정제염", "식염", "소금장", "소금 양념장"이면 "(식약처_가공) 정제염"(menu_id 219056)을 우선해
-- 맛소금, 죽염, 트러플소금처럼 종류가 명시된 경우에는 정제염으로 강제하지 마
-- 한 음식에 확실히 맞는 후보가 없으면 그 음식은 제외해
-- 같은 메뉴가 여러 음식에 보이면 가장 대표적인 food_index 하나만 같은 menu_id에 매칭해
-
-detected_foods:
-${JSON.stringify(
-  predictions.map((prediction, index) => ({
-    index,
-    food_name: prediction.foodName,
-    product_name: prediction.productName ?? null,
-    brand: prediction.brand,
-    confidence: prediction.confidence,
-  })),
-)}
-
-음식별 후보 메뉴:
-${JSON.stringify(
-  candidateGroups.map((group) => ({
-    food_index: group.foodIndex,
-    food_name: group.foodName,
-    candidate_menus: group.candidates.map(
-      ({ id, name, brand, category, unit, ownerUserId, frequentRank }) => ({
-        id,
-        name,
-        brand,
-        category,
-        unit,
-        source:
-          ownerUserId != null
-            ? 'personal'
-            : frequentRank !== undefined
-              ? 'frequent'
-              : 'public',
-      }),
-    ),
-  })),
-)}
-
-반환 shape:
-{
-  "detected_foods": [
-    {
-      "food_index": 0,
-      "menu_id": 1,
-      "confidence": 0.86
-    }
-  ]
-}
-`.trim();
-
-    try {
-      const data = await this.callGeminiJsonWithImage(prompt, file);
-      timing?.mark('food_image_gemini_rematch_request_completed', {
-        predictionCount: predictions.length,
-        groupCount: candidateGroups.length,
-        candidateCount: candidateMap.size,
-      });
-      const detectedFoods: unknown[] = Array.isArray(data?.detected_foods)
-        ? data.detected_foods
-        : [];
-
-      const recognizedFoods = detectedFoods
-        .map((value) =>
-          this.normalizeRematchedFoodImageMenu(
-            value,
-            predictions,
-            candidateMap,
-            candidateIdsByFoodIndex,
-            preferredCandidateIdsByFoodIndex,
-          ),
-        )
-        .filter((food): food is RecognizedFoodImageMenu => food !== null);
-
-      return this.deduplicateRecognizedFoodImageMenus(recognizedFoods);
-    } catch (error) {
-      if (isRequestCancellationError(error)) {
-        throw error;
-      }
-      timing?.mark('food_image_gemini_rematch_failed', {
-        predictionCount: predictions.length,
-        groupCount: candidateGroups.length,
-      });
-      return [];
-    }
-  }
-
-  private deduplicateRecognizedFoodImageMenus(
-    foods: RecognizedFoodImageMenu[],
-  ): RecognizedFoodImageMenu[] {
-    const foodMap = new Map<number, RecognizedFoodImageMenu>();
-
-    foods.forEach((food) => {
-      const existing = foodMap.get(food.id);
-
-      if (!existing) {
-        foodMap.set(food.id, food);
-        return;
-      }
-
-      const existingConfidence = existing.confidence ?? -1;
-      const currentConfidence = food.confidence ?? -1;
-
-      if (currentConfidence > existingConfidence) {
-        foodMap.set(food.id, food);
-      }
-    });
-
-    return Array.from(foodMap.values());
-  }
-
-  private normalizeRematchedFoodImageMenu(
-    value: unknown,
-    predictions: FoodImagePrediction[],
-    candidateMap: Map<number, MenuRecognitionCandidate>,
-    candidateIdsByFoodIndex: Map<number, Set<number>>,
-    preferredCandidateIdsByFoodIndex: Map<number, number> = new Map(),
-  ): RecognizedFoodImageMenu | null {
-    if (!value || typeof value !== 'object') {
-      return null;
-    }
-
-    const item = value as Record<string, unknown>;
-    const foodIndex = this.asNullableNumber(item.food_index);
-    const menuId = this.asNullableNumber(item.menu_id);
-
-    if (
-      foodIndex === null ||
-      menuId === null ||
-      !Number.isInteger(foodIndex) ||
-      !Number.isInteger(menuId) ||
-      foodIndex < 0 ||
-      foodIndex >= predictions.length ||
-      !candidateMap.has(menuId) ||
-      !candidateIdsByFoodIndex.get(foodIndex)?.has(menuId)
-    ) {
-      return null;
-    }
-
-    const prediction = predictions[foodIndex];
-    const exactProductMenuId = preferredCandidateIdsByFoodIndex.get(foodIndex);
-    const exactProductMenu = exactProductMenuId
-      ? candidateMap.get(exactProductMenuId)
-      : undefined;
-    const preferredMenu = prediction.brand
-      ? undefined
-      : findPreferredGenericFoodImageCandidate(
-          prediction.foodName,
-          Array.from(candidateIdsByFoodIndex.get(foodIndex) ?? [])
-            .map((candidateId) => candidateMap.get(candidateId))
-            .filter(
-              (candidate): candidate is MenuRecognitionCandidate => !!candidate,
-            ),
-        );
-    const matchedMenu = preferUserFoodImageMenu(
-      exactProductMenu ?? preferredMenu ?? candidateMap.get(menuId)!,
-      Array.from(candidateIdsByFoodIndex.get(foodIndex) ?? [])
-        .map((id) => candidateMap.get(id)!)
-        .filter(Boolean),
-    );
-    if (!this.isFoodImageDishTypeCompatible(prediction.foodName, matchedMenu)) {
-      return null;
-    }
-    const confidence = this.asNullableNumber(item.confidence);
-
-    return {
-      ...matchedMenu,
-      foodIndex,
-      confidence:
-        confidence === null
-          ? prediction.confidence
-          : this.roundNormalizedCoordinate(confidence),
-      position: prediction.position,
-      estimatedQuantity: prediction.estimatedQuantity,
-      estimatedQuantityUnit: Number(matchedMenu.unit) === 1 ? 'ml' : 'g',
-      quantityConfidence: prediction.quantityConfidence,
-    };
-  }
-
-  private findTopRecognitionCandidates(
-    inputName: string,
-    menus: MenuRecognitionCandidate[],
-    inferredBrand: string | null,
-    inferredCategory: string | null,
-    limit: number,
-    minScore: number,
-  ): RecognitionCandidateScore[] {
-    return menus
-      .map((menu) => ({
-        menu,
-        score: this.calculateRecognitionCandidateScore(
-          inputName,
-          menu,
-          inferredBrand,
-          inferredCategory,
-        ),
-      }))
-      .filter(({ score }) => score >= minScore)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
-  }
-
-  private findBestRecognitionCandidate(
-    inputName: string,
-    menus: MenuRecognitionCandidate[],
-    inferredBrand: string | null,
-    inferredCategory: string | null,
-    minScore: number,
-  ): MenuRecognitionCandidate | null {
-    const [bestMatch] = menus
-      .map((menu) => ({
-        menu,
-        score: this.calculateRecognitionCandidateScore(
-          inputName,
-          menu,
-          inferredBrand,
-          inferredCategory,
-        ),
-      }))
-      .sort((a, b) => b.score - a.score);
-
-    return bestMatch && bestMatch.score >= minScore ? bestMatch.menu : null;
-  }
-
-  private findBestRecognitionCandidateFromTexts(
-    inputNames: string[],
-    menus: MenuRecognitionCandidate[],
-    inferredBrand: string | null,
-    inferredCategory: string | null,
-    minScore: number,
-  ): MenuRecognitionCandidate | null {
-    const normalizedInputs = Array.from(
-      new Set(
-        inputNames
-          .map((inputName) => inputName.trim())
-          .filter((inputName) => inputName.length >= 2),
-      ),
-    );
-
-    if (normalizedInputs.length === 0) {
-      return null;
-    }
-
-    const [bestMatch] = menus
-      .flatMap((menu) =>
-        normalizedInputs.map((inputName) => ({
-          menu,
-          score: this.calculateRecognitionCandidateScore(
-            inputName,
-            menu,
-            inferredBrand,
-            inferredCategory,
-          ),
-        })),
-      )
-      .sort((a, b) => b.score - a.score);
-
-    return bestMatch && bestMatch.score >= minScore ? bestMatch.menu : null;
-  }
-
-  private normalizeMenuBoardTextForMatching(
-    text: string,
-    recognition: MenuBoardRecognitionResult,
-  ): string {
-    const brandTokens = (recognition.inferredBrand ?? '')
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter((token) => token.length >= 2);
-    let normalized = text.replace(/[()[\]{}]/g, ' ');
-
-    brandTokens.forEach((token) => {
-      normalized = normalized.replace(
-        new RegExp(this.escapeRegExp(token), 'gi'),
-        ' ',
-      );
-    });
-
-    normalized = normalized
-      .replace(/\b(?:set)\b/gi, ' ')
-      .replace(/(?:세트|정식|단품|메뉴|대표|추천|best)/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    return normalized.length >= 2 ? normalized : text.trim();
-  }
-
-  private calculateRecognitionCandidateScore(
-    inputName: string,
-    menu: MenuRecognitionCandidate,
-    inferredBrand: string | null,
-    inferredCategory: string | null,
-  ): number {
-    return calculateFoodImageCandidateScore(
-      inputName,
-      menu,
-      inferredBrand,
-      inferredCategory,
-    );
   }
 
   private normalizeCompactText(value: string): string {
@@ -8420,21 +6933,40 @@ ${JSON.stringify(this.toLightweightChatContext(chatContext))}
       : null;
 
     if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
-      const candidateMenus = await this.getAllCandidateMenus(userId);
+      // 가벼운 공용 메뉴 캐시(+ 내 메뉴)로 점수를 매기고, 고른 메뉴만 MenuEntity로 읽는다.
+      const candidateMenus =
+        await this.foodImageMenuCatalog.getCandidateMenus(userId);
 
       if (candidateMenus.length === 0) {
         return [];
       }
 
+      const useRefinedSalt = (candidate: GenericMenuCandidate) =>
+        isGenericPlainSaltName(candidate.name) && !!preferredRefinedSaltMenu;
+      const selectedMenuIds = genericCandidates.map((candidate) =>
+        useRefinedSalt(candidate)
+          ? null
+          : (this.findMostSimilarGenericCandidateMenu(candidate, candidateMenus)
+              ?.id ?? null),
+      );
+      const selectedMenus = await this.getMenusByIds(
+        userId,
+        Array.from(
+          new Set(selectedMenuIds.filter((id): id is number => id !== null)),
+        ),
+      );
+      const selectedMenuMap = new Map(
+        selectedMenus.map((menu) => [menu.id, menu]),
+      );
+
       return genericCandidates
-        .map((candidate) => {
-          const menu =
-            isGenericPlainSaltName(candidate.name) && preferredRefinedSaltMenu
-              ? preferredRefinedSaltMenu
-              : this.findMostSimilarGenericCandidateMenu(
-                  candidate,
-                  candidateMenus,
-                );
+        .map((candidate, index) => {
+          const selectedMenuId = selectedMenuIds[index];
+          const menu = useRefinedSalt(candidate)
+            ? preferredRefinedSaltMenu
+            : selectedMenuId === null
+              ? null
+              : selectedMenuMap.get(selectedMenuId);
 
           return menu
             ? {
@@ -9283,14 +7815,14 @@ ${JSON.stringify(
     );
   }
 
-  private findMostSimilarGenericCandidateMenu(
+  private findMostSimilarGenericCandidateMenu<T extends SimilarityMenu>(
     candidate: GenericMenuCandidate,
-    menus: MenuEntity[],
-  ): MenuEntity | null {
+    menus: T[],
+  ): T | null {
     return (
       this.getGenericCandidateSearchNames(candidate)
         .map((searchName) => this.findMostSimilarMenu(searchName, menus))
-        .find((menu): menu is MenuEntity => !!menu) ?? null
+        .find((menu): menu is T => !!menu) ?? null
     );
   }
 
@@ -9904,103 +8436,6 @@ ${JSON.stringify(
     return Math.max(1, Math.floor(parsed));
   }
 
-  private getComparisonVectorCandidateLimit(): number {
-    const parsed = Number(process.env.VECTOR_COMPARISON_CANDIDATE_LIMIT ?? 20);
-
-    if (!Number.isFinite(parsed)) {
-      return 20;
-    }
-
-    return Math.max(5, Math.min(Math.floor(parsed), 50));
-  }
-
-  private getMenuBoardVectorCandidateLimit(): number {
-    return this.getEnvNumberInRange(
-      'MENU_BOARD_VECTOR_CANDIDATE_LIMIT',
-      40,
-      10,
-      100,
-    );
-  }
-
-  private getMenuBoardRematchCandidateLimit(): number {
-    return this.getEnvNumberInRange(
-      'MENU_BOARD_REMATCH_CANDIDATE_LIMIT',
-      40,
-      10,
-      100,
-    );
-  }
-
-  private getMenuBoardPerTextVectorCandidateLimit(): number {
-    return this.getEnvNumberInRange(
-      'MENU_BOARD_PER_TEXT_VECTOR_CANDIDATE_LIMIT',
-      20,
-      5,
-      50,
-    );
-  }
-
-  private getMenuBoardVectorMatchConcurrency(): number {
-    return this.getEnvNumberInRange(
-      'MENU_BOARD_VECTOR_MATCH_CONCURRENCY',
-      4,
-      1,
-      8,
-    );
-  }
-
-  private getFoodImageVectorCandidateLimit(): number {
-    return this.getEnvNumberInRange(
-      'FOOD_IMAGE_VECTOR_CANDIDATE_LIMIT',
-      50,
-      10,
-      100,
-    );
-  }
-
-  private getFoodImagePerFoodVectorCandidateLimit(): number {
-    return this.getEnvNumberInRange(
-      'FOOD_IMAGE_PER_FOOD_VECTOR_CANDIDATE_LIMIT',
-      8,
-      3,
-      20,
-    );
-  }
-
-  private getFoodImageVectorMatchConcurrency(): number {
-    return this.getEnvNumberInRange(
-      'FOOD_IMAGE_VECTOR_MATCH_CONCURRENCY',
-      4,
-      1,
-      8,
-    );
-  }
-
-  private getFoodImageRematchCandidateLimit(): number {
-    return this.getEnvNumberInRange(
-      'FOOD_IMAGE_REMATCH_CANDIDATE_LIMIT',
-      50,
-      10,
-      100,
-    );
-  }
-
-  private getEnvNumberInRange(
-    key: string,
-    fallback: number,
-    min: number,
-    max: number,
-  ): number {
-    const parsed = Number(process.env[key] ?? fallback);
-
-    if (!Number.isFinite(parsed)) {
-      return fallback;
-    }
-
-    return Math.max(min, Math.min(Math.floor(parsed), max));
-  }
-
   private getGeminiGenericMenuCandidateLimit(): number {
     const parsed = Number(
       process.env.GEMINI_GENERIC_MENU_CANDIDATE_LIMIT ?? 10,
@@ -10097,166 +8532,6 @@ ${JSON.stringify(
     }
 
     return Math.max(10, Math.min(Math.floor(parsed), 50));
-  }
-
-  private async getAllCandidateMenus(userId: number): Promise<MenuEntity[]> {
-    return await this.menuRepository
-      .createQueryBuilder('menu')
-      .leftJoinAndSelect('menu.user', 'user')
-      .where(
-        new Brackets((qb) => {
-          qb.where('user.id IS NULL').orWhere('user.id = :userId', { userId });
-        }),
-      )
-      .andWhere('menu.is_deleted = :isDeleted', { isDeleted: 0 })
-      .getMany();
-  }
-
-  private async getComparisonCandidateMenus(
-    userId: number,
-    menuNames: string[],
-    timing?: ChatTimingLogger,
-  ): Promise<MenuEntity[]> {
-    const vectorMatches = await this.getComparisonCandidateMenusByVector(
-      userId,
-      menuNames,
-      timing,
-    );
-    const vectorMatchMap = new Map(
-      vectorMatches.map((match) => [
-        this.normalizeComparisonMenuKey(match.inputMenuName),
-        match.menu,
-      ]),
-    );
-
-    if (vectorMatchMap.size >= menuNames.length) {
-      return this.toOrderedUniqueComparisonMenus(menuNames, vectorMatchMap);
-    }
-
-    const candidateMenus = await this.getAllCandidateMenus(userId);
-
-    if (candidateMenus.length === 0) {
-      return this.toOrderedUniqueComparisonMenus(menuNames, vectorMatchMap);
-    }
-
-    const localMatchMap = new Map<string, MenuEntity>();
-
-    menuNames.forEach((menuName) => {
-      const key = this.normalizeComparisonMenuKey(menuName);
-
-      if (vectorMatchMap.has(key)) {
-        return;
-      }
-
-      const matchedMenu = this.findBestComparisonMenuAboveThreshold(
-        menuName,
-        candidateMenus,
-        45,
-      );
-
-      if (matchedMenu) {
-        localMatchMap.set(key, matchedMenu);
-      }
-    });
-
-    timing?.mark('comparison_local_match_completed', {
-      matchedCount: localMatchMap.size,
-    });
-
-    return this.toOrderedUniqueComparisonMenus(
-      menuNames,
-      vectorMatchMap,
-      localMatchMap,
-    );
-  }
-
-  private async getComparisonCandidateMenusByVector(
-    userId: number,
-    menuNames: string[],
-    timing?: ChatTimingLogger,
-  ): Promise<ComparisonMenuMatch[]> {
-    if (!this.isVectorSearchEnabled() || !this.menuVectorService) {
-      timing?.mark('comparison_vector_match_skipped');
-      return [];
-    }
-
-    const matchedMenus: ComparisonMenuMatch[] = [];
-
-    try {
-      for (const menuName of menuNames) {
-        const vectorResults = await this.menuVectorService.searchMenusByText(
-          this.buildComparisonVectorQuery(menuName),
-          {
-            userId,
-            limit: this.getComparisonVectorCandidateLimit(),
-          },
-        );
-        const vectorMenuIds = vectorResults.map((result) => result.menuId);
-        const vectorMenus = await this.getMenusByIds(userId, vectorMenuIds);
-        const matchedMenu = this.findBestComparisonMenuAboveThreshold(
-          menuName,
-          vectorMenus,
-          30,
-        );
-
-        if (matchedMenu) {
-          matchedMenus.push({ inputMenuName: menuName, menu: matchedMenu });
-        }
-      }
-
-      timing?.mark('comparison_vector_match_completed', {
-        matchedCount: matchedMenus.length,
-      });
-
-      return matchedMenus;
-    } catch (error) {
-      console.warn('[CHAT] comparison vector match failed, fallback to local', {
-        message: error instanceof Error ? error.message : String(error),
-      });
-      timing?.mark('comparison_vector_match_failed');
-
-      return [];
-    }
-  }
-
-  private toOrderedUniqueComparisonMenus(
-    menuNames: string[],
-    ...matchMaps: Array<Map<string, MenuEntity>>
-  ): MenuEntity[] {
-    const usedMenuIds = new Set<number>();
-    const menus: MenuEntity[] = [];
-
-    menuNames.forEach((menuName) => {
-      const key = this.normalizeComparisonMenuKey(menuName);
-      const matchedMenu = matchMaps
-        .map((matchMap) => matchMap.get(key))
-        .find((menu): menu is MenuEntity => !!menu);
-
-      if (!matchedMenu || usedMenuIds.has(matchedMenu.id)) {
-        return;
-      }
-
-      usedMenuIds.add(matchedMenu.id);
-      menus.push(matchedMenu);
-    });
-
-    return menus;
-  }
-
-  private buildComparisonVectorQuery(menuName: string): string {
-    const aliases = this.getComparisonRepresentativeAliases(menuName);
-    return [
-      `비교 대상 일반 음식명: ${menuName}`,
-      aliases.length > 0 ? `대표 음식 후보: ${aliases.join(', ')}` : null,
-      '사용자가 말한 음식의 대표 메뉴를 찾는다.',
-      '사용자가 음식점/업종을 말했으면 그 업종의 대표적인 한 끼 메뉴를 찾는다.',
-      '파생 메뉴, 제품명, 변형 메뉴보다 기본 음식명을 우선한다.',
-      '가공식품/제품명보다 일반 음식명을 우선한다.',
-      '예: 짜장/자장 입력은 짜장면/자장면을 우선한다.',
-      '예: 짬뽕 입력은 짬뽕을 우선한다.',
-    ]
-      .filter(Boolean)
-      .join('\n');
   }
 
   private applyIntentFilters(
@@ -10803,22 +9078,6 @@ ${JSON.stringify(
     return `${menu.unit_quantity ?? '인분'} (${roundNullableToOneDecimal(menu.weight) ?? 0}${unitLabel})`;
   }
 
-  private buildFallbackSummary(
-    menu: MenuEntity,
-    score: ScoreBreakdown,
-  ): string {
-    if (score.satietyScore >= 75) {
-      return '포만감 효율이 좋아 한 끼로 안정적이야.';
-    }
-    if (score.macroScore >= 75) {
-      return '남은 탄단지 흐름과 잘 맞아.';
-    }
-    if (score.calorieScore >= 75) {
-      return '현재 식사 흐름에 잘 맞는 메뉴야.';
-    }
-    return `${menu.name}: 전체 균형 점수가 높아.`;
-  }
-
   private buildFeedbackIntent(input: string): ParsedChatIntent {
     return {
       normalized_request: input,
@@ -10966,10 +9225,10 @@ ${JSON.stringify(
     return this.scoreMenu(syntheticMenu, intent, userInfo, basis);
   }
 
-  private findMostSimilarMenu(
+  private findMostSimilarMenu<T extends SimilarityMenu>(
     inputMenuName: string,
-    menus: MenuEntity[],
-  ): MenuEntity {
+    menus: T[],
+  ): T {
     const bestMatch = this.findMostSimilarMenuWithScore(inputMenuName, menus);
 
     if (!bestMatch) {
@@ -10991,193 +9250,10 @@ ${JSON.stringify(
       : null;
   }
 
-  private findBestComparisonMenuAboveThreshold(
+  private findMostSimilarMenuWithScore<T extends SimilarityMenu>(
     inputMenuName: string,
-    menus: MenuEntity[],
-    minSimilarity: number,
-  ): MenuEntity | null {
-    const bestMatch = this.findBestComparisonMenuWithScore(
-      inputMenuName,
-      menus,
-    );
-
-    return bestMatch && bestMatch.similarity >= minSimilarity
-      ? bestMatch.menu
-      : null;
-  }
-
-  private findBestComparisonMenuWithScore(
-    inputMenuName: string,
-    menus: MenuEntity[],
-  ): { menu: MenuEntity; similarity: number } | null {
-    if (menus.length === 0) {
-      return null;
-    }
-
-    return menus
-      .map((menu) => ({
-        menu,
-        similarity: this.calculateComparisonMenuSimilarity(inputMenuName, menu),
-      }))
-      .sort((a, b) => b.similarity - a.similarity)[0];
-  }
-
-  private calculateComparisonMenuSimilarity(
-    inputMenuName: string,
-    menu: MenuEntity,
-  ): number {
-    return (
-      this.calculateMenuSimilarity(inputMenuName, menu) +
-      this.calculateRepresentativeMenuPreferenceScore(inputMenuName, menu.name)
-    );
-  }
-
-  private calculateRepresentativeMenuPreferenceScore(
-    inputMenuName: string,
-    menuName: string,
-  ): number {
-    const input = this.normalizeMenuMatchText(inputMenuName);
-    const strippedMenuName = this.stripMenuSourcePrefix(menuName);
-    const menu = this.normalizeMenuMatchText(strippedMenuName);
-    const sourcePrefixed = /^\([^)]*\)\s*/.test(menuName.trim());
-
-    if (!input || !menu) {
-      return 0;
-    }
-
-    const rules = [
-      {
-        triggers: ['중국집', '중식집', '중화요리', '중식'],
-        aliases: ['짜장면', '자장면', '짬뽕'],
-        variants: [
-          '중국집간짜장',
-          '옛날중국집',
-          '백짜장',
-          '백자장',
-          '짜장라면',
-          '자장라면',
-          '짬뽕라면',
-          '나가사키짬뽕',
-        ],
-      },
-      {
-        triggers: ['샤브샤브', '샤브'],
-        aliases: ['샤브샤브'],
-        variants: ['버섯샤브샤브', '마라샤브샤브'],
-      },
-      {
-        triggers: ['삼겹살'],
-        aliases: ['삼겹살구이', '삼겹살'],
-        variants: ['삼겹살김치찌개', '삼겹살볶음', '삼겹살덮밥'],
-      },
-      {
-        triggers: ['짜장', '자장'],
-        aliases: ['짜장면', '자장면'],
-        variants: [
-          '백짜장',
-          '백자장',
-          '짜장라면',
-          '자장라면',
-          '간짜장',
-          '간자장',
-          '쟁반짜장',
-          '쟁반자장',
-          '삼선짜장',
-          '삼선자장',
-          '유니짜장',
-          '유니자장',
-          '사천짜장',
-          '사천자장',
-        ],
-      },
-      {
-        triggers: ['짬뽕'],
-        aliases: ['짬뽕'],
-        variants: [
-          '백짬뽕',
-          '짬뽕라면',
-          '삼선짬뽕',
-          '해물짬뽕',
-          '굴짬뽕',
-          '나가사키짬뽕',
-          '짬뽕밥',
-        ],
-      },
-    ];
-
-    const matchedRule = rules.find((rule) =>
-      rule.triggers.some((trigger) => input.includes(trigger)),
-    );
-
-    if (!matchedRule) {
-      return 0;
-    }
-
-    let score = 0;
-
-    if (matchedRule.aliases.some((alias) => menu === alias)) {
-      score += 80;
-      if (sourcePrefixed) {
-        score += 10;
-      }
-    } else if (matchedRule.aliases.some((alias) => menu.startsWith(alias))) {
-      score += 40;
-    } else if (matchedRule.aliases.some((alias) => menu.includes(alias))) {
-      score += 20;
-    }
-
-    const unrequestedVariantMatched = matchedRule.variants.some(
-      (variant) => menu.includes(variant) && !input.includes(variant),
-    );
-
-    if (unrequestedVariantMatched) {
-      score -= 45;
-    }
-
-    return score;
-  }
-
-  private getComparisonRepresentativeAliases(inputMenuName: string): string[] {
-    const input = this.normalizeMenuMatchText(inputMenuName);
-
-    if (!input) {
-      return [];
-    }
-
-    const rules = [
-      {
-        triggers: ['중국집', '중식집', '중화요리', '중식'],
-        aliases: ['짜장면', '짬뽕'],
-      },
-      {
-        triggers: ['샤브샤브', '샤브'],
-        aliases: ['샤브샤브'],
-      },
-      {
-        triggers: ['삼겹살'],
-        aliases: ['삼겹살구이', '삼겹살'],
-      },
-      {
-        triggers: ['짜장', '자장'],
-        aliases: ['짜장면', '자장면'],
-      },
-      {
-        triggers: ['짬뽕'],
-        aliases: ['짬뽕'],
-      },
-    ];
-
-    return (
-      rules.find((rule) =>
-        rule.triggers.some((trigger) => input.includes(trigger)),
-      )?.aliases ?? []
-    );
-  }
-
-  private findMostSimilarMenuWithScore(
-    inputMenuName: string,
-    menus: MenuEntity[],
-  ): { menu: MenuEntity; similarity: number } | null {
+    menus: T[],
+  ): { menu: T; similarity: number } | null {
     if (menus.length === 0) {
       return null;
     }
@@ -11192,7 +9268,7 @@ ${JSON.stringify(
 
   private calculateMenuSimilarity(
     inputMenuName: string,
-    menu: MenuEntity,
+    menu: SimilarityMenu,
   ): number {
     const input = this.normalizeComparableText(inputMenuName);
     const menuName = this.normalizeComparableText(menu.name);
@@ -11268,31 +9344,6 @@ ${JSON.stringify(
       "REPLACE(%s, '\t', '')",
       "REPLACE(%s, '\n', '')",
     ].reduce((expression, template) => template.replace('%s', expression));
-  }
-
-  private stripMenuSourcePrefix(value: string): string {
-    return value.replace(/^\([^)]*\)\s*/g, '').trim();
-  }
-
-  private normalizeComparisonMenuKey(value: string): string {
-    return this.normalizeMenuMatchText(value);
-  }
-
-  private buildKeywordsFromCandidates(
-    candidates: MenuRecognitionCandidate[],
-  ): string[] {
-    return Array.from(
-      new Set(
-        candidates
-          .flatMap((candidate) => [
-            candidate.name,
-            candidate.brand ?? '',
-            candidate.category ?? '',
-          ])
-          .map((value) => value.trim())
-          .filter((value) => value.length >= 2),
-      ),
-    ).slice(0, 8);
   }
 
   private inferDominantValue(
@@ -11496,116 +9547,6 @@ ${input}
     return {
       classification,
       intent: this.normalizeMultiBrandSelectionIntent(intent),
-    };
-  }
-
-  private async classifyChatWithGemini(
-    input: string,
-    chatContext: ChatContextSummary,
-  ): Promise<ChatClassification> {
-    const prompt = `
-사용자 입력을 채팅 카테고리로 분류하고 JSON object만 반환해.
-
-분류 규칙:
-- recommendation: 사용자가 메뉴를 추천해 달라고 요청하는 경우
-- recommendation: "A와 B 중 뭐 먹을까?", "A랑 B 중 뭐가 나아?", "A vs B 추천"처럼 구체적인 음식 메뉴명 중 하나를 골라달라는 비교 선택 요청
-- recommendation: "맥도날드, 버거킹, 롯데리아 중 어디갈까?", "중국집, 샤브샤브, 삼겹살 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리 중 어디를 갈지 묻는 요청은 비교 선택이 아니라 일반 추천 요청으로 분류해
-- feedback: 사용자가 이미 먹었거나 먹으려는 메뉴/식단/음식 선택이 괜찮은지 평가, 판단, 피드백, 리뷰를 요청하는 경우
-- general: 메뉴 추천 또는 메뉴/식단 피드백이 아닌 모든 일반 질문, 설명, 상담, 대화 요청
-- 운동 방법, 운동 가능 여부, 근력운동, 유산소, 스트레칭, 휴식처럼 음식 섭취나 메뉴 선택을 묻지 않는 운동 질문은 general로 분류해
-- 이름, 날씨, 고민, 앱 사용법, 일반 대화처럼 음식/식사/메뉴/영양성분과 직접 관련 없는 질문은 general로 분류해
-- 영양 지식 자체를 묻는 질문은 general로 분류해. 특정 음식/식사/메뉴를 평가하거나 추천받는 경우에만 feedback/recommendation으로 분류해
-- feedback일 때는 입력에 언급된 메뉴명/음식명을 menu_names에 넣어
-- recommendation일 때도 명확한 메뉴명이 있으면 menu_names에 넣을 수 있지만 보통 빈 배열
-- 비교 선택 recommendation일 때는 비교 대상이 실제로 먹을 수 있는 구체적인 음식 메뉴명일 때만 menu_names에 넣어
-- 브랜드/매장명/장소명/음식 카테고리 비교는 menu_names에 넣지 마
-- 비교 선택 recommendation의 menu_names는 DB 검색에 바로 쓸 수 있는 완성 음식명으로 정규화해
-- 비교 대상 중 한쪽이 "후라이", "프라이", "구이", "볶음", "찜", "탕", "국"처럼 조리 방식만 말한 생략 표현이면, 같은 문장 안의 다른 비교 대상이나 문맥에서 공통 재료를 추론해 완성 음식명으로 복원해
-- 예: "삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> recommendation, menu_names=["삶은 달걀","달걀 프라이"]
-- 예: "삶은 계란이랑 프라이 중에는?" -> recommendation, menu_names=["삶은 계란","계란 프라이"]
-- 예: "돼지고기 구이랑 찜 중 뭐가 나아?" -> recommendation, menu_names=["돼지고기 구이","돼지고기 찜"]
-- 예: "맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> recommendation, menu_names=[]
-- 예: "중국집, 샤브샤브, 삼겹살 중 어디갈까?" -> recommendation, menu_names=[]
-- 단, 원문에 재료 단서가 전혀 없으면 억지로 추론하지 말고 원문 표현을 유지해
-- general일 때는 menu_names를 빈 배열로 반환해
-- 이전 대화의 추천/피드백 대상을 가리키는 "그거", "아까", "다른 거", "말고", "비슷한 걸로" 같은 표현이면 context_dependent를 true로 반환해
-- "그거 말고", "다른 거", "아까 추천한 거 빼고"처럼 이전 추천 메뉴를 제외해야 하면 context_action은 "exclude_previous_recommendations"
-- "그 조건으로", "비슷한 걸로", "아까처럼"처럼 이전 조건을 유지해야 하면 context_action은 "reuse_previous_conditions"
-- "그거 먹어도 돼?", "아까 거 괜찮아?"처럼 이전 메뉴를 평가해야 하면 feedback 및 "evaluate_previous_menus"
-- 반드시 JSON object만 반환하고 마크다운, 설명, 코드펜스는 금지
-
-예시:
-"맘스터치에서 싸이버거 제외하고 메뉴 추천해줘" -> recommendation
-"싸이버거랑 빅맥 중 뭐 먹을까?" -> recommendation, menu_names=["싸이버거","빅맥"]
-"삶은 달걀이랑 후라이 중에 뭐 먹을까?" -> recommendation, menu_names=["삶은 달걀","달걀 프라이"]
-"맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> recommendation, menu_names=[]
-"중국집, 샤브샤브, 삼겹살 중 어디갈까?" -> recommendation, menu_names=[]
-"오늘 점심 싸이버거 먹어도 돼?" -> feedback
-"싸이버거랑 콜라 먹었는데 괜찮아?" -> feedback
-"탄수화물은 언제 먹는 게 좋아?" -> general
-"다이어트 중 나트륨 줄이는 법 알려줘" -> general
-"단백질 하루에 얼마나 먹어야 해?" -> general
-"근력운동 괜찮아?" -> general
-"운동해도 돼?" -> general
-"내 이름 어때?" -> general
-"오늘 날씨 얘기해줘" -> general
-"코딩 질문 하나 해도 돼?" -> general
-"그거 말고 다른 거 추천해줘" -> recommendation, context_dependent=true, context_action="exclude_previous_recommendations"
-"아까 거 먹어도 돼?" -> feedback, context_dependent=true, context_action="evaluate_previous_menus"
-
-최근 대화 요약:
-${JSON.stringify(chatContext)}
-
-입력:
-${input}
-
-반환 shape:
-{
-  "chat_category": "recommendation",
-  "menu_names": [],
-  "context_dependent": false,
-  "context_action": null
-}
-`.trim();
-
-    const data = await this.callGeminiJson(prompt);
-    const chatCategory: ChatCategory =
-      data?.chat_category === 'feedback'
-        ? 'feedback'
-        : data?.chat_category === 'general'
-          ? 'general'
-          : 'recommendation';
-
-    const contextDependent =
-      typeof data?.context_dependent === 'boolean'
-        ? data.context_dependent
-        : this.isContextDependentInput(input);
-    const contextAction =
-      this.normalizeContextAction(data?.context_action) ??
-      this.inferContextAction(input, chatCategory, contextDependent);
-
-    const shouldUseFeedbackMenuFallback =
-      chatCategory === 'feedback' &&
-      !this.isExerciseOnlyGeneralQuestion(input) &&
-      (this.hasFoodOrMealCardSignal(input) ||
-        this.isContextualNutritionQuestion(input) ||
-        this.isContextualFoodFollowUp(input));
-
-    return {
-      chat_category: chatCategory,
-      menu_names:
-        chatCategory === 'feedback'
-          ? this.normalizeFreeTextArray(
-              data?.menu_names,
-              shouldUseFeedbackMenuFallback
-                ? this.extractFeedbackMenuNamesFallback(input, chatContext)
-                : [],
-            )
-          : chatCategory === 'general'
-            ? []
-            : this.normalizeFreeTextArray(data?.menu_names, []),
-      context_dependent: contextDependent,
-      context_action: contextAction,
     };
   }
 
@@ -11946,295 +9887,6 @@ ${input}
       .slice(0, 5);
   }
 
-  private extractComparisonMenuNames(
-    input: string,
-    classification: ChatClassification,
-    intent: ParsedChatIntent,
-  ): string[] {
-    if (!this.isMenuComparisonRequest(input)) {
-      return [];
-    }
-
-    if (intent.include.brands.length >= 2) {
-      return [];
-    }
-
-    const geminiMenuNames = this.normalizeComparisonMenuNames(
-      classification.menu_names,
-      intent.include.menu_names,
-    );
-
-    if (geminiMenuNames.length >= 2) {
-      return geminiMenuNames.slice(0, 5);
-    }
-
-    const fallbackMenuNames = this.normalizeComparisonMenuNames(
-      ...[geminiMenuNames, this.extractComparisonMenuNamesFallback(input)],
-    );
-
-    return fallbackMenuNames.slice(0, 5);
-  }
-
-  private normalizeComparisonMenuNames(...groups: string[][]): string[] {
-    const seen = new Set<string>();
-    const normalizedNames: string[] = [];
-
-    groups
-      .flatMap((group) => group)
-      .flatMap((value) =>
-        value
-          .split(/\s*(?:이랑|랑|하고|과|와|,|vs|VS)\s*/)
-          .map((part) =>
-            part
-              .replace(/\s*(?:중(?:에서|에)?)$/g, '')
-              .replace(
-                /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*$/g,
-                '',
-              )
-              .replace(/\s*(?:이|가|을|를)$/g, '')
-              .trim(),
-          )
-          .filter((part) => part.length >= 2),
-      )
-      .forEach((name) => {
-        const key = this.normalizeComparisonMenuKey(name);
-
-        if (!key || seen.has(key)) {
-          return;
-        }
-
-        seen.add(key);
-        normalizedNames.push(name);
-      });
-
-    return normalizedNames;
-  }
-
-  private isMenuComparisonRequest(input: string): boolean {
-    const normalized = input.trim();
-
-    if (!normalized) {
-      return false;
-    }
-
-    const hasComparisonConnector =
-      /(?:\S+)\s*(?:랑|하고|과|와|,|vs|VS)\s*(?:\S+)/.test(normalized) ||
-      normalized.includes(' 중');
-    const hasEllipticalChoice =
-      /(?:\S+)\s+(?:\S+)\s+중(?:에서|에|에는)?\??$/.test(normalized);
-    const asksChoice =
-      /(?:뭐|무엇|어느|어떤|뭘|머)\s*(?:먹|고르|선택)/.test(normalized) ||
-      /(?:낫|좋|추천|골라|먹는 게|먹을까|선택)/.test(normalized);
-    const asksFeedbackOnly =
-      /(?:먹어도\s*돼|괜찮아|어때|피드백|평가|판단)/.test(normalized) &&
-      !/(?:중|골라|추천|낫|좋|먹을까|먹는 게)/.test(normalized);
-
-    return (
-      hasComparisonConnector &&
-      (asksChoice || hasEllipticalChoice) &&
-      !asksFeedbackOnly
-    );
-  }
-
-  private extractComparisonMenuNamesFallback(input: string): string[] {
-    const ellipticalChoiceMatch = input
-      .replace(/[?？!！]/g, '')
-      .trim()
-      .match(/^(.+?)\s+중(?:에서|에|에는)?$/);
-
-    if (ellipticalChoiceMatch?.[1]) {
-      return ellipticalChoiceMatch[1]
-        .split(/\s*(?:랑|하고|과|와|,|vs|VS)\s*|\s+/)
-        .map((value) =>
-          value.replace(/^(?:나는|나|오늘|지금|이번에)\s+/g, '').trim(),
-        )
-        .filter((value) => value.length >= 2)
-        .slice(0, 5);
-    }
-
-    const withoutQuestion = input
-      .replace(
-        /(?:중(?:에서)?|중에)?\s*(?:뭘|뭐|무엇|어느|어떤)?\s*(?:먹는\s*게|먹을까|먹지|먹어야\s*해|고르는\s*게|고를까|선택할까|추천해줘|추천|좋아|낫지|나아|골라줘).*/g,
-        '',
-      )
-      .replace(/[?？!！]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (!withoutQuestion) {
-      return [];
-    }
-
-    return withoutQuestion
-      .split(/\s*(?:랑|하고|과|와|,|vs|VS)\s*/)
-      .map((value) =>
-        value
-          .replace(/^(?:나는|나|오늘|지금|이번에)\s+/g, '')
-          .replace(/\s*(?:중(?:에서|에)?)$/g, '')
-          .trim(),
-      )
-      .filter((value) => value.length >= 2)
-      .slice(0, 5);
-  }
-
-  private applyComparisonMenuNamesToIntent(
-    intent: ParsedChatIntent,
-    menuNames: string[],
-  ): ParsedChatIntent {
-    return {
-      ...intent,
-      normalized_request: `${menuNames.join(', ')} 중 현재 목표에 더 맞는 메뉴 비교 추천`,
-      include: {
-        ...intent.include,
-        menu_names: this.mergeTextValues(intent.include.menu_names, menuNames),
-      },
-    };
-  }
-
-  private async parseIntentWithGemini(
-    input: string,
-    userInfo: UserInfoEntity,
-    chatContext?: ChatContextSummary,
-    classification?: ChatClassification,
-  ): Promise<ParsedChatIntent> {
-    // Gemini 호출이 실패해도 서비스가 동작하도록 규칙 기반 fallback 스키마를 먼저 준비합니다.
-    const fallback = this.buildFallbackIntent(input);
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
-    }
-
-    const prompt = `
-사용자 요청을 메뉴 추천 알고리즘용 JSON 스키마로 정규화해줘.
-반드시 JSON만 반환하고 코드펜스는 쓰지 마.
-
-허용 규칙:
-- meal_time: 0(아침), 1(점심), 2(저녁), 3(간식), 4(야식), 불명확하면 null
-- desired_brand, desired_category: 문자열 또는 null
-- 사용자가 여러 브랜드/매장 후보 중 하나를 고르는 요청이면 desired_brand는 반드시 null로 두고, 모든 브랜드/매장명은 include.brands에 넣어
-- 예: "맥도날드, 버거킹, 롯데리아 중 어디갈까?" -> desired_brand=null, include.brands=["맥도날드","버거킹","롯데리아"]
-- nutrition_focus: 다음 값만 사용 ["high_protein","high_fat","low_carb","low_sugar","light_meal","hearty_meal"]
-- amount_preference: "light" | "regular" | "hearty" | null
-- keywords: 추천 검색에 도움이 되는 핵심 키워드 배열
-- normalized_request: 사용자의 의도를 한 문장으로 정리
-- include: 반드시 포함해야 하는 조건. "샐러드만", "버거 중에서", "싸이버거로" 같은 조건
-- "싸이버거랑 빅맥 중 뭐 먹을까?"처럼 구체적인 음식 메뉴명 비교는 include.menu_names에 넣어
-- "맥도날드, 버거킹, 롯데리아 중 어디갈까?"처럼 브랜드/매장/장소/음식 카테고리를 고르는 요청은 include.menu_names를 비우고, 브랜드/매장명은 include.brands에 넣고 desired_brand는 null로 둬
-- exclude: 반드시 제외해야 하는 조건. "싸이버거 제외", "음료 빼고", "치킨 말고" 같은 조건
-- nutrition_constraints: 명확한 수치 조건만 넣고, "낮은/많은"처럼 수치가 없으면 null
-- caffeine_allowed: "카페인 없는", "디카페인", "카페인 빼고"는 false, 명확하지 않으면 null
-- 최근 대화 요약이 있고 사용자가 "그거", "아까", "다른 거", "말고", "비슷한 걸로"처럼 이전 대화를 가리키면 최근 대화의 조건/메뉴를 반영해 normalized_request, include, exclude를 채워
-- context_action이 "exclude_previous_recommendations"이면 이전 추천 메뉴명은 exclude.menu_names에 넣어
-- context_action이 "reuse_previous_conditions"이면 이전 요청의 브랜드/카테고리/끼니 맥락은 유지하고, 현재 입력에서 바꾼 조건만 덮어써
-- context_action이 "evaluate_previous_menus"이면 추천 intent가 아니라 피드백용 메뉴명을 유지해야 하므로 이전 메뉴명을 참고해
-
-사용자 프로필:
-goal=${this.goalToLabel(userInfo.goal)}
-target_calories=${userInfo.target_calories}
-target_ratio=${JSON.stringify(this.normalizeTargetRatio(userInfo.target_ratio))}
-
-최근 대화 요약:
-${JSON.stringify(chatContext ?? null)}
-
-채팅 분류:
-${JSON.stringify(classification ?? null)}
-
-입력 문장:
-${input}
-
-JSON shape:
-{
-  "normalized_request": "string",
-  "meal_time": 0,
-  "desired_brand": null,
-  "desired_category": null,
-  "nutrition_focus": [],
-  "amount_preference": "regular",
-  "keywords": [],
-  "include": {
-    "brands": [],
-    "categories": [],
-    "menu_names": [],
-    "keywords": []
-  },
-  "exclude": {
-    "brands": [],
-    "categories": [],
-    "menu_names": [],
-    "keywords": []
-  },
-  "nutrition_constraints": {
-    "max_calories": null,
-    "min_calories": null,
-    "min_protein": null,
-    "max_carbs": null,
-    "max_sugars": null,
-    "max_fat": null,
-    "max_sodium": null,
-    "caffeine_allowed": null
-  }
-}
-`;
-
-    try {
-      const data = await this.callGeminiJson(prompt);
-      const intent: ParsedChatIntent = {
-        normalized_request:
-          this.asNonEmptyString(data.normalized_request) ??
-          fallback.normalized_request,
-        meal_time:
-          typeof data.meal_time === 'number' &&
-          data.meal_time >= 0 &&
-          data.meal_time <= 4
-            ? data.meal_time
-            : fallback.meal_time,
-        desired_brand:
-          this.asNonEmptyString(data.desired_brand) ?? fallback.desired_brand,
-        desired_category:
-          this.normalizeCategoryKeyword(
-            this.asNonEmptyString(data.desired_category),
-          ) ?? fallback.desired_category,
-        nutrition_focus: this.normalizeStringArray(
-          data.nutrition_focus,
-          [
-            'high_protein',
-            'high_fat',
-            'low_carb',
-            'low_sugar',
-            'light_meal',
-            'hearty_meal',
-          ],
-          fallback.nutrition_focus,
-        ),
-        amount_preference:
-          this.normalizeAmountPreference(data.amount_preference) ??
-          fallback.amount_preference,
-        keywords: this.normalizeKeywordArray(data.keywords, fallback.keywords),
-        include: this.normalizeIntentConditionGroup(
-          data.include,
-          fallback.include,
-        ),
-        exclude: this.normalizeIntentConditionGroup(
-          data.exclude,
-          fallback.exclude,
-        ),
-        nutrition_constraints: this.normalizeNutritionConstraints(
-          data.nutrition_constraints,
-          fallback.nutrition_constraints,
-        ),
-      };
-
-      return this.normalizeMultiBrandSelectionIntent(intent);
-    } catch (error) {
-      if (error instanceof ServiceUnavailableException) {
-        throw error;
-      }
-
-      return fallback;
-    }
-  }
-
   private buildFallbackIntent(input: string): ParsedChatIntent {
     const normalizedInput = input.trim();
     const meal_time = normalizedInput.includes('아침')
@@ -12336,62 +9988,6 @@ JSON shape:
     return exclude;
   }
 
-  private extractFallbackNutritionConstraints(
-    input: string,
-  ): NutritionConstraints {
-    const constraints = this.emptyNutritionConstraints();
-    const caloriesMatch = input.match(/(\d+(?:\.\d+)?)\s*(?:kcal|칼로리)/i);
-    const proteinMatch = input.match(/단백질\s*(\d+(?:\.\d+)?)\s*g?\s*이상/);
-    const carbsMatch = input.match(/탄수화물\s*(\d+(?:\.\d+)?)\s*g?\s*이하/);
-    const sugarsMatch = input.match(/당류?\s*(\d+(?:\.\d+)?)\s*g?\s*이하/);
-    const fatMatch = input.match(/지방\s*(\d+(?:\.\d+)?)\s*g?\s*이하/);
-    const sodiumMatch = input.match(/나트륨\s*(\d+(?:\.\d+)?)\s*mg?\s*이하/);
-
-    if (caloriesMatch) {
-      const calories = Number(caloriesMatch[1]);
-
-      if (Number.isFinite(calories)) {
-        if (input.includes('이상')) {
-          constraints.min_calories = calories;
-        } else {
-          constraints.max_calories = calories;
-        }
-      }
-    }
-
-    if (proteinMatch) {
-      constraints.min_protein = Number(proteinMatch[1]);
-    }
-
-    if (carbsMatch) {
-      constraints.max_carbs = Number(carbsMatch[1]);
-    }
-
-    if (sugarsMatch) {
-      constraints.max_sugars = Number(sugarsMatch[1]);
-    }
-
-    if (fatMatch) {
-      constraints.max_fat = Number(fatMatch[1]);
-    }
-
-    if (sodiumMatch) {
-      constraints.max_sodium = Number(sodiumMatch[1]);
-    }
-
-    if (
-      input.includes('카페인') &&
-      (input.includes('없는') ||
-        input.includes('빼고') ||
-        input.includes('제외') ||
-        input.includes('디카페인'))
-    ) {
-      constraints.caffeine_allowed = false;
-    }
-
-    return constraints;
-  }
-
   private extractBrandKeyword(input: string): string | null {
     return null;
   }
@@ -12438,48 +10034,6 @@ JSON shape:
       return 3;
     }
     return 4;
-  }
-
-  private toParsedRequestResponse(
-    originalInput: string,
-    intent: ParsedChatIntent,
-  ): ChatParsedRequestResponseDto {
-    const response = new ChatParsedRequestResponseDto();
-    response.original_input = originalInput;
-    response.normalized_request = intent.normalized_request;
-    response.meal_time = intent.meal_time ?? 1;
-    response.meal_time_label = this.mealTimeLabelMap[response.meal_time];
-    response.desired_brand = intent.desired_brand ?? null;
-    response.desired_category = intent.desired_category ?? null;
-    response.nutrition_focus = intent.nutrition_focus;
-    response.amount_preference = intent.amount_preference ?? null;
-    response.keywords = intent.keywords;
-    return response;
-  }
-
-  private toRecommendationBasisResponse(
-    userInfo: UserInfoEntity,
-    dailyNutrition: DailyNutrition,
-    basis: ReturnType<ChatService['buildRecommendationBasis']>,
-  ): ChatRecommendationBasisResponseDto {
-    const response = new ChatRecommendationBasisResponseDto();
-    response.goal = this.goalToLabel(userInfo.goal);
-    response.target_calories = userInfo.target_calories;
-    response.target_ratio = basis.targetRatio;
-    response.consumed_calories = roundToOneDecimal(dailyNutrition.calories);
-    response.consumed_macros = [
-      roundToOneDecimal(dailyNutrition.carbs),
-      roundToOneDecimal(dailyNutrition.protein),
-      roundToOneDecimal(dailyNutrition.fat),
-    ];
-    response.remaining_calories = roundToOneDecimal(basis.remainingCalories);
-    response.remaining_macros = [
-      roundToOneDecimal(basis.remainingMacros.carbs),
-      roundToOneDecimal(basis.remainingMacros.protein),
-      roundToOneDecimal(basis.remainingMacros.fat),
-    ];
-    response.target_meal_calories = roundToOneDecimal(basis.targetMealCalories);
-    return response;
   }
 
   private goalToLabel(goal: number): string {
@@ -13990,60 +11544,6 @@ ${storedContext}`
     };
   }
 
-  private normalizeIntentConditionGroup(
-    value: unknown,
-    fallback: IntentConditionGroup,
-  ): IntentConditionGroup {
-    if (!value || typeof value !== 'object') {
-      return fallback;
-    }
-
-    const source = value as Partial<
-      Record<keyof IntentConditionGroup, unknown>
-    >;
-    const brands = this.normalizeFreeTextArray(source.brands, fallback.brands);
-    const rawCategories = this.normalizeFreeTextArray(
-      source.categories,
-      fallback.categories,
-    );
-    const rawMenuNames = this.normalizeFreeTextArray(
-      source.menu_names,
-      fallback.menu_names,
-    );
-    const rawKeywords = this.normalizeFreeTextArray(
-      source.keywords,
-      fallback.keywords,
-    );
-    const categories = Array.from(
-      new Set([
-        ...rawCategories
-          .map(
-            (category) => this.normalizeCategoryKeyword(category) ?? category,
-          )
-          .filter((category) => category.length >= 2),
-        ...rawMenuNames
-          .map((menuName) => this.normalizeCategoryKeyword(menuName))
-          .filter((category): category is string => !!category),
-        ...rawKeywords
-          .map((keyword) => this.normalizeCategoryKeyword(keyword))
-          .filter((category): category is string => !!category),
-      ]),
-    );
-    const menuNames = rawMenuNames.filter(
-      (menuName) => !this.normalizeCategoryKeyword(menuName),
-    );
-    const keywords = rawKeywords.filter(
-      (keyword) => !this.normalizeCategoryKeyword(keyword),
-    );
-
-    return {
-      brands,
-      categories,
-      menu_names: menuNames,
-      keywords,
-    };
-  }
-
   private normalizeLightweightIntentConditionGroup(
     value: unknown,
     fallback: IntentConditionGroup,
@@ -14083,39 +11583,6 @@ ${storedContext}`
     };
   }
 
-  private normalizeNutritionConstraints(
-    value: unknown,
-    fallback: NutritionConstraints,
-  ): NutritionConstraints {
-    if (!value || typeof value !== 'object') {
-      return fallback;
-    }
-
-    const source = value as Partial<
-      Record<keyof NutritionConstraints, unknown>
-    >;
-    const caffeineAllowed =
-      typeof source.caffeine_allowed === 'boolean'
-        ? source.caffeine_allowed
-        : fallback.caffeine_allowed;
-
-    return {
-      max_calories:
-        this.asNullableNumber(source.max_calories) ?? fallback.max_calories,
-      min_calories:
-        this.asNullableNumber(source.min_calories) ?? fallback.min_calories,
-      min_protein:
-        this.asNullableNumber(source.min_protein) ?? fallback.min_protein,
-      max_carbs: this.asNullableNumber(source.max_carbs) ?? fallback.max_carbs,
-      max_sugars:
-        this.asNullableNumber(source.max_sugars) ?? fallback.max_sugars,
-      max_fat: this.asNullableNumber(source.max_fat) ?? fallback.max_fat,
-      max_sodium:
-        this.asNullableNumber(source.max_sodium) ?? fallback.max_sodium,
-      caffeine_allowed: caffeineAllowed,
-    };
-  }
-
   private normalizeFreeTextArray(value: unknown, fallback: string[]): string[] {
     if (!Array.isArray(value)) {
       return fallback;
@@ -14127,43 +11594,5 @@ ${storedContext}`
       .slice(0, 10);
 
     return normalized.length > 0 ? Array.from(new Set(normalized)) : fallback;
-  }
-
-  private normalizeStringArray(
-    value: unknown,
-    allowed: string[],
-    fallback: string[],
-  ): string[] {
-    if (!Array.isArray(value)) {
-      return fallback;
-    }
-
-    const normalized = value
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter((item) => allowed.includes(item));
-
-    return normalized.length > 0 ? Array.from(new Set(normalized)) : fallback;
-  }
-
-  private normalizeKeywordArray(value: unknown, fallback: string[]): string[] {
-    if (!Array.isArray(value)) {
-      return fallback;
-    }
-
-    const keywords = value
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter((item) => item.length >= 2)
-      .slice(0, 8);
-
-    return keywords.length > 0 ? Array.from(new Set(keywords)) : fallback;
-  }
-
-  private normalizeAmountPreference(
-    value: unknown,
-  ): 'light' | 'regular' | 'hearty' | null {
-    if (value === 'light' || value === 'regular' || value === 'hearty') {
-      return value;
-    }
-    return null;
   }
 }
