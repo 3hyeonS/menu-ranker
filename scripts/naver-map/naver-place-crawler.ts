@@ -47,6 +47,11 @@ export interface CrawlOptions {
   maxPlaces: number;
   /** true면 식당 목록만 모으고 메뉴 수집은 하지 않는다. */
   discoverOnly: boolean;
+  /**
+   * 카테고리에 이 문자열 중 하나가 들어 있으면 메뉴를 수집하지 않는다(카페·술집 등).
+   * 목록 발견 단계가 아니라 수집 대상을 고를 때 적용하므로, 바꿔도 검색을 다시 하지 않는다.
+   */
+  excludedCategories: string[];
 }
 
 export interface CrawlDeps {
@@ -60,6 +65,7 @@ export interface CrawlSummary {
   discoveredPlaces: number;
   crawledPlaces: number;
   skippedPlaces: number;
+  excludedByCategory: number;
   failedPlaces: number;
   menuRows: number;
 }
@@ -249,6 +255,7 @@ export class NaverPlaceCrawler {
       discoveredPlaces: places.size,
       crawledPlaces: 0,
       skippedPlaces: 0,
+      excludedByCategory: 0,
       failedPlaces: 0,
       menuRows: 0,
     };
@@ -259,10 +266,13 @@ export class NaverPlaceCrawler {
       (place) => !done.has(place.placeId),
     );
     summary.skippedPlaces = places.size - pending.length;
+    const targets = pending.filter((place) => !this.excludedCategory(place));
+    summary.excludedByCategory = pending.length - targets.length;
+    pending = targets;
     if (this.options.maxPlaces > 0)
       pending = pending.slice(0, this.options.maxPlaces);
     this.deps.log(
-      `메뉴 수집: 대상 ${pending.length}곳 (이미 수집 ${summary.skippedPlaces}곳 건너뜀)`,
+      `메뉴 수집: 대상 ${pending.length}곳 (이미 수집 ${summary.skippedPlaces}곳, 제외 카테고리 ${summary.excludedByCategory}곳 건너뜀)`,
     );
 
     let cursor = 0;
@@ -349,6 +359,12 @@ export class NaverPlaceCrawler {
       }
     }
     return known;
+  }
+
+  private excludedCategory(place: PlaceSummary): boolean {
+    return this.options.excludedCategories.some((word) =>
+      place.category.includes(word),
+    );
   }
 
   private inDistrict(place: PlaceSummary): boolean {

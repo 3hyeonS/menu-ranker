@@ -42,7 +42,6 @@ export const SONGPA_DONGS = [
 ];
 
 // 검색 결과 상한을 피하려고 업종 키워드로 잘게 나눈다.
-// TODO(#26): 카페·디저트·술집을 "식당"에 넣을지 사용자 확인 필요. 지금은 제외.
 export const DEFAULT_KEYWORDS = [
   '음식점',
   '한식',
@@ -56,6 +55,30 @@ export const DEFAULT_KEYWORDS = [
   '패스트푸드',
   '고기',
   '해산물',
+];
+
+// 카페·디저트·술집은 "식당"에 넣지 않는다(이슈 #26 결정, 2026-10-28).
+// `음식점` 검색에도 섞여 나오므로 네이버 카테고리 문자열에 들어 있는지로 거른다.
+// `바`·`차`처럼 짧은 단어는 `바베큐`·`차돌` 같은 음식점까지 걸리므로 쓰지 않는다.
+export const DEFAULT_EXCLUDED_CATEGORIES = [
+  '카페',
+  '디저트',
+  '베이커리',
+  '제과',
+  '케이크',
+  '아이스크림',
+  '도넛',
+  '와플',
+  '커피',
+  '주점',
+  '술집',
+  '호프',
+  '이자카야',
+  '바(BAR)',
+  '포장마차',
+  '와인',
+  '칵테일',
+  '전통주',
 ];
 
 // 송파구청 부근. 검색어에 동 이름이 있어 대략적인 기준점이면 된다.
@@ -154,6 +177,10 @@ export function parseOptions(): {
     concurrency: intArg('concurrency', 1, 1, 2),
     maxPlaces: intArg('max-places', 0, 0),
     discoverOnly: process.argv.includes('--discover-only'),
+    excludedCategories: listArg(
+      'exclude-categories',
+      DEFAULT_EXCLUDED_CATEGORIES,
+    ),
   };
   if (options.maxDelayMs < options.minDelayMs)
     throw new Error('--max-delay-ms는 --min-delay-ms 이상이어야 합니다');

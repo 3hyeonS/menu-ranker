@@ -31,6 +31,7 @@ const OPTIONS: CrawlOptions = {
   concurrency: 1,
   maxPlaces: 0,
   discoverOnly: false,
+  excludedCategories: [],
 };
 
 const LIST_PAGE_1 = restaurantListUrl(
@@ -120,6 +121,7 @@ describe('NaverPlaceCrawler', () => {
       discoveredPlaces: 2,
       crawledPlaces: 2,
       skippedPlaces: 0,
+      excludedByCategory: 0,
       failedPlaces: 0,
       menuRows: 4,
     });
@@ -361,5 +363,25 @@ describe('NaverPlaceCrawler', () => {
     expect(csvLines()).toEqual([
       '\uFEFFplace_id,식당명,주소,카테고리,메뉴명,가격,사진URL',
     ]);
+  });
+
+  it('제외 카테고리(카페·술집 등) 식당은 메뉴를 요청하지 않고, 목록에는 남겨 둔다', async () => {
+    const fetcher = new FakeFetcher({
+      [LIST_PAGE_1]: [ok('restaurant-list.html')],
+      [menuPageUrl('1000000002')]: [ok('menu-empty.html')],
+    });
+
+    const summary = await crawler(fetcher, {
+      maxPages: 1,
+      excludedCategories: ['분식'],
+    }).run();
+
+    expect(summary).toMatchObject({
+      discoveredPlaces: 2,
+      excludedByCategory: 1,
+      crawledPlaces: 1,
+    });
+    expect(fetcher.calls).not.toContain(menuPageUrl('1000000001'));
+    expect(store.discoveredPlaces().has('1000000001')).toBe(true);
   });
 });
