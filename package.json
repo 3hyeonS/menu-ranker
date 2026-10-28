@@ -120,7 +120,7 @@
     "rootDir": "src",
     "roots": [
       "<rootDir>",
-      "<rootDir>/../scripts"
+      "<rootDir>/../scripts/naver-map"
     ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {

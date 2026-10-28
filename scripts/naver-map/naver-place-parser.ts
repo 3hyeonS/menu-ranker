@@ -76,7 +76,8 @@ function listItemAddress(value: Record<string, unknown>): string {
     .join(' ');
   const local = text(value.roadAddress) || text(value.address);
   if (cityDistrict && local) return `${cityDistrict} ${local}`;
-  return text(value.fullAddress) || local;
+  // 시·구를 알 수 없으면 비워 두고 메뉴 페이지 주소로 다시 거른다.
+  return text(value.fullAddress);
 }
 
 function toPlaceSummary(
@@ -187,10 +188,10 @@ export function parseMenuPage(html: string, placeId: string): PlaceMenuPage {
   return { place, menus };
 }
 
-/** 응답이 차단·보안 확인 페이지인지 대략 판별한다(200으로 오는 경우 대비). */
+/**
+ * 200 응답이 정상 플레이스 페이지가 아닌지 본다. 차단·보안 확인·로그인·리다이렉트 페이지는
+ * 문구가 제각각이라, Apollo 캐시가 없으면 모두 차단으로 취급한다.
+ */
 export function looksBlocked(html: string): boolean {
-  return (
-    /captcha|비정상적인 접근|일시적으로 제한|자동입력 방지/i.test(html) &&
-    !APOLLO_STATE_MARKER.test(html)
-  );
+  return !APOLLO_STATE_MARKER.test(html);
 }

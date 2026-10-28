@@ -67,6 +67,28 @@ describe('naver-place-parser', () => {
     ]);
   });
 
+  it('목록 항목에 commonAddress가 없으면 fullAddress, 그것도 없으면 빈 주소로 둔다', () => {
+    const html = `<script>window.__APOLLO_STATE__ = ${JSON.stringify({
+      'PlaceListBusinessesItem:1:1': {
+        __typename: 'PlaceListBusinessesItem',
+        id: '1',
+        name: 'a',
+        roadAddress: '가상로 1',
+        fullAddress: '서울특별시 송파구 잠실동 1',
+      },
+      'PlaceListBusinessesItem:2:2': {
+        __typename: 'PlaceListBusinessesItem',
+        id: '2',
+        name: 'b',
+        roadAddress: '가상로 2',
+      },
+    })};</script>`;
+    expect(parseRestaurantList(html).map((place) => place.address)).toEqual([
+      '서울특별시 송파구 잠실동 1',
+      '',
+    ]);
+  });
+
   it('메뉴가 없는 식당은 빈 메뉴 목록을 돌려준다', () => {
     const page = parseMenuPage(fixture('menu-empty.html'), '1000000002');
     expect(page.place?.name).toBe('가상 메뉴없는 식당');

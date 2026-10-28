@@ -105,6 +105,8 @@ export function toCsvRows(place: PlaceSummary, menus: PlaceMenu[]): string[] {
 
 // ---- 진행 상태 파일 (출력 CSV 옆) ----
 
+const CSV_HEADER_LINE = `\uFEFF${CSV_HEADERS.join(',')}\r\n`;
+
 export class CrawlStore {
   readonly queriesPath: string;
   readonly placesPath: string;
@@ -118,20 +120,36 @@ export class CrawlStore {
     this.excludedPath = `${csvPath}.excluded.txt`;
   }
 
+  /** 이 저장소가 쓰는 모든 파일 경로. */
+  get paths(): string[] {
+    return [
+      this.csvPath,
+      this.queriesPath,
+      this.placesPath,
+      this.failedPath,
+      this.excludedPath,
+    ];
+  }
+
   /**
    * Excel에서 바로 열리도록 UTF-8(BOM) + CRLF. 이미 있으면 중단으로 잘린 마지막 줄만 지운다.
-   * 행은 항상 `\r\n`으로 끝나므로, 파일이 `\r\n`으로 끝나지 않으면 마지막 줄이 덜 쓰인 것이다.
+   * 행은 항상 줄바꿈으로 끝나므로, 파일이 줄바꿈으로 끝나지 않으면 마지막 줄이 덜 쓰인 것이다.
+   * (다른 도구가 LF로 저장해도 지우지 않도록 `\n`으로 판단한다.)
    */
   ensureCsv(): void {
     if (!existsSync(this.csvPath)) {
-      writeFileSync(this.csvPath, `\uFEFF${CSV_HEADERS.join(',')}\r\n`, 'utf8');
+      writeFileSync(this.csvPath, CSV_HEADER_LINE, 'utf8');
       return;
     }
     const content = readFileSync(this.csvPath, 'utf8');
-    if (!content.endsWith('\r\n')) {
-      const lastRowEnd = content.lastIndexOf('\r\n');
-      writeFileSync(this.csvPath, content.slice(0, lastRowEnd + 2), 'utf8');
-    }
+    if (content.endsWith('\n')) return;
+    const lastLineEnd = content.lastIndexOf('\n');
+    // 줄바꿈이 하나도 없으면 헤더조차 덜 쓰인 것이므로 헤더를 다시 쓴다.
+    writeFileSync(
+      this.csvPath,
+      lastLineEnd < 0 ? CSV_HEADER_LINE : content.slice(0, lastLineEnd + 1),
+      'utf8',
+    );
   }
 
   completedQueries(): Set<string> {
@@ -168,7 +186,7 @@ export class CrawlStore {
   }
 
   /**
-   * 다시 수집하지 않을 place_id: CSV에 행이 있거나 지역 밖으로 제외된 곳.
+   * 다시 수집하지 않을 place_id: CSV에 행이 있거나, 지역 밖·없는 페이지(404 등)로 제외된 곳.
    * 값의 줄바꿈은 공백으로 바꿔 쓰므로 한 줄이 한 행이다.
    */
   crawledPlaceIds(): Set<string> {
@@ -226,8 +244,7 @@ export class NaverPlaceCrawler {
 
   async run(): Promise<CrawlSummary> {
     this.store.ensureCsv();
-    await this.discover();
-    const places = this.store.discoveredPlaces();
+    const places = await this.discover();
     const summary: CrawlSummary = {
       discoveredPlaces: places.size,
       crawledPlaces: 0,
@@ -254,6 +271,8 @@ export class NaverPlaceCrawler {
         const place = pending[cursor];
         cursor += 1;
         const rows = await this.crawlPlace(place);
+        // 다른 worker가 멈춤을 건 뒤 요청하지 못한 식당은 실패로 세지 않는다.
+        if (rows === null && this.stopped) break;
         if (rows === null) summary.failedPlaces += 1;
         else {
           summary.crawledPlaces += 1;
@@ -277,9 +296,9 @@ export class NaverPlaceCrawler {
   }
 
   /** 지역 × 키워드 검색으로 place_id를 모은다. 끝난 검색은 기록해 재시작 때 건너뛴다. */
-  private async discover(): Promise<void> {
+  private async discover(): Promise<Map<string, PlaceSummary>> {
     const completed = this.store.completedQueries();
-    const known = new Set(this.store.discoveredPlaces().keys());
+    const known = this.store.discoveredPlaces();
     for (const area of this.options.areas) {
       for (const keyword of this.options.keywords) {
         const query = `${area} ${keyword}`.trim();
@@ -289,18 +308,18 @@ export class NaverPlaceCrawler {
         let failed = false;
         const seenInQuery = new Set<string>();
         for (let page = 1; page <= this.options.maxPages; page += 1) {
-          const body = await this.request(
+          const response = await this.request(
             restaurantListUrl(query, page, this.options),
           );
-          if (body === null) {
-            if (this.stopped)
-              throw new BlockedError('식당 목록 검색 중 차단되어 멈췄습니다.');
+          if (this.stopped)
+            throw new BlockedError('식당 목록 검색 중 차단되어 멈췄습니다.');
+          if (response?.status !== 200) {
             failed = true;
             break;
           }
           let listed: PlaceSummary[];
           try {
-            listed = parseRestaurantList(body);
+            listed = parseRestaurantList(response.body);
           } catch (error) {
             this.deps.log(`  목록 파싱 실패: ${(error as Error).message}`);
             failed = true;
@@ -316,9 +335,11 @@ export class NaverPlaceCrawler {
           const fresh = unseen
             .filter((place) => this.inDistrict(place))
             .filter((place) => !known.has(place.placeId));
-          fresh.forEach((place) => known.add(place.placeId));
+          fresh.forEach((place) => known.set(place.placeId, place));
           this.store.addPlaces(fresh);
           added += fresh.length;
+          // 한 쪽을 다 채우지 못했으면 마지막 쪽이다.
+          if (listed.length < this.options.pageSize) break;
         }
         // 실패한 검색은 완료로 기록하지 않아 다음 실행에서 다시 한다.
         if (!failed) this.store.markQueryDone(queryKey);
@@ -327,6 +348,7 @@ export class NaverPlaceCrawler {
         );
       }
     }
+    return known;
   }
 
   private inDistrict(place: PlaceSummary): boolean {
@@ -339,13 +361,20 @@ export class NaverPlaceCrawler {
 
   /** 수집한 메뉴 행 수, 실패면 null. */
   private async crawlPlace(place: PlaceSummary): Promise<number | null> {
-    const body = await this.request(menuPageUrl(place.placeId));
-    if (body === null) {
-      this.store.recordFailure(place.placeId, 'request-failed');
+    const response = await this.request(menuPageUrl(place.placeId));
+    if (response === null) {
+      if (!this.stopped)
+        this.store.recordFailure(place.placeId, 'request-failed');
+      return null;
+    }
+    if (response.status !== 200) {
+      // 없는 페이지(폐업 등)는 다시 요청해도 같으므로 제외 목록에 남긴다.
+      this.store.recordFailure(place.placeId, `http-${response.status}`);
+      this.store.markExcluded(place.placeId);
       return null;
     }
     try {
-      const page = parseMenuPage(body, place.placeId);
+      const page = parseMenuPage(response.body, place.placeId);
       const merged: PlaceSummary = {
         placeId: place.placeId,
         name: place.name || page.place?.name || '',
@@ -369,8 +398,11 @@ export class NaverPlaceCrawler {
     }
   }
 
-  /** 지연·재시도·백오프를 적용한 GET. 실패하면 null. */
-  private async request(url: string): Promise<string | null> {
+  /**
+   * 지연·재시도·백오프를 적용한 GET. 정상(200)이나 재시도하지 않는 상태(404 등)는 응답을,
+   * 재시도를 소진했거나 멈춘 상태면 null을 돌려준다.
+   */
+  private async request(url: string): Promise<HttpResponse | null> {
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
       if (this.stopped) return null;
       await this.deps.sleep(this.politeDelay());
@@ -390,11 +422,11 @@ export class NaverPlaceCrawler {
         (response.status === 200 && looksBlocked(response.body));
       if (response.status === 200 && !blocked) {
         this.consecutiveBlocks = 0;
-        return response.body;
+        return response;
       }
       if (!blocked) {
         this.deps.log(`  HTTP ${response.status}, 건너뜀: ${url}`);
-        return null;
+        return response;
       }
       this.deps.log(
         `  차단/오류 응답 ${response.status}(${attempt + 1}회): ${url}`,

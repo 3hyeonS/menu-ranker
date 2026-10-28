@@ -38,11 +38,6 @@ const LIST_PAGE_1 = restaurantListUrl(
   1,
   OPTIONS,
 );
-const LIST_PAGE_2 = restaurantListUrl(
-  '서울 송파구 잠실본동 음식점',
-  2,
-  OPTIONS,
-);
 
 class FakeFetcher implements HttpFetcher {
   readonly calls: string[] = [];
@@ -115,8 +110,6 @@ describe('NaverPlaceCrawler', () => {
   it('송파구 식당만 모아 메뉴 1개당 1행, 메뉴 없는 식당은 빈 메뉴 1행으로 쓴다', async () => {
     const fetcher = new FakeFetcher({
       [LIST_PAGE_1]: [ok('restaurant-list.html')],
-      // 2쪽은 새 식당이 없어 페이지 넘김을 멈춘다
-      [LIST_PAGE_2]: [ok('restaurant-list.html')],
       [menuPageUrl('1000000001')]: [ok('menu-list.html')],
       [menuPageUrl('1000000002')]: [ok('menu-empty.html')],
     });
@@ -225,9 +218,12 @@ describe('NaverPlaceCrawler', () => {
   });
 
   it('앞 검색에서 찾은 식당만 있는 쪽이어도 다음 쪽을 계속 본다', async () => {
-    const options = { keywords: ['음식점', '한식'] };
+    const options = { keywords: ['음식점', '한식'], pageSize: 1 };
     const query = (keyword: string, page: number) =>
-      restaurantListUrl(`서울 송파구 잠실본동 ${keyword}`, page, OPTIONS);
+      restaurantListUrl(`서울 송파구 잠실본동 ${keyword}`, page, {
+        ...OPTIONS,
+        ...options,
+      });
     const fetcher = new FakeFetcher({
       [query('음식점', 1)]: [listPage(['1', '서울 송파구 a'])],
       [query('음식점', 2)]: [listPage()],
@@ -246,9 +242,31 @@ describe('NaverPlaceCrawler', () => {
     expect(fetcher.calls).not.toContain(query('한식', 4));
   });
 
+  it('한 쪽을 다 채우지 못하면 마지막 쪽으로 보고 다음 쪽을 요청하지 않는다', async () => {
+    const fetcher = new FakeFetcher({
+      [LIST_PAGE_1]: [ok('restaurant-list.html')],
+    });
+    await crawler(fetcher, { discoverOnly: true }).run();
+    expect(fetcher.calls).toEqual([LIST_PAGE_1]);
+    expect(store.completedQueries().size).toBe(1);
+  });
+
+  it('Apollo 캐시가 없는 200 응답은 차단으로 보고 재시도하며, 그 검색은 재시도 대상으로 남긴다', async () => {
+    const fetcher = new FakeFetcher({
+      [LIST_PAGE_1]: [
+        { status: 200, body: '<html>로그인이 필요합니다</html>' },
+      ],
+    });
+    await crawler(fetcher, { maxPages: 1, maxConsecutiveBlocks: 5 }).run();
+    expect(fetcher.calls).toHaveLength(1 + OPTIONS.maxRetries);
+    expect(store.completedQueries().size).toBe(0);
+  });
+
   it('목록 페이지 파싱이 실패해도 멈추지 않고 그 검색만 재시도 대상으로 남긴다', async () => {
     const fetcher = new FakeFetcher({
-      [LIST_PAGE_1]: [{ status: 200, body: '<html>빈 껍데기</html>' }],
+      [LIST_PAGE_1]: [
+        { status: 200, body: '<script>window.__APOLLO_STATE__ = {"a":' },
+      ],
     });
     await expect(
       crawler(fetcher, { maxPages: 1 }).run(),
@@ -314,5 +332,34 @@ describe('NaverPlaceCrawler', () => {
     const second = new FakeFetcher({});
     await crawler(second, { maxPages: 1 }).run();
     expect(second.calls).toEqual([]);
+  });
+
+  it('없는 메뉴 페이지(404)는 제외 목록에 남겨 다시 요청하지 않는다', async () => {
+    await crawler(
+      new FakeFetcher({
+        [LIST_PAGE_1]: [ok('restaurant-list.html')],
+        [menuPageUrl('1000000002')]: [ok('menu-empty.html')],
+      }),
+      { maxPages: 1 },
+    ).run();
+    expect(readFileSync(store.failedPath, 'utf8')).toContain('http-404');
+
+    const second = new FakeFetcher({});
+    await crawler(second, { maxPages: 1 }).run();
+    expect(second.calls).toEqual([]);
+  });
+
+  it('LF로 다시 저장된 CSV도 행을 지우지 않고, 줄바꿈이 없으면 헤더를 다시 쓴다', () => {
+    writeFileSync(store.csvPath, 'place_id,식당명\n1,a,,,,,\n');
+    store.ensureCsv();
+    expect(readFileSync(store.csvPath, 'utf8')).toBe(
+      'place_id,식당명\n1,a,,,,,\n',
+    );
+
+    writeFileSync(store.csvPath, '\uFEFFplace_id,식');
+    store.ensureCsv();
+    expect(csvLines()).toEqual([
+      '\uFEFFplace_id,식당명,주소,카테고리,메뉴명,가격,사진URL',
+    ]);
   });
 });

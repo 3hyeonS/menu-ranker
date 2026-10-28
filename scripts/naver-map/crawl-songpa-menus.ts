@@ -167,8 +167,9 @@ export function parseOptions(): {
 async function main(): Promise<void> {
   const { out, options, timeoutMs } = parseOptions();
   mkdirSync(dirname(out), { recursive: true });
-  assertUntrackedOutput(out);
   const store = new CrawlStore(out);
+  // CSV 옆 진행 상태 파일도 식당 데이터이므로 모두 확인한다.
+  store.paths.forEach(assertUntrackedOutput);
   const crawler = new NaverPlaceCrawler(options, store, {
     fetcher: new FetchHttpFetcher(timeoutMs),
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
