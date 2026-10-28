@@ -36,6 +36,7 @@
     "restaurant:nutrition-prompt:audit": "ts-node -r tsconfig-paths/register scripts/audit-restaurant-nutrition-prompt.ts",
     "restaurant:nutrition-photo-dataset:prepare": "ts-node -r tsconfig-paths/register scripts/prepare-foodbd-photo-benchmark.ts",
     "restaurant:nutrition-photo-effect:benchmark": "ts-node -r tsconfig-paths/register scripts/benchmark-foodbd-photo-effect.ts",
+    "naver-map:crawl-songpa": "ts-node -r tsconfig-paths/register scripts/naver-map/crawl-songpa-menus.ts",
     "exercise:thumbnail-images": "node scripts/generate-workout-thumbnails.js",
     "vector:index-menus": "ts-node -r tsconfig-paths/register src/vector/scripts/index-menu-vectors.ts",
     "vector:test-search": "ts-node -r tsconfig-paths/register src/vector/scripts/test-vector-search.ts"
@@ -117,6 +118,10 @@
       "ts"
     ],
     "rootDir": "src",
+    "roots": [
+      "<rootDir>",
+      "<rootDir>/../scripts"
+    ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
