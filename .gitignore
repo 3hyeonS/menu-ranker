@@ -67,3 +67,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Brand nutrition collection data (kept only in the main checkout, never committed)
 /brand-nutrition/
+
+# Naver map crawl results (internal analysis only, kept only in the main checkout, never committed)
+/naver-map/

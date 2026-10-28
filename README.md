@@ -222,6 +222,16 @@ $ npm run restaurant:import -- brand-nutrition/all-menus.csv
 import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 없다. import는 첫 번째
 인자로, 나머지는 `--csv=<경로>`로 반드시 지정한다.
 
+## Naver map menu crawl (internal analysis)
+
+네이버 지도에서 송파구 식당 메뉴명·가격·사진 URL을 수집하는 내부 분석용 스크립트다.
+네이버에 실제로 요청하므로 허락받은 뒤에만 실행하고, 결과는 메인 체크아웃의
+`naver-map/`(`.gitignore` 대상)에 둔다. 옵션·재시작 방법은 `docs/naver-map-menu-crawler.md`.
+
+```bash
+$ npm run naver-map:crawl-songpa -- --out=naver-map/songpa-menus.csv
+```
+
 ## Compile and run the project
 
 ```bash
