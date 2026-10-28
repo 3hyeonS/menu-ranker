@@ -64,31 +64,40 @@ function typeName(key: string, value: Record<string, unknown>): string {
   return text(value.__typename) || key.split(':')[0];
 }
 
-// 지역 검색 결과 요약 타입. 업종에 따라 타입 이름이 달라 접미사로 판별한다.
-const LIST_SUMMARY_TYPE = /ListSummary$/;
+// 지역 검색 결과 항목. 키는 `PlaceListBusinessesItem:<id>:<id>`.
+const LIST_ITEM_TYPE = 'PlaceListBusinessesItem';
 
-function toPlaceSummary(value: Record<string, unknown>): PlaceSummary | null {
+// 목록의 roadAddress·address에는 시·구가 없어(`백제고분로7길 53 1층`)
+// commonAddress(`서울 송파구 잠실동`)의 앞 두 단어를 붙인다.
+function listItemAddress(value: Record<string, unknown>): string {
+  const cityDistrict = text(value.commonAddress)
+    .split(/\s+/)
+    .slice(0, 2)
+    .join(' ');
+  const local = text(value.roadAddress) || text(value.address);
+  if (cityDistrict && local) return `${cityDistrict} ${local}`;
+  return text(value.fullAddress) || local;
+}
+
+function toPlaceSummary(
+  value: Record<string, unknown>,
+  address: string,
+): PlaceSummary | null {
   const placeId = text(value.id);
   const name = text(value.name);
   if (!/^\d+$/.test(placeId) || !name) return null;
-  return {
-    placeId,
-    name,
-    address:
-      text(value.roadAddress) || text(value.fullAddress) || text(value.address),
-    category: text(value.category),
-  };
+  return { placeId, name, address, category: text(value.category) };
 }
 
-/** 지역 검색 목록 페이지(`/restaurant/list`)에서 식당 요약을 페이지 순서대로 뽑는다. */
+/** 지역 검색 목록 페이지(`/restaurant/list`)에서 식당 요약을 캐시 순서대로 뽑는다. */
 export function parseRestaurantList(html: string): PlaceSummary[] {
   const state = extractApolloState(html);
   if (!state) throw new Error('목록 페이지에 __APOLLO_STATE__가 없습니다');
   const seen = new Set<string>();
   const places: PlaceSummary[] = [];
   for (const [key, value] of Object.entries(state)) {
-    if (!value || !LIST_SUMMARY_TYPE.test(typeName(key, value))) continue;
-    const place = toPlaceSummary(value);
+    if (!value || typeName(key, value) !== LIST_ITEM_TYPE) continue;
+    const place = toPlaceSummary(value, listItemAddress(value));
     if (!place || seen.has(place.placeId)) continue;
     seen.add(place.placeId);
     places.push(place);
@@ -96,20 +105,28 @@ export function parseRestaurantList(html: string): PlaceSummary[] {
   return places;
 }
 
-// 메뉴 타입: 플레이스 등록 메뉴(`Menu`)와 주문 연동 메뉴(`...Menu`).
-const MENU_TYPE = /Menu$/;
+// 메뉴 항목. 키는 `PlaceMenuItem:<불투명 id>`이고 메뉴 페이지에는 그 식당 메뉴만 실린다.
+const MENU_ITEM_TYPE = 'PlaceMenuItem';
+// 추천 메뉴 분류는 다른 분류의 항목을 다시 담으므로 순서 계산에서 뺀다.
+const RECOMMEND_CATEGORY_KIND = 'recommend';
 
-function firstImageUrl(images: unknown): string {
-  if (!Array.isArray(images)) return text(images);
+function firstImageUrl(value: Record<string, unknown>): string {
+  const images = Array.isArray(value.images) ? value.images : [];
   for (const image of images) {
     const url =
       typeof image === 'string'
         ? image
-        : text((image as Record<string, unknown>)?.url) ||
-          text((image as Record<string, unknown>)?.origin);
+        : text((image as Record<string, unknown>)?.url);
     if (url) return url.trim();
   }
-  return '';
+  return text(value.thumbnailUrl);
+}
+
+// price는 `{ priceType, displayText: '10,000원' }` 객체다.
+function priceText(price: unknown): string {
+  if (price && typeof price === 'object')
+    return text((price as Record<string, unknown>).displayText);
+  return text(price);
 }
 
 function toMenu(value: Record<string, unknown>): PlaceMenu | null {
@@ -117,48 +134,54 @@ function toMenu(value: Record<string, unknown>): PlaceMenu | null {
   if (!name) return null;
   return {
     name,
-    price: text(value.price),
-    imageUrl: firstImageUrl(value.images),
+    price: priceText(value.price),
+    imageUrl: firstImageUrl(value),
   };
-}
-
-function menuOrder(key: string, value: Record<string, unknown>): number {
-  if (typeof value.index === 'number') return value.index;
-  const suffix = /_(\d+)$/.exec(key);
-  return suffix ? Number(suffix[1]) : Number.MAX_SAFE_INTEGER;
 }
 
 /**
  * 메뉴 페이지(`/restaurant/<id>/menu/list`)에서 식당 기본 정보와 메뉴를 뽑는다.
- * 메뉴 순서는 `index` 필드(없으면 키의 `_<번호>`)를 따르고, 같은 이름·가격은 하나로 합친다.
+ * 메뉴 순서는 추천이 아닌 `PlaceMenuCategory.itemIds` 순서를 따르고(분류에 없는 항목은 뒤에),
+ * 같은 이름·가격은 하나로 합친다.
  */
 export function parseMenuPage(html: string, placeId: string): PlaceMenuPage {
   const state = extractApolloState(html);
   if (!state)
     throw new Error(`메뉴 페이지에 __APOLLO_STATE__가 없습니다: ${placeId}`);
   const base = state[`PlaceDetailBase:${placeId}`];
-  const place = base ? toPlaceSummary({ ...base, id: placeId }) : null;
+  const place = base
+    ? toPlaceSummary(
+        { ...base, id: placeId },
+        text(base.roadAddress) || text(base.address),
+      )
+    : null;
 
-  const entries: Array<{ order: number; menu: PlaceMenu }> = [];
+  const items = new Map<string, Record<string, unknown>>();
+  const orderedIds: string[] = [];
   for (const [key, value] of Object.entries(state)) {
-    if (!value || !MENU_TYPE.test(typeName(key, value))) continue;
-    // 다른 식당 메뉴가 캐시에 섞여 있으면 제외한다(키가 `<타입>:<placeId>_<번호>` 형태일 때).
-    const id = key.slice(key.indexOf(':') + 1);
-    // `<placeId>_<번호>`가 아닌 키는 어느 식당 것인지 알 수 없으므로 기본 `Menu` 타입만 받는다.
-    if (/^\d+_\d+$/.test(id) && !id.startsWith(`${placeId}_`)) continue;
-    if (!id.startsWith(`${placeId}_`) && typeName(key, value) !== 'Menu')
-      continue;
-    const menu = toMenu(value);
-    if (menu) entries.push({ order: menuOrder(key, value), menu });
+    if (!value) continue;
+    const type = typeName(key, value);
+    if (type === MENU_ITEM_TYPE) items.set(text(value.id), value);
+    else if (
+      type === 'PlaceMenuCategory' &&
+      value.kind !== RECOMMEND_CATEGORY_KIND &&
+      Array.isArray(value.itemIds)
+    )
+      orderedIds.push(...value.itemIds.map(text));
   }
-  entries.sort((left, right) => left.order - right.order);
 
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenMenus = new Set<string>();
   const menus: PlaceMenu[] = [];
-  for (const { menu } of entries) {
+  for (const id of [...orderedIds, ...items.keys()]) {
+    const item = items.get(id);
+    if (!item || seenIds.has(id)) continue;
+    seenIds.add(id);
+    const menu = toMenu(item);
+    if (!menu) continue;
     const dedupeKey = `${menu.name}\u0000${menu.price}`;
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
+    if (seenMenus.has(dedupeKey)) continue;
+    seenMenus.add(dedupeKey);
     menus.push(menu);
   }
   return { place, menus };

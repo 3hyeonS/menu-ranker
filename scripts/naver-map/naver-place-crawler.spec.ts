@@ -75,8 +75,13 @@ const listPage = (...places: Array<[string, string]>) =>
   apolloPage(
     Object.fromEntries(
       places.map(([id, address]) => [
-        `RestaurantListSummary:${id}`,
-        { __typename: 'RestaurantListSummary', id, name: `식당${id}`, address },
+        `PlaceListBusinessesItem:${id}:${id}`,
+        {
+          __typename: 'PlaceListBusinessesItem',
+          id,
+          name: `식당${id}`,
+          fullAddress: address,
+        },
       ]),
     ),
   );
@@ -123,14 +128,15 @@ describe('NaverPlaceCrawler', () => {
       crawledPlaces: 2,
       skippedPlaces: 0,
       failedPlaces: 0,
-      menuRows: 3,
+      menuRows: 4,
     });
     expect(fetcher.calls).not.toContain(menuPageUrl('1000000003'));
     expect(csvLines()).toEqual([
       '\uFEFFplace_id,식당명,주소,카테고리,메뉴명,가격,사진URL',
-      '1000000001,가상 김밥 잠실점,서울 송파구 가상로 1,분식,기본김밥,"3,500",https://ldb-phinf.pstatic.net/fake/kimbap-1.jpg',
-      '1000000001,가상 김밥 잠실점,서울 송파구 가상로 1,분식,참치김밥,"5,000",',
-      '1000000001,가상 김밥 잠실점,서울 송파구 가상로 1,분식,"라면, 떡볶이 세트",변동,https://ldb-phinf.pstatic.net/fake/set.jpg',
+      '1000000001,가상 김밥 잠실점,서울 송파구 가상로 1 1층,분식,기본김밥,"3,500원",https://ldb-phinf.pstatic.net/fake/kimbap-1.jpg',
+      '1000000001,가상 김밥 잠실점,서울 송파구 가상로 1 1층,분식,참치김밥,"5,000원",',
+      '1000000001,가상 김밥 잠실점,서울 송파구 가상로 1 1층,분식,"라면, 떡볶이 세트",변동,https://ldb-phinf.pstatic.net/fake/set-thumb.jpg',
+      '1000000001,가상 김밥 잠실점,서울 송파구 가상로 1 1층,분식,분류 없는 메뉴,"1,000원",',
       '1000000002,"가상 ""따옴표"" 식당 {중괄호}",서울 송파구 잠실동 2-2,한식,,,',
     ]);
     // 요청마다 1~3초 사이 지연(random=0.5 → 2초)
@@ -157,7 +163,7 @@ describe('NaverPlaceCrawler', () => {
       crawledPlaces: 1,
       skippedPlaces: 1,
     });
-    expect(csvLines()).toHaveLength(1 + 3 + 1);
+    expect(csvLines()).toHaveLength(1 + 4 + 1);
   });
 
   it('429와 네트워크 오류는 지수 백오프 후 재시도한다', async () => {
@@ -289,7 +295,12 @@ describe('NaverPlaceCrawler', () => {
         name: '강남 식당',
         roadAddress: '서울 강남구 가상로 7',
       },
-      'Menu:7_0': { __typename: 'Menu', name: '메뉴', price: '1,000' },
+      'PlaceMenuItem:m7': {
+        __typename: 'PlaceMenuItem',
+        id: 'm7',
+        name: '메뉴',
+        price: { displayText: '1,000원' },
+      },
     });
     await crawler(
       new FakeFetcher({

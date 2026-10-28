@@ -11,7 +11,15 @@
 1. **식당 목록 수집**: `서울 송파구 <행정동> <키워드>`로 `pcmap.place.naver.com/restaurant/list`를 검색해 place_id를 모은다. 검색 결과 상한 때문에 행정동 27개 × 업종 키워드로 잘게 나누고, 쪽마다 새 식당이 없으면 다음 검색으로 넘어간다. 주소에 `송파구`가 없는 식당은 버린다. 목록에 주소가 비어 있으면 일단 남기고 메뉴 페이지 주소로 다시 거른다. 앞 검색에서 찾은 식당만 나온 쪽이어도 다음 쪽은 계속 보고, 결과가 없거나 앞 쪽과 같은 결과만 오면 멈춘다.
 2. **메뉴 수집**: place_id마다 `pcmap.place.naver.com/restaurant/<id>/menu/list`를 열어 메뉴명·가격·첫 번째 사진 URL을 뽑는다.
 
-두 페이지 모두 HTML 안의 `window.__APOLLO_STATE__` JSON(Apollo 캐시)을 파싱한다. 식당 요약은 `...ListSummary` 타입, 메뉴는 `...Menu` 타입, 메뉴 페이지의 식당 정보는 `PlaceDetailBase:<id>`에서 읽는다.
+두 페이지 모두 HTML 안의 `window.__APOLLO_STATE__` JSON(Apollo 캐시)을 파싱한다. 구조는 2026-10-28 시험 실행 응답으로 확인했다.
+
+| 페이지 | 읽는 객체 | 메모 |
+|---|---|---|
+| 목록 | `PlaceListBusinessesItem:<id>:<id>` | `roadAddress`·`address`에 시·구가 없어 `commonAddress`(`서울 송파구 잠실동`)의 앞 두 단어를 붙인다 |
+| 메뉴 | `PlaceMenuItem:<불투명 id>` | 가격은 `price.displayText`(`10,000원`), 사진은 `images[0].url`(없으면 `thumbnailUrl`). 순서는 추천(`kind: recommend`)을 뺀 `PlaceMenuCategory.itemIds` 순서 |
+| 메뉴 | `PlaceDetailBase:<id>` | 식당명·카테고리·주소(시·구 포함). 목록 값이 비었을 때만 쓴다 |
+
+네이버가 페이지 구조를 바꾸면 식당·메뉴가 0건으로 나온다. 그러면 응답 HTML을 받아 위 객체가 있는지 확인하고 파서와 픽스처를 함께 고친다.
 
 ## 실행
 
@@ -60,7 +68,7 @@ npm run naver-map:crawl-songpa -- --out=naver-map/songpa-menus.csv
 - 숫자 옵션은 정수만 받는다. `--concurrency`는 1~2, `--max-pages`·`--page-size`·`--max-consecutive-blocks`는 1 이상.
 - 저장소 안 출력 경로의 git ignore 여부를 확인하지 못하면(git 없음 등) 실행을 거부한다.
 - 처음부터 다시 하려면 `<out>`과 `<out>.*` 파일을 지운다.
-- 가격은 페이지 표기 그대로(`3,500`, `변동` 등) 저장한다. 사진이 여러 장이면 첫 장만 저장한다. 값 안의 줄바꿈은 공백으로 바꾼다.
+- 가격은 페이지 표기 그대로(`3,500원`, `변동`, `무료` 등) 저장한다. 메뉴 칸에 홍보 문구(`무료` 가격의 소개 글 등)가 메뉴로 등록된 식당도 있어 그대로 들어온다. 사진이 여러 장이면 첫 장만 저장한다. 값 안의 줄바꿈은 공백으로 바꾼다.
 
 ## 테스트
 
@@ -68,4 +76,4 @@ npm run naver-map:crawl-songpa -- --out=naver-map/songpa-menus.csv
 npm test -- --runInBand scripts/naver-map
 ```
 
-`scripts/naver-map/__fixtures__/`의 HTML 픽스처와 Fake fetcher로 파싱, CSV 출력, 지역 필터, 재시작, 백오프, 연속 차단 시 중단을 검증한다. 네트워크를 쓰지 않는다. 픽스처는 알려진 페이지 구조를 따라 만든 가상 데이터이므로, 실제 응답 구조가 다르면 시험 실행 결과로 픽스처와 파서를 함께 고친다.
+`scripts/naver-map/__fixtures__/`의 HTML 픽스처와 Fake fetcher로 파싱, CSV 출력, 지역 필터, 재시작, 백오프, 연속 차단 시 중단을 검증한다. 네트워크를 쓰지 않는다. 픽스처는 실제 응답 구조(2026-10-28)를 축약하고 값만 가상으로 바꾼 것이다.

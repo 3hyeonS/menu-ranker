@@ -13,19 +13,19 @@ const fixture = (name: string) =>
 describe('naver-place-parser', () => {
   it('문자열 안의 중괄호·따옴표가 있어도 __APOLLO_STATE__ 객체만 꺼낸다', () => {
     const state = extractApolloState(fixture('restaurant-list.html'));
-    expect(state['RestaurantListSummary:1000000002'].name).toBe(
+    expect(state['PlaceListBusinessesItem:1000000002:1000000002'].name).toBe(
       '가상 "따옴표" 식당 {중괄호}',
     );
     expect(state).not.toHaveProperty('__PLACE_STATE__');
     expect(extractApolloState('<html></html>')).toBeNull();
   });
 
-  it('목록 페이지에서 숫자 id 식당 요약만 뽑고 도로명 주소를 우선한다', () => {
+  it('목록 페이지에서 식당 항목만 뽑고 commonAddress의 시·구를 도로명(없으면 지번) 주소 앞에 붙인다', () => {
     expect(parseRestaurantList(fixture('restaurant-list.html'))).toEqual([
       {
         placeId: '1000000001',
         name: '가상 김밥 잠실점',
-        address: '서울 송파구 가상로 1',
+        address: '서울 송파구 가상로 1 1층',
         category: '분식',
       },
       {
@@ -43,26 +43,27 @@ describe('naver-place-parser', () => {
     ]);
   });
 
-  it('메뉴 페이지에서 index 순서로 이 식당 메뉴만 뽑고 첫 사진 URL만 쓴다', () => {
+  it('메뉴 페이지에서 추천을 뺀 분류 순서로 메뉴를 뽑고, 첫 사진(없으면 썸네일) URL만 쓴다', () => {
     const page = parseMenuPage(fixture('menu-list.html'), '1000000001');
     expect(page.place).toEqual({
       placeId: '1000000001',
       name: '가상 김밥 잠실점',
-      address: '서울 송파구 가상로 1',
+      address: '서울 송파구 가상로 1 1층',
       category: '분식',
     });
     expect(page.menus).toEqual([
       {
         name: '기본김밥',
-        price: '3,500',
+        price: '3,500원',
         imageUrl: 'https://ldb-phinf.pstatic.net/fake/kimbap-1.jpg',
       },
-      { name: '참치김밥', price: '5,000', imageUrl: '' },
+      { name: '참치김밥', price: '5,000원', imageUrl: '' },
       {
         name: '라면, 떡볶이 세트',
         price: '변동',
-        imageUrl: 'https://ldb-phinf.pstatic.net/fake/set.jpg',
+        imageUrl: 'https://ldb-phinf.pstatic.net/fake/set-thumb.jpg',
       },
+      { name: '분류 없는 메뉴', price: '1,000원', imageUrl: '' },
     ]);
   });
 
