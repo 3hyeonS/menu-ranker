@@ -9,7 +9,6 @@ import {
 } from '../crawl-common/crawl-files';
 import {
   BlockedError,
-  DEFAULT_RETRYABLE_STATUS,
   HttpFetcher,
   PoliteRequester,
   RequestPolicy,
@@ -32,13 +31,27 @@ export type Rect = [number, number, number, number];
 /** 카테고리 검색 한 번에 받을 수 있는 최대 결과 수(15개 × 3쪽). */
 export const SEARCH_RESULT_LIMIT = 45;
 const SEARCH_PAGE_SIZE = 15;
+/** 다시 요청해도 같은 "없는 장소" 응답. */
+const GONE_STATUS = new Set([404, 410]);
+
+function isCategorySearch(body: string): boolean {
+  try {
+    parseCategorySearch(body);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface KakaoCrawlOptions {
   restApiKey: string;
   rect: Rect;
   /** 주소에 이 문자열이 있는 식당만 남긴다. 빈 문자열이면 거르지 않는다. */
   district: string;
-  /** 사각형을 4등분하는 최대 깊이. 이 깊이에서도 45곳을 넘으면 45곳만 받는다. */
+  /**
+   * 사각형을 4등분하는 최대 깊이. 이 깊이에서도 45곳을 넘으면 45곳만 받는다.
+   * 좌표를 소수 6자리로 보내므로 너무 깊으면 사각형이 겹친다(CLI가 14로 제한).
+   */
   maxDepth: number;
   /** 카테고리에 이 문자열 중 하나가 들어 있으면 식당·메뉴에서 뺀다(카페·술집 등). */
   excludedCategories: string[];
@@ -59,8 +72,10 @@ export type KakaoCrawlDeps = RequesterDeps;
 
 export interface KakaoCrawlSummary {
   searchedRects: number;
-  /** 최대 깊이에서도 45곳을 넘어 일부만 받은 사각형 수. */
+  /** 최대 깊이에서도 45곳을 넘어 일부만 받은 사각형 수(이전 실행 포함). */
   truncatedRects: number;
+  /** 이번 실행에서 재시도를 소진해 실패한 검색 사각형 수. 다음 실행에서 다시 검색한다. */
+  failedRects: number;
   discoveredPlaces: number;
   restaurants: number;
   excludedByCategory: number;
@@ -236,19 +251,26 @@ export class KakaoPlaceCrawler {
     private readonly store: KakaoCrawlStore,
     private readonly deps: KakaoCrawlDeps,
   ) {
-    // 공식 API는 429·5xx만 재시도한다. 401·403(키·권한 문제)은 재시도해도 같아서 바로 멈춘다.
+    // 공식 API는 429·5xx와 형식이 맞지 않는 200 응답(중간 장비의 HTML 등)만 재시도한다.
+    // 401·403(키·권한 문제) 등 나머지 4xx는 재시도해도 같아서 바로 멈춘다.
     this.searchRequester = new PoliteRequester(
       options.search,
       deps,
-      (response) => response.status === 429 || response.status >= 500,
+      (response) =>
+        response.status === 429 ||
+        response.status >= 500 ||
+        (response.status === 200 && !isCategorySearch(response.body)),
     );
-    // panel3는 403(Restricted User Agent)·429·5xx와 JSON이 아닌 200 응답(차단 페이지)을 차단으로 본다.
+    // panel3는 없는 장소(404·410)만 재시도하지 않는다. 403(Restricted User Agent)·429·5xx는 물론
+    // 400·401 등(헤더가 낡아 모두 거절되는 경우)과 JSON이 아닌 200 응답(차단 페이지)도 차단으로 보고
+    // 재시도하며, 연속되면 실행을 멈춘다.
     this.panelRequester = new PoliteRequester(
       options.panel,
       deps,
       (response) =>
-        DEFAULT_RETRYABLE_STATUS.has(response.status) ||
-        (response.status === 200 && parseJsonObject(response.body) === null),
+        response.status === 200
+          ? parseJsonObject(response.body) === null
+          : !GONE_STATUS.has(response.status),
     );
   }
 
@@ -256,6 +278,7 @@ export class KakaoPlaceCrawler {
     const summary: KakaoCrawlSummary = {
       searchedRects: 0,
       truncatedRects: 0,
+      failedRects: 0,
       discoveredPlaces: 0,
       restaurants: 0,
       excludedByCategory: 0,
@@ -273,6 +296,14 @@ export class KakaoPlaceCrawler {
       known,
       summary,
     );
+    // 일부만 받은 사각형은 재시작해도 알 수 있게 진행 파일에서 센다.
+    summary.truncatedRects = [...this.store.completedRects()].filter((entry) =>
+      entry.startsWith('truncated '),
+    ).length;
+    if (summary.failedRects)
+      this.deps.log(
+        `  경고: 검색 사각형 ${summary.failedRects}개가 실패해 식당 목록이 빠져 있을 수 있습니다. 같은 명령을 다시 실행하면 그 사각형만 다시 검색합니다.`,
+      );
     const restaurants = [...known.values()].filter(
       (place) => !this.excludedCategory(place),
     );
@@ -315,11 +346,7 @@ export class KakaoPlaceCrawler {
           this.deps.log(`  진행 ${cursor}/${pending.length}`);
       }
     };
-    const workers = Math.max(
-      1,
-      Math.min(2, Math.floor(this.options.concurrency)),
-    );
-    await Promise.all(Array.from({ length: workers }, worker));
+    await Promise.all(Array.from({ length: this.options.concurrency }, worker));
     if (this.panelRequester.stopped) {
       throw new BlockedError(
         `메뉴 요청이 연속 ${this.options.panel.maxConsecutiveBlocks}회 차단되어 멈췄습니다. 진행 상태는 저장됐고 같은 명령으로 이어서 실행할 수 있습니다.`,
@@ -348,7 +375,10 @@ export class KakaoPlaceCrawler {
     }
 
     const first = await this.search(rect, 1);
-    if (!first) return;
+    if (!first) {
+      summary.failedRects += 1;
+      return;
+    }
     if (
       first.totalCount > SEARCH_RESULT_LIMIT &&
       depth < this.options.maxDepth
@@ -359,7 +389,7 @@ export class KakaoPlaceCrawler {
       return;
     }
     if (first.totalCount > SEARCH_RESULT_LIMIT) {
-      summary.truncatedRects += 1;
+      this.store.markRect(`truncated ${key}`);
       this.deps.log(
         `  최대 깊이에서도 ${first.totalCount}곳이라 ${SEARCH_RESULT_LIMIT}곳만 받습니다: ${key}`,
       );
@@ -372,7 +402,10 @@ export class KakaoPlaceCrawler {
       page += 1
     ) {
       const next = await this.search(rect, page);
-      if (!next) return;
+      if (!next) {
+        summary.failedRects += 1;
+        return;
+      }
       places.push(...next.places);
       isEnd = next.isEnd;
     }
@@ -435,7 +468,7 @@ export class KakaoPlaceCrawler {
       return null;
     }
     if (response.status !== 200) {
-      // 없는 장소(폐업 등)는 다시 요청해도 같으므로 완료로 남긴다.
+      // 없는 장소(404·410, 폐업 등)는 다시 요청해도 같으므로 완료로 남긴다.
       this.store.recordFailure(place.id, `http-${response.status}`);
       this.store.markMenuDone(place.id);
       return null;

@@ -16,7 +16,7 @@ panel3 구조는 2026-10-28 실제 응답으로 확인했다(메뉴 중 사진�
 
 ## 실행
 
-`KAKAO_CLIENT_ID`(카카오 REST API 키, 로그인에 쓰는 것과 같은 값)가 필요하다. 스크립트는 현재 폴더의 `.env`를 읽으므로(`dotenv/config`, 이미 있는 환경변수가 우선) 메인 체크아웃에서 실행하면 된다.
+`KAKAO_CLIENT_ID`(카카오 REST API 키, 로그인에 쓰는 것과 같은 값)가 필요하다. 스크립트는 현재 폴더의 `.env`를 읽으므로(앱과 같이 `.env`가 우선) 메인 체크아웃에서 실행하면 된다.
 
 ```sh
 # 시험 실행: 작은 사각형 하나, 식당 5곳만
@@ -37,12 +37,12 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 | `--out-dir=` | (필수) | 결과·진행 상태 파일을 둘 폴더 |
 | `--rect=` | `127.05,37.455,127.2,37.555` | 검색 사각형 `x1,y1,x2,y2`(경도·위도). 기본값은 송파구 전체를 덮는다 |
 | `--district=` | `송파구` | 주소 필터. 빈 값이면 거르지 않음 |
-| `--max-depth=` | 12 | 사각형 4등분 최대 깊이(0~20). 이 깊이에서도 45곳을 넘으면 45곳만 받고 `truncatedRects`로 센다 |
+| `--max-depth=` | 12 | 사각형 4등분 최대 깊이(0~14). 이 깊이에서도 45곳을 넘으면 45곳만 받고 `truncatedRects`로 센다(재시작해도 유지). 좌표를 소수 6자리로 보내므로 14보다 깊게 나누면 사각형이 겹친다 |
 | `--exclude-categories=` | 카페, 디저트, 베이커리, 제과, 케이크, 아이스크림, 도넛, 와플, 커피, 주점, 술집, 호프, 이자카야, 바(BAR), 포장마차, 와인, 칵테일, 전통주 | 카테고리에 이 단어가 있으면 제외. 빈 값이면 제외하지 않음. `places.jsonl`에는 남기므로 바꿔도 검색을 다시 하지 않는다 |
 | `--search-min-delay-ms=` / `--search-max-delay-ms=` | 100 / 300 | 공식 로컬 API 요청마다 쉬는 시간 |
 | `--min-delay-ms=` / `--max-delay-ms=` | 1000 / 3000 | panel3 요청마다 쉬는 시간 |
 | `--concurrency=` | 1 | panel3 동시 요청 수(최대 2) |
-| `--max-retries=` | 3 | 재시도 횟수. 로컬 API는 429·5xx·네트워크 오류, panel3는 403·429·5xx·네트워크 오류·JSON이 아닌 200 응답을 재시도한다 |
+| `--max-retries=` | 3 | 재시도 횟수. 로컬 API는 429·5xx·네트워크 오류·형식이 맞지 않는 200 응답, panel3는 404·410을 뺀 모든 오류 상태(403·429·5xx, 헤더 거절로 보이는 400·401 등)·네트워크 오류·JSON이 아닌 200 응답을 재시도한다 |
 | `--backoff-ms=` | 10000 | 재시도 대기 시작값. 시도마다 2배 + 지터 |
 | `--max-consecutive-blocks=` | 3 | 재시도를 소진한 요청이 연속 이만큼이면 실행을 멈춘다 |
 | `--max-places=` | 0(무제한) | 이번 실행에서 메뉴를 수집할 식당 수 |
@@ -50,7 +50,9 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 | `--app-version=` | `6.6.0` | panel3 `appVersion` 헤더 |
 | `--timeout-ms=` | 15000 | 요청 하나의 타임아웃 |
 
-로컬 API가 400·401·403(키 오류, 앱에 카카오맵 API 권한 없음 등)을 주면 재시도해도 같으므로 바로 멈춘다.
+로컬 API가 400·401·403(키 오류, 앱에 카카오맵 API 권한 없음 등)을 주면 재시도해도 같으므로 바로 멈춘다. 검색 사각형이 재시도를 소진해 실패하면 건너뛰고 `failedRects`로 세며 경고를 남긴다. 그 사각형은 완료로 기록하지 않으므로 같은 명령을 다시 실행하면 그 부분만 검색한다. 실행 결과 요약의 `failedRects`가 0이 될 때까지 다시 실행한다.
+
+`KAKAO_CLIENT_ID`는 앱(`src/main.ts`)과 같이 `.env` 값이 셸 환경변수보다 우선한다.
 
 ## 결과 파일과 재시작
 
@@ -61,8 +63,8 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 | `restaurants.csv` | `장소id, 식당명, 주소`. 제외 카테고리를 뺀 송파구 식당 전체(메뉴가 없는 식당 포함). 실행할 때마다 `places.jsonl`에서 새로 만든다 |
 | `menus.csv` | `메뉴명, 사진URL, 식당id`. 메뉴 1개당 1행. 사진이 없으면 사진URL 칸이 비어 있다. `식당id`가 `restaurants.csv`의 `장소id`다 |
 | `places.jsonl` | 발견한 송파구 식당(장소 ID·이름·주소·카테고리) |
-| `search-rects.txt` | 끝난 검색 사각형(`leaf`: 결과를 다 받음, `split`: 4등분함) |
-| `menu-done.txt` | 메뉴 수집이 끝난 장소 ID(메뉴 없음, 없는 장소 404 포함) |
+| `search-rects.txt` | 끝난 검색 사각형(`leaf`: 결과를 받음, `split`: 4등분함, `truncated`: 최대 깊이에서 45곳만 받음) |
+| `menu-done.txt` | 메뉴 수집이 끝난 장소 ID(메뉴 없음, 없는 장소 404·410 포함) |
 | `failed.jsonl` | 메뉴 수집에 실패한 장소와 이유(기록용) |
 
 - 중단(Ctrl+C, 차단으로 멈춤 등)된 뒤 **같은 명령을 다시 실행**하면 이어서 한다. 끝난 사각형은 다시 검색하지 않고, `menu-done.txt`에 있거나 `menus.csv`에 행이 있는 식당은 건너뛴다. 재시도를 소진해 실패한 식당은 다음 실행에서 다시 시도한다.
@@ -77,7 +79,7 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 | `scripts/kakao-map/kakao-place-parser.ts` | 로컬 API 응답과 panel3 응답 파싱 |
 | `scripts/kakao-map/kakao-place-crawler.ts` | 사각형 재귀 검색, 메뉴 수집, 결과·진행 상태 파일(`KakaoCrawlStore`) |
 | `scripts/kakao-map/crawl-songpa-kakao.ts` | CLI(옵션 검증, 실제 `fetch`, git ignore 확인) |
-| `scripts/crawl-common/` | 네이버·카카오 공용: 지연·재시도·백오프·연속 차단 중단(`PoliteRequester`), CSV·진행 파일 유틸, CLI 옵션·git ignore 확인 |
+| `scripts/crawl-common/` | 네이버·카카오 공용: 지연·재시도·백오프·연속 차단 중단(`PoliteRequester`), CSV·진행 파일 유틸, CLI 옵션·git ignore 확인, 카페·술집 제외 단어 |
 
 ## 테스트
 

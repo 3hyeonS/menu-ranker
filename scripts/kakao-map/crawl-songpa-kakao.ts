@@ -1,6 +1,6 @@
 // 카카오 기준 서울 송파구 식당 목록(공식 로컬 API)과 메뉴명·사진 URL(카카오맵 비공식 panel3)을 수집해
 // 식당 CSV·메뉴 CSV로 저장한다. 이슈 #28. 실행 방법은 docs/kakao-map-menu-crawler.md.
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
 import { mkdirSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -10,7 +10,7 @@ import {
   listArg,
 } from '../crawl-common/crawl-cli';
 import { HttpFetcher } from '../crawl-common/polite-requester';
-import { DEFAULT_EXCLUDED_CATEGORIES } from '../naver-map/crawl-songpa-menus';
+import { DEFAULT_EXCLUDED_CATEGORIES } from '../crawl-common/excluded-categories';
 import {
   KakaoCrawlOptions,
   KakaoCrawlStore,
@@ -19,6 +19,9 @@ import {
 } from './kakao-place-crawler';
 
 // 송파구를 덮는 사각형(경도·위도). 주변 구 식당은 주소 필터로 버린다.
+// 앱(src/main.ts)처럼 .env가 셸 환경변수보다 우선한다.
+dotenv.config({ override: true });
+
 export const SONGPA_RECT: Rect = [127.05, 37.455, 127.2, 37.555];
 
 class FetchHttpFetcher implements HttpFetcher {
@@ -72,7 +75,7 @@ export function parseOptions(): {
     restApiKey,
     rect: rectArg(),
     district: arg('district') ?? '송파구',
-    maxDepth: intArg('max-depth', 12, 0, 20),
+    maxDepth: intArg('max-depth', 12, 0, 14),
     excludedCategories: listArg(
       'exclude-categories',
       DEFAULT_EXCLUDED_CATEGORIES,

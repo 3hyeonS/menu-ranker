@@ -145,6 +145,7 @@ describe('KakaoPlaceCrawler', () => {
     expect(summary).toEqual({
       searchedRects: 1,
       truncatedRects: 0,
+      failedRects: 0,
       discoveredPlaces: 3,
       restaurants: 2,
       excludedByCategory: 1,
@@ -230,6 +231,12 @@ describe('KakaoPlaceCrawler', () => {
     expect(summary).toMatchObject({ truncatedRects: 1, discoveredPlaces: 3 });
     // 4쪽은 카카오가 주지 않으므로 요청하지 않는다
     expect(fetcher.calls).toHaveLength(3);
+    // 다시 실행해도 일부만 받은 사각형 수가 남는다
+    const again = await crawler(new FakeFetcher({}), {
+      maxDepth: 0,
+      discoverOnly: true,
+    }).run();
+    expect(again.truncatedRects).toBe(1);
   });
 
   it('로컬 API가 401(키 오류)이면 재시도 없이 멈추고 사각형을 완료로 남기지 않는다', async () => {
@@ -321,6 +328,53 @@ describe('KakaoPlaceCrawler', () => {
       '﻿메뉴명,사진URL,식당id',
       '김밥,,1',
     ]);
+  });
+
+  it('panel3 400·401(헤더 거절 등)은 완료로 남기지 않고 차단처럼 재시도하다 멈춘다', async () => {
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(RECT, 1)]: [searchPage(2, ['1', '2'])],
+      [panelUrl('1')]: [{ status: 401, body: '' }],
+      [panelUrl('2')]: [{ status: 400, body: '' }],
+    });
+    await expect(crawler(fetcher).run()).rejects.toBeInstanceOf(BlockedError);
+    expect(store.menuDonePlaceIds().size).toBe(0);
+  });
+
+  it('형식이 맞지 않는 200 검색 응답은 재시도한다', async () => {
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(RECT, 1)]: [
+        { status: 200, body: '<html>점검 중</html>' },
+        searchPage(1, ['1']),
+      ],
+    });
+    const summary = await crawler(fetcher, { discoverOnly: true }).run();
+    expect(summary).toMatchObject({ discoveredPlaces: 1, failedRects: 0 });
+  });
+
+  it('재시도를 소진한 검색 사각형은 실패로 세고 다음 실행에서 다시 검색한다', async () => {
+    const children = quarters(RECT);
+    const routes = {
+      [categorySearchUrl(RECT, 1)]: [searchPage(60, [])],
+      [categorySearchUrl(children[0], 1)]: [searchPage(1, ['1'])],
+      [categorySearchUrl(children[2], 1)]: [searchPage(0, [])],
+      [categorySearchUrl(children[3], 1)]: [searchPage(0, [])],
+    };
+    const first = new FakeFetcher({
+      ...routes,
+      [categorySearchUrl(children[1], 1)]: [new Error('socket hang up')],
+    });
+    const summary = await crawler(first, {
+      discoverOnly: true,
+      search: { ...OPTIONS.search, maxConsecutiveBlocks: 5 },
+    }).run();
+    expect(summary.failedRects).toBe(1);
+
+    const second = new FakeFetcher({
+      [categorySearchUrl(children[1], 1)]: [searchPage(1, ['2'])],
+    });
+    const again = await crawler(second, { discoverOnly: true }).run();
+    expect(second.calls).toEqual([categorySearchUrl(children[1], 1)]);
+    expect(again).toMatchObject({ failedRects: 0, discoveredPlaces: 2 });
   });
 
   it('--max-places만큼만 메뉴를 수집한다', async () => {
