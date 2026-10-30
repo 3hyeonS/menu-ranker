@@ -1,0 +1,4 @@
+{
+  "summary": { "confirm_id": "1000002", "name": "가상 초밥" },
+  "restrict": { "photo": { "is_restrict": false } }
+}

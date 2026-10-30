@@ -1,0 +1,66 @@
+{
+  "documents": [
+    {
+      "address_name": "서울 송파구 문정동 1-1",
+      "category_group_code": "FD6",
+      "category_group_name": "음식점",
+      "category_name": "음식점 > 한식 > 육류,고기",
+      "distance": "",
+      "id": "1000001",
+      "phone": "02-000-0001",
+      "place_name": "가상 고기집",
+      "place_url": "http://place.map.kakao.com/1000001",
+      "road_address_name": "서울 송파구 가상로 1",
+      "x": "127.119390557902",
+      "y": "37.4855440730979"
+    },
+    {
+      "address_name": "서울 송파구 송파동 2-2",
+      "category_group_code": "FD6",
+      "category_group_name": "음식점",
+      "category_name": "음식점 > 일식",
+      "distance": "",
+      "id": "1000002",
+      "phone": "",
+      "place_name": "가상 \"초밥\", 송파점",
+      "place_url": "http://place.map.kakao.com/1000002",
+      "road_address_name": "",
+      "x": "127.108831860935",
+      "y": "37.5055097603824"
+    },
+    {
+      "address_name": "서울 송파구 석촌동 3-3",
+      "category_group_code": "FD6",
+      "category_group_name": "음식점",
+      "category_name": "음식점 > 술집 > 호프,요리주점",
+      "distance": "",
+      "id": "1000003",
+      "phone": "",
+      "place_name": "가상 호프",
+      "place_url": "http://place.map.kakao.com/1000003",
+      "road_address_name": "서울 송파구 가상로 3",
+      "x": "127.1",
+      "y": "37.5"
+    },
+    {
+      "address_name": "서울 강남구 개포동 4-4",
+      "category_group_code": "FD6",
+      "category_group_name": "음식점",
+      "category_name": "음식점 > 한식 > 찌개,전골",
+      "distance": "",
+      "id": "1000004",
+      "phone": "",
+      "place_name": "가상 찌개 강남점",
+      "place_url": "http://place.map.kakao.com/1000004",
+      "road_address_name": "서울 강남구 가상로 4",
+      "x": "127.06",
+      "y": "37.47"
+    }
+  ],
+  "meta": {
+    "is_end": true,
+    "pageable_count": 4,
+    "same_name": null,
+    "total_count": 4
+  }
+}

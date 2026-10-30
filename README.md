@@ -232,6 +232,17 @@ import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 �
 $ npm run naver-map:crawl-songpa -- --out=naver-map/songpa-menus.csv
 ```
 
+## Kakao map restaurant menu crawl
+
+카카오 기준 송파구 식당 목록(공식 로컬 API)과 메뉴명·사진 URL(카카오맵 비공식 API)을
+식당 CSV(`restaurants.csv`)·메뉴 CSV(`menus.csv`)로 수집한다. `KAKAO_CLIENT_ID`가 필요하고,
+카카오에 실제로 요청하므로 허락받은 뒤에만 실행한다. 결과는 메인 체크아웃의
+`kakao-map/`(`.gitignore` 대상)에 둔다. 옵션·재시작 방법은 `docs/kakao-map-menu-crawler.md`.
+
+```bash
+$ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
+```
+
 ## Compile and run the project
 
 ```bash

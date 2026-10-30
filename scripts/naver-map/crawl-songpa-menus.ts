@@ -1,8 +1,13 @@
 // 네이버 지도(플레이스)에서 서울 송파구 식당의 메뉴명·가격·사진 URL을 수집해 CSV로 저장한다.
 // 내부 분석 전용(이슈 #26). 실행 방법은 docs/naver-map-menu-crawler.md.
-import { spawnSync } from 'child_process';
 import { dirname, resolve } from 'path';
 import { mkdirSync } from 'fs';
+import {
+  arg,
+  assertUntrackedOutput,
+  intArg,
+  listArg,
+} from '../crawl-common/crawl-cli';
 import {
   CrawlOptions,
   CrawlStore,
@@ -102,58 +107,6 @@ class FetchHttpFetcher implements HttpFetcher {
   }
 }
 
-function arg(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  return process.argv
-    .find((value) => value.startsWith(prefix))
-    ?.slice(prefix.length);
-}
-
-/** 정수 옵션. [min, max] 밖이거나 정수가 아니면 오류. */
-function intArg(
-  name: string,
-  fallback: number,
-  min: number,
-  max = Infinity,
-): number {
-  const raw = arg(name);
-  if (raw === undefined) return fallback;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value < min || value > max) {
-    const range = max === Infinity ? `${min} 이상` : `${min}~${max}`;
-    throw new Error(`--${name}는 ${range}의 정수여야 합니다: ${raw}`);
-  }
-  return value;
-}
-
-function listArg(name: string, fallback: string[]): string[] {
-  const raw = arg(name);
-  if (raw === undefined) return fallback;
-  return raw
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
-/** 결과 CSV가 git에 올라가지 않도록, 저장소 안이면 ignore 대상인지 확인한다. */
-function assertUntrackedOutput(path: string): void {
-  const result = spawnSync('git', ['check-ignore', '-q', path], {
-    cwd: dirname(path),
-  });
-  // 0: ignore 대상, 1: ignore 아님, 128: 저장소 밖(그 밖의 128·실행 실패는 거부)
-  if (result.status === 0) return;
-  const stderr = result.stderr?.toString() ?? '';
-  if (result.status === 128 && /not a git repository/i.test(stderr)) return;
-  if (result.status === 1) {
-    throw new Error(
-      `출력 경로가 git ignore 대상이 아닙니다: ${path}\n.gitignore된 경로(예: /naver-map/)를 쓰세요.`,
-    );
-  }
-  throw new Error(
-    `출력 경로의 git ignore 여부를 확인하지 못했습니다(${result.error?.message ?? stderr.trim()}): ${path}`,
-  );
-}
-
 export function parseOptions(): {
   out: string;
   options: CrawlOptions;
@@ -196,7 +149,7 @@ async function main(): Promise<void> {
   mkdirSync(dirname(out), { recursive: true });
   const store = new CrawlStore(out);
   // CSV 옆 진행 상태 파일도 식당 데이터이므로 모두 확인한다.
-  store.paths.forEach(assertUntrackedOutput);
+  store.paths.forEach((path) => assertUntrackedOutput(path, '/naver-map/'));
   const crawler = new NaverPlaceCrawler(options, store, {
     fetcher: new FetchHttpFetcher(timeoutMs),
     sleep: (ms) => new Promise((done) => setTimeout(done, ms)),

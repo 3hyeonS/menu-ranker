@@ -37,6 +37,7 @@
     "restaurant:nutrition-photo-dataset:prepare": "ts-node -r tsconfig-paths/register scripts/prepare-foodbd-photo-benchmark.ts",
     "restaurant:nutrition-photo-effect:benchmark": "ts-node -r tsconfig-paths/register scripts/benchmark-foodbd-photo-effect.ts",
     "naver-map:crawl-songpa": "ts-node -r tsconfig-paths/register scripts/naver-map/crawl-songpa-menus.ts",
+    "kakao-map:crawl-songpa": "ts-node -r tsconfig-paths/register scripts/kakao-map/crawl-songpa-kakao.ts",
     "exercise:thumbnail-images": "node scripts/generate-workout-thumbnails.js",
     "vector:index-menus": "ts-node -r tsconfig-paths/register src/vector/scripts/index-menu-vectors.ts",
     "vector:test-search": "ts-node -r tsconfig-paths/register src/vector/scripts/test-vector-search.ts"
@@ -120,7 +121,8 @@
     "rootDir": "src",
     "roots": [
       "<rootDir>",
-      "<rootDir>/../scripts/naver-map"
+      "<rootDir>/../scripts/naver-map",
+      "<rootDir>/../scripts/kakao-map"
     ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
