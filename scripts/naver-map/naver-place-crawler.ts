@@ -1,4 +1,18 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync } from 'fs';
+import {
+  csvField,
+  csvHeaderLine,
+  ensureCsv,
+  readJsonLines,
+  readLines,
+} from '../crawl-common/crawl-files';
+import {
+  BlockedError,
+  DEFAULT_RETRYABLE_STATUS,
+  HttpFetcher,
+  HttpResponse,
+  PoliteRequester,
+} from '../crawl-common/polite-requester';
 import {
   looksBlocked,
   parseMenuPage,
@@ -17,15 +31,8 @@ export const CSV_HEADERS = [
   '사진URL',
 ] as const;
 
-export interface HttpResponse {
-  status: number;
-  body: string;
-}
-
-/** 실제 구현은 fetch, 테스트는 픽스처를 돌려주는 Fake를 쓴다. */
-export interface HttpFetcher {
-  get(url: string): Promise<HttpResponse>;
-}
+export { BlockedError };
+export type { HttpFetcher, HttpResponse };
 
 export interface CrawlOptions {
   areas: string[];
@@ -70,8 +77,6 @@ export interface CrawlSummary {
   menuRows: number;
 }
 
-export class BlockedError extends Error {}
-
 const BASE_URL = 'https://pcmap.place.naver.com';
 
 export function restaurantListUrl(
@@ -95,11 +100,6 @@ export function menuPageUrl(placeId: string): string {
 
 // ---- CSV ----
 
-function csvField(value: string): string {
-  const flat = value.replace(/[\r\n]+/g, ' ');
-  return /[",]/.test(flat) ? `"${flat.replace(/"/g, '""')}"` : flat;
-}
-
 /** 메뉴 1개당 1행. 메뉴가 없으면 메뉴 칸을 비운 1행. */
 export function toCsvRows(place: PlaceSummary, menus: PlaceMenu[]): string[] {
   const head = [place.placeId, place.name, place.address, place.category];
@@ -111,7 +111,7 @@ export function toCsvRows(place: PlaceSummary, menus: PlaceMenu[]): string[] {
 
 // ---- 진행 상태 파일 (출력 CSV 옆) ----
 
-const CSV_HEADER_LINE = `\uFEFF${CSV_HEADERS.join(',')}\r\n`;
+const CSV_HEADER_LINE = csvHeaderLine(CSV_HEADERS);
 
 export class CrawlStore {
   readonly queriesPath: string;
@@ -137,25 +137,9 @@ export class CrawlStore {
     ];
   }
 
-  /**
-   * Excel에서 바로 열리도록 UTF-8(BOM) + CRLF. 이미 있으면 중단으로 잘린 마지막 줄만 지운다.
-   * 행은 항상 줄바꿈으로 끝나므로, 파일이 줄바꿈으로 끝나지 않으면 마지막 줄이 덜 쓰인 것이다.
-   * (다른 도구가 LF로 저장해도 지우지 않도록 `\n`으로 판단한다.)
-   */
+  /** 없으면 헤더를 쓰고, 있으면 중단으로 잘린 마지막 줄만 지운다. */
   ensureCsv(): void {
-    if (!existsSync(this.csvPath)) {
-      writeFileSync(this.csvPath, CSV_HEADER_LINE, 'utf8');
-      return;
-    }
-    const content = readFileSync(this.csvPath, 'utf8');
-    if (content.endsWith('\n')) return;
-    const lastLineEnd = content.lastIndexOf('\n');
-    // 줄바꿈이 하나도 없으면 헤더조차 덜 쓰인 것이므로 헤더를 다시 쓴다.
-    writeFileSync(
-      this.csvPath,
-      lastLineEnd < 0 ? CSV_HEADER_LINE : content.slice(0, lastLineEnd + 1),
-      'utf8',
-    );
+    ensureCsv(this.csvPath, CSV_HEADER_LINE);
   }
 
   completedQueries(): Set<string> {
@@ -169,13 +153,7 @@ export class CrawlStore {
   /** 발견한 식당. 같은 place_id는 처음 것만 남긴다. */
   discoveredPlaces(): Map<string, PlaceSummary> {
     const places = new Map<string, PlaceSummary>();
-    for (const line of readLines(this.placesPath)) {
-      let place: PlaceSummary;
-      try {
-        place = JSON.parse(line) as PlaceSummary;
-      } catch {
-        continue; // 중단으로 덜 쓰인 줄
-      }
+    for (const place of readJsonLines<PlaceSummary>(this.placesPath)) {
       if (place?.placeId && !places.has(place.placeId))
         places.set(place.placeId, place);
     }
@@ -226,27 +204,29 @@ export class CrawlStore {
   }
 }
 
-function readLines(path: string): string[] {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf8')
-    .replace(/^\uFEFF/, '')
-    .split(/\r?\n/)
-    .filter((line) => line.trim());
-}
-
 // ---- 요청 ----
 
-const RETRYABLE_STATUS = new Set([403, 429, 500, 502, 503, 504]);
-
 export class NaverPlaceCrawler {
-  private consecutiveBlocks = 0;
-  private stopped = false;
+  private readonly requester: PoliteRequester;
 
   constructor(
     private readonly options: CrawlOptions,
     private readonly store: CrawlStore,
     private readonly deps: CrawlDeps,
-  ) {}
+  ) {
+    // Apollo 캐시가 없는 200 응답(차단·로그인·리다이렉트 페이지)도 차단으로 본다.
+    this.requester = new PoliteRequester(
+      options,
+      deps,
+      (response) =>
+        DEFAULT_RETRYABLE_STATUS.has(response.status) ||
+        (response.status === 200 && looksBlocked(response.body)),
+    );
+  }
+
+  private get stopped(): boolean {
+    return this.requester.stopped;
+  }
 
   async run(): Promise<CrawlSummary> {
     this.store.ensureCsv();
@@ -318,7 +298,7 @@ export class NaverPlaceCrawler {
         let failed = false;
         const seenInQuery = new Set<string>();
         for (let page = 1; page <= this.options.maxPages; page += 1) {
-          const response = await this.request(
+          const response = await this.requester.get(
             restaurantListUrl(query, page, this.options),
           );
           if (this.stopped)
@@ -377,7 +357,7 @@ export class NaverPlaceCrawler {
 
   /** 수집한 메뉴 행 수, 실패면 null. */
   private async crawlPlace(place: PlaceSummary): Promise<number | null> {
-    const response = await this.request(menuPageUrl(place.placeId));
+    const response = await this.requester.get(menuPageUrl(place.placeId));
     if (response === null) {
       if (!this.stopped)
         this.store.recordFailure(place.placeId, 'request-failed');
@@ -412,59 +392,5 @@ export class NaverPlaceCrawler {
       );
       return null;
     }
-  }
-
-  /**
-   * 지연·재시도·백오프를 적용한 GET. 정상(200)이나 재시도하지 않는 상태(404 등)는 응답을,
-   * 재시도를 소진했거나 멈춘 상태면 null을 돌려준다.
-   */
-  private async request(url: string): Promise<HttpResponse | null> {
-    for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
-      if (this.stopped) return null;
-      await this.deps.sleep(this.politeDelay());
-      let response: HttpResponse;
-      try {
-        response = await this.deps.fetcher.get(url);
-      } catch (error) {
-        this.deps.log(
-          `  요청 오류(${attempt + 1}회): ${(error as Error).message} ${url}`,
-        );
-        if (attempt < this.options.maxRetries)
-          await this.deps.sleep(this.backoff(attempt));
-        continue;
-      }
-      const blocked =
-        RETRYABLE_STATUS.has(response.status) ||
-        (response.status === 200 && looksBlocked(response.body));
-      if (response.status === 200 && !blocked) {
-        this.consecutiveBlocks = 0;
-        return response;
-      }
-      if (!blocked) {
-        this.deps.log(`  HTTP ${response.status}, 건너뜀: ${url}`);
-        return response;
-      }
-      this.deps.log(
-        `  차단/오류 응답 ${response.status}(${attempt + 1}회): ${url}`,
-      );
-      if (attempt < this.options.maxRetries)
-        await this.deps.sleep(this.backoff(attempt));
-    }
-    this.consecutiveBlocks += 1;
-    if (this.consecutiveBlocks >= this.options.maxConsecutiveBlocks)
-      this.stopped = true;
-    return null;
-  }
-
-  private politeDelay(): number {
-    const { minDelayMs, maxDelayMs } = this.options;
-    return (
-      minDelayMs + this.deps.random() * Math.max(0, maxDelayMs - minDelayMs)
-    );
-  }
-
-  private backoff(attempt: number): number {
-    const base = this.options.backoffBaseMs * 2 ** attempt;
-    return base + this.deps.random() * base * 0.5;
   }
 }
