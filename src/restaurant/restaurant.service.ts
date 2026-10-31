@@ -84,6 +84,11 @@ export class RestaurantService {
     const branches = await this.restaurantBranchRepository.find({
       where: { kakaoPlaceId: In(placeIds), restaurantId: Not(IsNull()) },
       relations: { restaurant: true },
+      select: {
+        id: true,
+        kakaoPlaceId: true,
+        restaurant: { id: true, name: true },
+      },
     });
     const branchByPlaceId = new Map(
       branches.map((branch) => [branch.kakaoPlaceId, branch]),

@@ -21,12 +21,8 @@ export class RestaurantBranchEntity {
   id: number;
 
   // 카카오 로컬 API 응답의 `id`(숫자 문자열).
-  @Column({
-    type: 'varchar',
-    length: 20,
-    name: 'kakao_place_id',
-    unique: true,
-  })
+  @Index('UQ_restaurant_branch_kakao_place_id', { unique: true })
+  @Column({ type: 'varchar', length: 20, name: 'kakao_place_id' })
   kakaoPlaceId: string;
 
   @Index('IDX_restaurant_branch_restaurant')
@@ -38,7 +34,10 @@ export class RestaurantBranchEntity {
     onDelete: 'SET NULL',
     onUpdate: 'CASCADE',
   })
-  @JoinColumn({ name: 'restaurant_id' })
+  @JoinColumn({
+    name: 'restaurant_id',
+    foreignKeyConstraintName: 'FK_restaurant_branch_restaurant',
+  })
   restaurant: RestaurantEntity | null;
 
   @Column({ type: 'varchar', length: 255, name: 'place_name' })

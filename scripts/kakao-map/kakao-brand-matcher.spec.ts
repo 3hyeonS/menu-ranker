@@ -2,7 +2,7 @@ import {
   KakaoBrandMatcher,
   KakaoPlace,
   normalizeBrandKey,
-  parseKakaoPlaceLine,
+  parseKakaoPlace,
 } from './kakao-brand-matcher';
 
 const restaurants = [
@@ -63,6 +63,17 @@ describe('KakaoBrandMatcher', () => {
     ).toBeNull();
   });
 
+  it('skips derived brands named only in the category', () => {
+    expect(
+      matcher.match(
+        place(
+          '맘스터치 방배역점',
+          '음식점 > 양식 > 피자 > 맘스터치 피자앤치킨',
+        ),
+      ),
+    ).toBeNull();
+  });
+
   it('skips derived brands even when the first word is a brand', () => {
     expect(
       matcher.match(
@@ -98,12 +109,15 @@ describe('normalizeBrandKey', () => {
   });
 });
 
-describe('parseKakaoPlaceLine', () => {
-  it('parses a places.jsonl line', () => {
+describe('parseKakaoPlace', () => {
+  it('parses a places.jsonl row', () => {
     expect(
-      parseKakaoPlaceLine(
-        '{"id":"21605481","name":"착한떡볶이","address":"서울 송파구 충민로 5","category":"음식점 > 분식 > 떡볶이"}',
-      ),
+      parseKakaoPlace({
+        id: '21605481',
+        name: '착한떡볶이',
+        address: '서울 송파구 충민로 5',
+        category: '음식점 > 분식 > 떡볶이',
+      }),
     ).toEqual({
       id: '21605481',
       name: '착한떡볶이',
@@ -112,9 +126,9 @@ describe('parseKakaoPlaceLine', () => {
     });
   });
 
-  it('returns null for blank lines or rows without a numeric id', () => {
-    expect(parseKakaoPlaceLine('  ')).toBeNull();
-    expect(parseKakaoPlaceLine('{"id":"abc","name":"x"}')).toBeNull();
-    expect(parseKakaoPlaceLine('{"id":"1","name":""}')).toBeNull();
+  it('returns null for rows without a numeric id or name', () => {
+    expect(parseKakaoPlace(null)).toBeNull();
+    expect(parseKakaoPlace({ id: 'abc', name: 'x' })).toBeNull();
+    expect(parseKakaoPlace({ id: '1', name: '' })).toBeNull();
   });
 });

@@ -1,17 +1,18 @@
 import 'reflect-metadata';
+import { existsSync } from 'fs';
 import { resolve } from 'path';
 import { In } from 'typeorm';
 import dataSource from '../src/config/typeorm.datasource';
 import { RestaurantBranchEntity } from '../src/restaurant/entity/restaurant-branch.entity';
 import { RestaurantEntity } from '../src/restaurant/entity/restaurant.entity';
 import { arg } from './crawl-common/crawl-cli';
-import { readLines } from './crawl-common/crawl-files';
+import { readJsonLines, readLines } from './crawl-common/crawl-files';
 import {
   BrandMatchSource,
   BrandRestaurant,
   KakaoBrandMatcher,
   KakaoPlace,
-  parseKakaoPlaceLine,
+  parseKakaoPlace,
 } from './kakao-map/kakao-brand-matcher';
 
 // 카카오 수집 장소(places.jsonl)를 등록 브랜드에 매칭해 restaurant_branch에 upsert한다.
@@ -33,13 +34,9 @@ function readPlaces(paths: string[]): {
   let duplicateCount = 0;
 
   for (const path of paths) {
-    for (const line of readLines(path)) {
-      let place: KakaoPlace | null = null;
-      try {
-        place = parseKakaoPlaceLine(line);
-      } catch {
-        place = null;
-      }
+    // readJsonLines는 JSON이 깨진 줄(중단으로 덜 쓰인 줄)을 건너뛴다.
+    for (const row of readJsonLines<unknown>(path)) {
+      const place = parseKakaoPlace(row);
       if (!place) {
         invalidLineCount += 1;
         continue;
@@ -151,6 +148,16 @@ async function main(): Promise<void> {
   if (paths.length === 0) {
     throw new Error(
       'places.jsonl 경로를 하나 이상 지정해야 합니다. 예: npm run restaurant:branch-import -- <구>/places.jsonl ... --validate-only',
+    );
+  }
+  // readLines·readJsonLines는 없는 파일을 빈 목록으로 읽으므로, 오타·펼쳐지지 않은 glob을 여기서 막는다.
+  const missingPaths = paths.filter((path) => !existsSync(path));
+  if (missingPaths.length > 0) {
+    throw new Error(`입력 파일이 없습니다: ${missingPaths.join(', ')}`);
+  }
+  if (args.includes('--brands-file')) {
+    throw new Error(
+      '--brands-file은 --brands-file=<경로> 형식으로 지정합니다.',
     );
   }
   if (brandsFile && !validateOnly) {

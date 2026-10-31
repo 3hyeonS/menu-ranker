@@ -37,7 +37,7 @@ export const BRAND_ALIAS_GROUPS: readonly (readonly string[])[] = [
   ['써브웨이', '서브웨이'],
 ];
 
-// 브랜드 키로 시작하지만 메뉴가 다른 파생 브랜드. 정규화한 장소명이 이 값으로 시작하면 매칭하지 않는다.
+// 브랜드 키로 시작하지만 메뉴가 다른 파생 브랜드. 정규화한 장소명이나 카테고리 세그먼트가 이 값으로 시작하면 매칭하지 않는다.
 export const EXCLUDED_DERIVED_BRANDS: readonly string[] = [
   '맘스터치 피자앤치킨',
   '굽네치킨 피자',
@@ -73,13 +73,16 @@ export class KakaoBrandMatcher {
   }
 
   match(place: KakaoPlace): BrandMatch | null {
-    const nameKey = normalizeBrandKey(place.name);
-    if (this.excludedPrefixes.some((prefix) => nameKey.startsWith(prefix))) {
+    // `음식점 > 패스트푸드 > 롯데리아`처럼 3단계부터 브랜드가 들어간다.
+    const brandSegments = (place.category ?? '').split('>').slice(2);
+    const isDerived = [place.name, ...brandSegments].some((value) => {
+      const key = normalizeBrandKey(value);
+      return this.excludedPrefixes.some((prefix) => key.startsWith(prefix));
+    });
+    if (isDerived) {
       return null;
     }
 
-    // `음식점 > 패스트푸드 > 롯데리아`처럼 3단계부터 브랜드가 들어간다.
-    const brandSegments = (place.category ?? '').split('>').slice(2);
     for (const segment of brandSegments) {
       const restaurantId = this.lookup(segment);
       if (restaurantId != null) {
@@ -99,13 +102,12 @@ export class KakaoBrandMatcher {
   }
 }
 
-/** places.jsonl 한 줄을 읽는다. id·name이 없으면 null. */
-export function parseKakaoPlaceLine(line: string): KakaoPlace | null {
-  const trimmed = line.trim();
-  if (!trimmed) {
+/** places.jsonl 한 줄(JSON 파싱 결과)을 검증한다. 숫자 id·name이 없으면 null. */
+export function parseKakaoPlace(value: unknown): KakaoPlace | null {
+  if (value == null || typeof value !== 'object') {
     return null;
   }
-  const raw = JSON.parse(trimmed) as Record<string, unknown>;
+  const raw = value as Record<string, unknown>;
   const id = raw.id == null ? '' : String(raw.id).trim();
   const name = typeof raw.name === 'string' ? raw.name.trim() : '';
   if (!/^\d+$/.test(id) || !name) {
