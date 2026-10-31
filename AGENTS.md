@@ -18,7 +18,7 @@ MELO 식단·영양 관리 앱의 NestJS 10 + TypeScript 백엔드. 모바일 �
 - **타임존 처리 코드는 수정하지 않는다.** 서버 로컬 시간과 KST(`Asia/Seoul`) 계산이 섞여 있지만 프론트가 현재 동작에 맞춰 보정하고 있다. 사용자가 별도로 요청할 때만 손댄다.
 - 레거시 텍스트 추천 파이프라인(`ChatService.recommendWithLegacyPipeline`, `chat.service.ts`의 `recommend()` 첫 줄 주석으로 롤백)은 롤백용으로 보존한다. 그 경로에서 쓰는 헬퍼도 지우지 않는다.
 - 브랜드 메뉴·영양정보 수집, 수정, 재출력 요청 전에는 매번 `docs/brand-nutrition-collection-rules.md`를 처음부터 끝까지 읽는다. 세션·터미널이 달라도 이 문서가 기준이며, 사용자가 수집 규칙을 바꾸면 이 문서를 갱신한다.
-- 마이그레이션, 대량 import(`restaurant:import`는 restaurant 테이블을 전부 삭제 후 재삽입), 벡터 인덱싱, 벤치마크, 외부 API를 부르는 스크립트는 상태를 바꾸는 작업이다. 사용자의 명시적 허락 없이 실행하지 않는다.
+- 마이그레이션, 대량 import(`restaurant:import`는 restaurant 테이블을 전부 삭제 후 재삽입하고 `restaurant_branch` 매핑을 NULL로 만든다), 벡터 인덱싱, 벤치마크, 외부 API를 부르는 스크립트는 상태를 바꾸는 작업이다. 사용자의 명시적 허락 없이 실행하지 않는다.
 - 엔티티·스키마를 바꾸면 TypeORM 마이그레이션 또는 pgvector 스키마 변경이 필요한지 알린다. 요청이 없으면 마이그레이션을 생성·실행하지 않는다.
 - 운영 DB를 조회할 때는 읽기 전용 트랜잭션(`START TRANSACTION READ ONLY`)에서 SELECT만 실행한다.
 
@@ -48,7 +48,7 @@ npm run db:migration:show                           # 적용 상태 확인 (run/
 | `src/chat` | Gemini 코칭: 일반 대화, 개인화 관리, 30일 패턴 분석, 식단 점수 피드백, 메뉴판·음식 사진·영양성분표 이미지 분석, 자연어 식사 기록, 대화 세션 요약·장기 기억. `chat.service.ts` 하나가 매우 크다(약 11,600줄) |
 | `src/home` | 메뉴 검색, 식사 기록, 폴더·세트, 개인 메뉴, 사진·영양성분표 인식, 운동·체중·걸음·물 기록, 캘린더·30일 분석, CSV import |
 | `src/auth` | Kakao·Apple·관리자 로그인, JWT access/refresh, 구독 코드, 온보딩, 기본 칼로리·탄단지 계산 |
-| `src/restaurant` | 프랜차이즈 식당 검색, 필터별 메뉴 추천(`ChatService.recommendRestaurantMenuIds`, 실패 시 규칙 기반) |
+| `src/restaurant` | 프랜차이즈 식당 검색, 필터별 메뉴 추천(`ChatService.recommendRestaurantMenuIds`, 실패 시 규칙 기반), 카카오 장소 ID → 브랜드 조회(`restaurant_branch`, `docs/kakao-restaurant-branch-import.md`) |
 | `src/profile`, `src/menstrual` | 프로필 수정(수정마다 `user_goal` 스냅샷 추가), 생리 기록 |
 | `src/gemini` | Gemini generateContent 공용 클라이언트. `GeminiClient`(abstract, DI 토큰) / `HttpGeminiClient` / 테스트용 `FakeGeminiClient` |
 | `src/storage` | 파일 업로드·삭제. `FileStorage`(abstract, DI 토큰) / `S3FileStorage` / 테스트용 `FakeFileStorage`, 업로드 키 util |

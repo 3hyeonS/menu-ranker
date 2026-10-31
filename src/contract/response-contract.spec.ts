@@ -42,6 +42,10 @@ import { ChatHistoryItemResponseDto } from '../chat/dto/response-dto/chat-histor
 import { MenstrualController } from '../menstrual/menstrual.controller';
 import { MenstrualService } from '../menstrual/menstrual.service';
 import { MenstrualRecordsResponseDto } from '../menstrual/dto/response-dto/menstrual-records-response.dto';
+import { RestaurantController } from '../restaurant/restaurant.controller';
+import { RestaurantService } from '../restaurant/restaurant.service';
+import { RestaurantDetailResponseDto } from '../restaurant/dto/response-dto/restaurant-detail-response-dto';
+import { RestaurantBrandsResponseDto } from '../restaurant/dto/response-dto/restaurant-brands-response-dto';
 
 // 주요 엔드포인트의 HTTP 응답 형태 스냅샷. 서비스는 mock이고, mock은 실제 응답 DTO 생성자로
 // 만든 값을 돌려준다. 그래서 컨트롤러·DTO 매핑·ResponseTransformInterceptor 래퍼·상태 코드·
@@ -155,6 +159,10 @@ const homeService = {
 const profileService = { getProfile: jest.fn() };
 const chatService = { getChatHistory: jest.fn() };
 const menstrualService = { getRecords: jest.fn() };
+const restaurantService = {
+  getRestaurantDetail: jest.fn(),
+  findRegisteredBrands: jest.fn(),
+};
 // jest.resetAllMocks()의 영향을 받지 않도록 jest.fn이 아닌 일반 함수로 둔다.
 const usersRepository = {
   findOne: async ({ where }) =>
@@ -180,6 +188,7 @@ describe('API response contract', () => {
         ProfileController,
         ChatController,
         MenstrualController,
+        RestaurantController,
       ],
       providers: [
         JwtStrategy,
@@ -190,6 +199,7 @@ describe('API response contract', () => {
         { provide: ProfileService, useValue: profileService },
         { provide: ChatService, useValue: chatService },
         { provide: MenstrualService, useValue: menstrualService },
+        { provide: RestaurantService, useValue: restaurantService },
       ],
     }).compile();
 
@@ -409,6 +419,49 @@ describe('API response contract', () => {
       expect(describeSuccess(res)).toMatchSnapshot();
     });
 
+    it('POST /restaurant/detail', async () => {
+      const detail: RestaurantDetailResponseDto = {
+        restaurant_name: '피자스쿨',
+        menu_list: [
+          {
+            menu_id: 20123,
+            menu_name: '고구마 피자',
+            menu_category: '피자',
+            calories: 258,
+            sugars: 6.2,
+            protein: 12.3,
+            sat_fat: 3.1,
+            unit: 0,
+            weight: 100,
+            unit_quantity: '조각',
+          },
+        ],
+      };
+      restaurantService.getRestaurantDetail.mockResolvedValue(detail);
+      const res = await post('/restaurant/detail').send({
+        restaurant_id: 1204,
+        filter: '균형',
+      });
+      expect(describeSuccess(res)).toMatchSnapshot();
+    });
+
+    it('POST /restaurant/brands', async () => {
+      const brands: RestaurantBrandsResponseDto = {
+        restaurants: [
+          { place_id: 27531028, restaurant_id: 1, restaurant_name: '롯데리아' },
+        ],
+      };
+      restaurantService.findRegisteredBrands.mockResolvedValue(brands);
+      const res = await post('/restaurant/brands').send({
+        place_ids: [27531028, '1765423970'],
+      });
+      expect(describeSuccess(res)).toMatchSnapshot();
+      // number와 숫자 문자열을 모두 문자열로 바꿔 서비스에 넘긴다.
+      expect(restaurantService.findRegisteredBrands).toHaveBeenCalledWith(
+        expect.objectContaining({ place_ids: ['27531028', '1765423970'] }),
+      );
+    });
+
     it('exposes x-request-id header', async () => {
       authService.hasUserInfo.mockResolvedValue(true);
       const res = await post('/userAuth/hasUserInfo');
@@ -421,6 +474,17 @@ describe('API response contract', () => {
       const res = await post('/home/menuDetail').send({});
       expect(describeError(res)).toMatchSnapshot();
       expect(homeService.menuDetail).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['empty', []],
+      ['non-numeric string', ['abc']],
+      ['decimal number', [1.5]],
+      ['over 100 ids', Array.from({ length: 101 }, (_, i) => i + 1)],
+    ])('400 when /restaurant/brands place_ids is %s', async (_name, ids) => {
+      const res = await post('/restaurant/brands').send({ place_ids: ids });
+      expect(describeError(res)).toMatchSnapshot();
+      expect(restaurantService.findRegisteredBrands).not.toHaveBeenCalled();
     });
 
     it('400 when a non-whitelisted field is sent', async () => {

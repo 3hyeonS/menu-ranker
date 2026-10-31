@@ -1691,6 +1691,23 @@ exports[`API request DTO contract RegisteredMenuListRequestDto 1`] = `
 }
 `;
 
+exports[`API request DTO contract RestaurantBrandsRequestDto 1`] = `
+{
+  "place_ids": {
+    "designType": "Array",
+    "hasTransform": true,
+    "transformType": null,
+    "validators": [
+      "arrayMaxSize [100]",
+      "arrayMinSize [1]",
+      "isArray",
+      "isString each",
+      "matches ["/^[1-9]\\\\d{0,14}$/",null] each",
+    ],
+  },
+}
+`;
+
 exports[`API request DTO contract RestaurantDetailRequestDto 1`] = `
 {
   "filter": {
@@ -2395,6 +2412,7 @@ exports[`API request DTO contract lists every request DTO 1`] = `
   "RegisterSubCodeRequestDto",
   "RegisterUserInfoRequestDto",
   "RegisterWeightRequestDto",
+  "RestaurantBrandsRequestDto",
   "RestaurantDetailRequestDto",
   "RestaurantSearchRequestDto",
   "SaveMenstrualRecordsRequestDto",

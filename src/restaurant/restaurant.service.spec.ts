@@ -3,7 +3,7 @@ import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 
 describe('RestaurantService', () => {
   it('returns sugars and saturated fat in restaurant menu details', () => {
-    const service = new RestaurantService(null, null, null);
+    const service = new RestaurantService(null, null, null, null);
     const menu = {
       id: 1,
       name: '테스트 메뉴',
@@ -27,6 +27,7 @@ describe('RestaurantService', () => {
     expect(response).toEqual({
       menu_id: 1,
       menu_name: '테스트 메뉴',
+      menu_category: null,
       calories: 250,
       sugars: 6.2,
       protein: 12.3,
@@ -39,8 +40,29 @@ describe('RestaurantService', () => {
     expect(response).not.toHaveProperty('fat');
   });
 
+  it('returns the menu category for the food card badge', () => {
+    const service = new RestaurantService(null, null, null, null);
+    const menu = {
+      id: 3,
+      name: '고구마 피자',
+      menuCategory: '피자',
+      calories: '258',
+      unit: 0,
+      weight: '100',
+      unitQuantity: '조각',
+    } as unknown as RestaurantMenuEntity;
+
+    const response = (
+      service as unknown as {
+        toResponse(menu: RestaurantMenuEntity): Record<string, unknown>;
+      }
+    ).toResponse(menu);
+
+    expect(response.menu_category).toBe('피자');
+  });
+
   it('keeps an unavailable restaurant menu weight as null', () => {
-    const service = new RestaurantService(null, null, null);
+    const service = new RestaurantService(null, null, null, null);
     const menu = {
       id: 2,
       name: '중량 미제공 메뉴',
@@ -94,6 +116,7 @@ describe('RestaurantService', () => {
       restaurantRepository as never,
       restaurantMenuRepository as never,
       chatService as never,
+      null,
     );
 
     const response = await service.getRestaurantDetail(
@@ -158,6 +181,7 @@ describe('RestaurantService', () => {
       restaurantRepository as never,
       restaurantMenuRepository as never,
       chatService as never,
+      null,
     );
 
     const response = await service.getRestaurantDetail(
@@ -206,6 +230,7 @@ describe('RestaurantService', () => {
       restaurantRepository as never,
       restaurantMenuRepository as never,
       chatService as never,
+      null,
     );
 
     const response = await service.getRestaurantDetail(
@@ -256,6 +281,7 @@ describe('RestaurantService', () => {
       restaurantRepository as never,
       restaurantMenuRepository as never,
       chatService as never,
+      null,
     );
 
     const response = await service.getRestaurantDetail(
@@ -274,7 +300,7 @@ describe('RestaurantService', () => {
     ['샌드위치/샐러드', '빵'],
     ['베이커리', '크림'],
   ])('%s 추천에서 %s 구성품을 제외한다', (restaurantCategory, menuCategory) => {
-    const service = new RestaurantService(null, null, null);
+    const service = new RestaurantService(null, null, null, null);
     const menu = { menuCategory } as RestaurantMenuEntity;
 
     const isCandidate = (
@@ -290,7 +316,7 @@ describe('RestaurantService', () => {
   });
 
   it('keeps bakery bread and cafe add-ons as recommendation candidates', () => {
-    const service = new RestaurantService(null, null, null);
+    const service = new RestaurantService(null, null, null, null);
     const candidateChecker = service as unknown as {
       isRecommendationCandidate(
         menu: RestaurantMenuEntity,
@@ -310,5 +336,56 @@ describe('RestaurantService', () => {
         '카페',
       ),
     ).toBe(true);
+  });
+
+  describe('findRegisteredBrands', () => {
+    const branches = [
+      {
+        kakaoPlaceId: '200',
+        restaurantId: 2,
+        restaurant: { id: 2, name: '롯데리아' },
+      },
+      {
+        kakaoPlaceId: '100',
+        restaurantId: 1,
+        restaurant: { id: 1, name: '맘스터치' },
+      },
+    ];
+
+    it('returns only mapped places in request order without duplicates', async () => {
+      const restaurantBranchRepository = {
+        find: jest.fn().mockResolvedValue(branches),
+      };
+      const service = new RestaurantService(
+        null,
+        null,
+        null,
+        restaurantBranchRepository as never,
+      );
+
+      const response = await service.findRegisteredBrands({
+        place_ids: ['100', '999', '200', '100'],
+      });
+
+      expect(response).toEqual({
+        restaurants: [
+          { place_id: 100, restaurant_id: 1, restaurant_name: '맘스터치' },
+          { place_id: 200, restaurant_id: 2, restaurant_name: '롯데리아' },
+        ],
+      });
+      const [options] = restaurantBranchRepository.find.mock.calls[0];
+      expect(options.where.kakaoPlaceId.value).toEqual(['100', '999', '200']);
+      expect(options.relations).toEqual({ restaurant: true });
+    });
+
+    it('returns an empty list when nothing is registered', async () => {
+      const service = new RestaurantService(null, null, null, {
+        find: jest.fn().mockResolvedValue([]),
+      } as never);
+
+      await expect(
+        service.findRegisteredBrands({ place_ids: ['1'] }),
+      ).resolves.toEqual({ restaurants: [] });
+    });
   });
 });

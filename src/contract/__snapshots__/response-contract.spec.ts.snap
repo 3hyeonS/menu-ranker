@@ -1,5 +1,57 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`API response contract error responses 400 when /restaurant/brands place_ids is decimal number 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "each value in place_ids must match /^[1-9]\\d{0,14}$/ regular expression",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when /restaurant/brands place_ids is empty 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "place_ids must contain at least 1 elements",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when /restaurant/brands place_ids is non-numeric string 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "each value in place_ids must match /^[1-9]\\d{0,14}$/ regular expression",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when /restaurant/brands place_ids is over 100 ids 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "place_ids must contain no more than 100 elements",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
 exports[`API response contract error responses 400 when a non-whitelisted field is sent 1`] = `
 {
   "body": {
@@ -434,6 +486,50 @@ exports[`API response contract success responses POST /menstrual/records 1`] = `
   "extraKeys": [],
   "httpStatus": 201,
   "message": "Menstrual records returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /restaurant/brands 1`] = `
+{
+  "data": {
+    "restaurants": [
+      {
+        "place_id": "number",
+        "restaurant_id": "number",
+        "restaurant_name": "string",
+      },
+    ],
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Registered brands returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /restaurant/detail 1`] = `
+{
+  "data": {
+    "menu_list": [
+      {
+        "calories": "number",
+        "menu_category": "string",
+        "menu_id": "number",
+        "menu_name": "string",
+        "protein": "number",
+        "sat_fat": "number",
+        "sugars": "number",
+        "unit": "number",
+        "unit_quantity": "string",
+        "weight": "number",
+      },
+    ],
+    "restaurant_name": "string",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Restaurant recommendations returned successfully",
   "statusCode": 201,
 }
 `;
