@@ -21,8 +21,10 @@ import { ResponseTransformInterceptor } from '../interceptors/response-transform
 import { ResponseDto } from '../response-dto';
 import { RestaurantSearchRequestDto } from './dto/request-dto/restaurant-search-request-dto';
 import { RestaurantDetailRequestDto } from './dto/request-dto/restaurant-detail-request-dto';
+import { RestaurantBrandsRequestDto } from './dto/request-dto/restaurant-brands-request-dto';
 import { RestaurantSearchResponseDto } from './dto/response-dto/restaurant-search-response-dto';
 import { RestaurantDetailResponseDto } from './dto/response-dto/restaurant-detail-response-dto';
+import { RestaurantBrandsResponseDto } from './dto/response-dto/restaurant-brands-response-dto';
 import { RestaurantService } from './restaurant.service';
 
 @ApiTags('식당 탭')
@@ -77,5 +79,30 @@ export class RestaurantController {
     @GetUser() user: UserEntity,
   ): Promise<RestaurantDetailResponseDto> {
     return await this.restaurantService.getRestaurantDetail(dto, user.id);
+  }
+
+  @ApiOperation({
+    summary: '카카오 장소 ID로 브랜드 등록 여부 조회',
+    description:
+      '수집한 카카오 장소(한강 이남 11개 구) 중 등록된 브랜드에 매핑된 장소만 반환합니다. 수집 지역 밖이나 새로 생긴 지점, 카페는 아직 나오지 않습니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '브랜드 등록 여부 조회 성공',
+    message: 'Registered brands returned successfully',
+    model: RestaurantBrandsResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'place_ids 형식 오류(1~100개, number 또는 숫자 문자열)',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ResponseMsg('Registered brands returned successfully')
+  @Post('/brands')
+  async brands(
+    @Body() dto: RestaurantBrandsRequestDto,
+  ): Promise<RestaurantBrandsResponseDto> {
+    return await this.restaurantService.findRegisteredBrands(dto);
   }
 }

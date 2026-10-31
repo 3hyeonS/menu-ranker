@@ -7,6 +7,14 @@ export class RestaurantMenuResponseDto {
   @ApiProperty({ type: String, description: '음식명', example: '고구마 피자' })
   menu_name: string;
 
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '메뉴 세부 카테고리(음식 카드 뱃지). 없으면 null',
+    example: '피자',
+  })
+  menu_category: string | null;
+
   @ApiProperty({ type: Number, description: '칼로리(kcal)', example: 258 })
   calories: number;
 

@@ -1,12 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { ChatService } from '../chat/chat.service';
 import {
   RestaurantDetailRequestDto,
   RestaurantMenuFilter,
 } from './dto/request-dto/restaurant-detail-request-dto';
 import { RestaurantSearchRequestDto } from './dto/request-dto/restaurant-search-request-dto';
+import { RestaurantBrandsRequestDto } from './dto/request-dto/restaurant-brands-request-dto';
+import {
+  RestaurantBrandPlaceResponseDto,
+  RestaurantBrandsResponseDto,
+} from './dto/response-dto/restaurant-brands-response-dto';
 import {
   RestaurantDetailResponseDto,
   RestaurantMenuResponseDto,
@@ -15,6 +20,7 @@ import {
   RestaurantSearchResponseDto,
   RestaurantSummaryResponseDto,
 } from './dto/response-dto/restaurant-search-response-dto';
+import { RestaurantBranchEntity } from './entity/restaurant-branch.entity';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 import { RestaurantEntity } from './entity/restaurant.entity';
 
@@ -29,6 +35,8 @@ export class RestaurantService {
     @InjectRepository(RestaurantMenuEntity)
     private readonly restaurantMenuRepository: Repository<RestaurantMenuEntity>,
     private readonly chatService: ChatService,
+    @InjectRepository(RestaurantBranchEntity)
+    private readonly restaurantBranchRepository: Repository<RestaurantBranchEntity>,
   ) {}
 
   async searchRestaurants(
@@ -67,6 +75,41 @@ export class RestaurantService {
         ? restaurantList[restaurantList.length - 1].restaurant_id
         : null,
     };
+  }
+
+  async findRegisteredBrands(
+    dto: RestaurantBrandsRequestDto,
+  ): Promise<RestaurantBrandsResponseDto> {
+    const placeIds = [...new Set(dto.place_ids)];
+    const branches = await this.restaurantBranchRepository.find({
+      where: { kakaoPlaceId: In(placeIds), restaurantId: Not(IsNull()) },
+      relations: { restaurant: true },
+      select: {
+        id: true,
+        kakaoPlaceId: true,
+        restaurant: { id: true, name: true },
+      },
+    });
+    const branchByPlaceId = new Map(
+      branches.map((branch) => [branch.kakaoPlaceId, branch]),
+    );
+
+    const restaurants = placeIds.flatMap(
+      (placeId): RestaurantBrandPlaceResponseDto[] => {
+        const restaurant = branchByPlaceId.get(placeId)?.restaurant;
+        return restaurant
+          ? [
+              {
+                place_id: Number(placeId),
+                restaurant_id: restaurant.id,
+                restaurant_name: restaurant.name,
+              },
+            ]
+          : [];
+      },
+    );
+
+    return { restaurants };
   }
 
   async getRestaurantDetail(
@@ -229,6 +272,7 @@ export class RestaurantService {
     return {
       menu_id: menu.id,
       menu_name: menu.name,
+      menu_category: menu.menuCategory ?? null,
       calories: this.numberValue(menu.calories),
       sugars: this.nullableNumber(menu.sugars),
       protein: this.nullableNumber(menu.protein),

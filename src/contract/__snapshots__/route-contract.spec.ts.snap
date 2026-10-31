@@ -1445,6 +1445,23 @@ exports[`API route contract ProfileController routes 1`] = `
 
 exports[`API route contract RestaurantController routes 1`] = `
 {
+  "POST /restaurant/brands": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "brands",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() RestaurantBrandsRequestDto",
+    ],
+    "pipes": [],
+    "responseMessage": "Registered brands returned successfully",
+    "roles": null,
+    "status": 201,
+  },
   "POST /restaurant/detail": {
     "filters": [],
     "guards": [
