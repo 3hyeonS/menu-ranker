@@ -130,6 +130,69 @@ describe('ChatService with GeminiClient', () => {
   });
 });
 
+describe('ChatService restaurant menu rankings', () => {
+  const userContext = {
+    user_profile: { goal: '감량' },
+    long_term_profile_traits: null,
+    recent_meal_records_3_days: [],
+  };
+  const menus = [1, 2, 3].map((id) => ({
+    menu_id: id,
+    menu_name: `메뉴 ${id}`,
+    menu_category: '버거',
+    calories: 100 * id,
+    carbs: null,
+    sugars: null,
+    dietary_fiber: null,
+    protein: null,
+    fat: null,
+    saturated_fat: null,
+    sodium: null,
+    unit: 0,
+    weight: 200,
+    unit_quantity: '1개',
+  }));
+
+  it('ranks all three filters in one deterministic Gemini call', async () => {
+    const { service, gemini } = createService();
+    gemini.respondJson({
+      balanced: [2, 2, 99, '3'],
+      low_calorie: [1, 2],
+      protein: 'invalid',
+    });
+
+    await expect(
+      service.rankRestaurantMenusByFilter({
+        restaurantName: '테스트 버거',
+        restaurantCategory: '버거',
+        userContext,
+        menus,
+      }),
+    ).resolves.toEqual({ 균형: [2, 3], 저칼로리: [1, 2], 단백질: [] });
+
+    expect(gemini.requests).toHaveLength(1);
+    expect(gemini.requests[0].generationConfig.temperature).toBe(0);
+    const [part] = gemini.requests[0].contents[0].parts;
+    const prompt = 'text' in part ? part.text : '';
+    expect(prompt).toContain('"goal":"감량"');
+    expect(prompt).not.toContain('recent_messages');
+  });
+
+  it('propagates Gemini failures so the caller can fall back', async () => {
+    const { service, gemini } = createService();
+    gemini.failUnavailable();
+
+    await expect(
+      service.rankRestaurantMenusByFilter({
+        restaurantName: '테스트 버거',
+        restaurantCategory: '버거',
+        userContext,
+        menus,
+      }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+});
+
 describe('ChatService with FileStorage', () => {
   it('uploads chat images under the image type prefix with the request abort signal', async () => {
     const { service, fileStorage } = createService();

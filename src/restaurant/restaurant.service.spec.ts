@@ -1,6 +1,25 @@
 import { RestaurantService } from './restaurant.service';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 
+const userContext = {
+  user_profile: { goal: '감량' },
+  long_term_profile_traits: null,
+  recent_meal_records_3_days: [],
+};
+
+function createChatService(
+  rankings: Partial<Record<'균형' | '저칼로리' | '단백질', number[]>>,
+) {
+  return {
+    getRestaurantRecommendationUserContext: jest
+      .fn()
+      .mockResolvedValue(userContext),
+    rankRestaurantMenusByFilter: jest
+      .fn()
+      .mockResolvedValue({ 균형: [], 저칼로리: [], 단백질: [], ...rankings }),
+  };
+}
+
 describe('RestaurantService', () => {
   it('returns sugars and saturated fat in restaurant menu details', () => {
     const service = new RestaurantService(null, null, null, null);
@@ -107,11 +126,9 @@ describe('RestaurantService', () => {
     const restaurantMenuRepository = {
       find: jest.fn().mockResolvedValue(menus),
     };
-    const chatService = {
-      recommendRestaurantMenuIds: jest
-        .fn()
-        .mockResolvedValue(menus.map((menu) => menu.id)),
-    };
+    const chatService = createChatService({
+      저칼로리: menus.map((menu) => menu.id),
+    });
     const service = new RestaurantService(
       restaurantRepository as never,
       restaurantMenuRepository as never,
@@ -120,7 +137,7 @@ describe('RestaurantService', () => {
     );
 
     const response = await service.getRestaurantDetail(
-      { restaurant_id: 1, filter: 'low_calorie' as never },
+      { restaurant_id: 1, filter: '저칼로리' as never },
       1,
     );
 
@@ -174,9 +191,7 @@ describe('RestaurantService', () => {
     const restaurantMenuRepository = {
       find: jest.fn().mockResolvedValue(menus),
     };
-    const chatService = {
-      recommendRestaurantMenuIds: jest.fn().mockResolvedValue([1, 2, 3]),
-    };
+    const chatService = createChatService({ 저칼로리: [1, 2, 3] });
     const service = new RestaurantService(
       restaurantRepository as never,
       restaurantMenuRepository as never,
@@ -189,7 +204,7 @@ describe('RestaurantService', () => {
       1,
     );
 
-    expect(chatService.recommendRestaurantMenuIds).toHaveBeenCalledWith(
+    expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledWith(
       expect.objectContaining({
         menus: [
           expect.objectContaining({ menu_id: 2 }),
@@ -223,9 +238,7 @@ describe('RestaurantService', () => {
     const restaurantMenuRepository = {
       find: jest.fn().mockResolvedValue(menus),
     };
-    const chatService = {
-      recommendRestaurantMenuIds: jest.fn().mockResolvedValue([1]),
-    };
+    const chatService = createChatService({ 저칼로리: [1] });
     const service = new RestaurantService(
       restaurantRepository as never,
       restaurantMenuRepository as never,
@@ -274,9 +287,7 @@ describe('RestaurantService', () => {
     const restaurantMenuRepository = {
       find: jest.fn().mockResolvedValue(menus),
     };
-    const chatService = {
-      recommendRestaurantMenuIds: jest.fn().mockResolvedValue([1, 2]),
-    };
+    const chatService = createChatService({ 저칼로리: [1, 2] });
     const service = new RestaurantService(
       restaurantRepository as never,
       restaurantMenuRepository as never,
@@ -336,6 +347,154 @@ describe('RestaurantService', () => {
         '카페',
       ),
     ).toBe(true);
+  });
+
+  describe('filter recommendations', () => {
+    let consoleError: jest.SpyInstance;
+
+    beforeEach(() => {
+      consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleError.mockRestore();
+    });
+
+    function createMenus(count: number): RestaurantMenuEntity[] {
+      return Array.from({ length: count }, (_, index) => ({
+        id: index + 1,
+        restaurantId: 1,
+        name: `메뉴 ${index + 1}`,
+        menuCategory: '버거',
+        calories: 100 * (index + 1),
+        carbs: 30,
+        protein: 30 - index,
+        fat: 10,
+        unit: 0,
+        weight: 200,
+        unitQuantity: '1개',
+      })) as unknown as RestaurantMenuEntity[];
+    }
+
+    function createService(
+      menus: RestaurantMenuEntity[],
+      chatService: ReturnType<typeof createChatService>,
+    ) {
+      return new RestaurantService(
+        {
+          findOne: jest
+            .fn()
+            .mockResolvedValue({
+              id: 1,
+              name: '테스트 버거',
+              category: '버거',
+            }),
+        } as never,
+        { find: jest.fn().mockResolvedValue(menus) } as never,
+        chatService as never,
+        null,
+      );
+    }
+
+    async function recommend(service: RestaurantService, filter: string) {
+      const response = await service.getRestaurantDetail(
+        { restaurant_id: 1, filter: filter as never },
+        1,
+      );
+      return response.menu_list.map((menu) => menu.menu_id);
+    }
+
+    it('removes duplicates across filters in 저칼로리 > 단백질 > 균형 order', async () => {
+      const menus = createMenus(15);
+      const chatService = createChatService({
+        저칼로리: [1, 2, 3, 4, 5, 6],
+        단백질: [1, 2, 7, 8, 9, 10, 11],
+        균형: [1, 7, 12, 13, 14, 15, 2],
+      });
+      const service = createService(menus, chatService);
+
+      expect(await recommend(service, '저칼로리')).toEqual([1, 2, 3, 4, 5]);
+      expect(await recommend(service, '단백질')).toEqual([7, 8, 9, 10, 11]);
+      expect(await recommend(service, '균형')).toEqual([12, 13, 14, 15, 6]);
+    });
+
+    it('reuses the cached result for the same record and recalculates when it changes', async () => {
+      const menus = createMenus(15);
+      const chatService = createChatService({ 저칼로리: [3, 1, 2] });
+      const service = createService(menus, chatService);
+
+      const first = await recommend(service, '저칼로리');
+      await recommend(service, '단백질');
+      await recommend(service, '균형');
+      expect(await recommend(service, '저칼로리')).toEqual(first);
+      expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledTimes(1);
+
+      chatService.getRestaurantRecommendationUserContext.mockResolvedValue({
+        ...userContext,
+        recent_meal_records_3_days: [{ date: '2026-11-02' }],
+      });
+      await recommend(service, '저칼로리');
+      expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledTimes(2);
+    });
+
+    it('shares one Gemini call between concurrent filter requests', async () => {
+      const chatService = createChatService({});
+      const service = createService(createMenus(15), chatService);
+
+      await Promise.all([
+        recommend(service, '저칼로리'),
+        recommend(service, '단백질'),
+        recommend(service, '균형'),
+      ]);
+
+      expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledTimes(1);
+    });
+
+    it('fills short filters with duplicates when candidates run out', async () => {
+      const menus = createMenus(6);
+      const chatService = createChatService({
+        저칼로리: [1, 2, 3, 4, 5],
+        단백질: [6, 1, 2, 3, 4],
+        균형: [2, 6, 1, 3, 5],
+      });
+      const service = createService(menus, chatService);
+
+      expect(await recommend(service, '저칼로리')).toEqual([1, 2, 3, 4, 5]);
+      expect(await recommend(service, '단백질')).toEqual([6, 1, 2, 3, 4]);
+      expect(await recommend(service, '균형')).toEqual([2, 6, 1, 3, 5]);
+    });
+
+    it('fills a short Gemini ranking with the rule-based ranking', async () => {
+      const menus = createMenus(15);
+      const chatService = createChatService({ 저칼로리: [9, 99] });
+      const service = createService(menus, chatService);
+
+      expect(await recommend(service, '저칼로리')).toEqual([9, 1, 2, 3, 4]);
+    });
+
+    it('uses rule-based rankings without caching when Gemini fails', async () => {
+      const menus = createMenus(15);
+      const chatService = createChatService({});
+      chatService.rankRestaurantMenusByFilter.mockRejectedValueOnce(
+        new Error('Gemini unavailable'),
+      );
+      const service = createService(menus, chatService);
+
+      expect(await recommend(service, '저칼로리')).toEqual([1, 2, 3, 4, 5]);
+      expect(await recommend(service, '단백질')).toEqual([6, 7, 8, 9, 10]);
+      expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses rule-based rankings when the user context cannot be loaded', async () => {
+      const chatService = createChatService({});
+      chatService.getRestaurantRecommendationUserContext.mockRejectedValue(
+        new Error('User profile is required for recommendation'),
+      );
+      const service = createService(createMenus(15), chatService);
+
+      expect(await recommend(service, '저칼로리')).toEqual([1, 2, 3, 4, 5]);
+      expect(chatService.rankRestaurantMenusByFilter).not.toHaveBeenCalled();
+    });
   });
 
   describe('findRegisteredBrands', () => {

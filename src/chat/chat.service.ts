@@ -107,6 +107,7 @@ const CHAT_SESSION_RECONCILE_HISTORY_LIMIT = 200;
 const CHAT_SESSION_MAINTENANCE_BATCH_SIZE = 2;
 const CHAT_LONG_TERM_COMPACTION_BATCH_SIZE = 10;
 const CHAT_RECORD_CONTEXT_DAYS = 3;
+const RESTAURANT_RECOMMENDATION_RANKING_SIZE = 10;
 const CHAT_WEIGHT_CONTEXT_DAYS = 7;
 const CHAT_STEPS_CONTEXT_DAYS = 7;
 const PERSONALIZED_MANAGEMENT_MEAL_CONTEXT_DAYS = 7;
@@ -443,6 +444,36 @@ type LightweightChatContext = {
   recent_step_records_7_days: RecentStepRecordContextItem[];
   recent_water_intake_records_3_days: RecentWaterIntakeContextItem[];
   record_context_days?: ChatRecordContextDays;
+};
+
+export type RestaurantRecommendationFilter = '균형' | '저칼로리' | '단백질';
+
+export type RestaurantMenuRankings = Record<
+  RestaurantRecommendationFilter,
+  number[]
+>;
+
+export type RestaurantRecommendationMenuInput = {
+  menu_id: number;
+  menu_name: string;
+  menu_category: string | null;
+  calories: number;
+  carbs: number | null;
+  sugars: number | null;
+  dietary_fiber: number | null;
+  protein: number | null;
+  fat: number | null;
+  saturated_fat: number | null;
+  sodium: number | null;
+  unit: number;
+  weight: number | null;
+  unit_quantity: string;
+};
+
+export type RestaurantRecommendationUserContext = {
+  user_profile: Record<string, unknown>;
+  long_term_profile_traits: string | null;
+  recent_meal_records_3_days: RecentMealRecordContextItem[];
 };
 
 type ParsedChatIntent = {
@@ -2464,58 +2495,19 @@ ${JSON.stringify({
     return userInfo;
   }
 
-  async recommendRestaurantMenuIds(params: {
-    userId: number | null;
-    restaurantName: string;
-    restaurantCategory: string | null;
-    filter: '균형' | '저칼로리' | '단백질' | null;
-    menus: Array<{
-      menu_id: number;
-      menu_name: string;
-      menu_category: string | null;
-      calories: number;
-      carbs: number | null;
-      sugars: number | null;
-      dietary_fiber: number | null;
-      protein: number | null;
-      fat: number | null;
-      saturated_fat: number | null;
-      sodium: number | null;
-      unit: number;
-      weight: number;
-      unit_quantity: string;
-    }>;
-  }): Promise<number[]> {
-    const userInfo =
-      params.userId == null
-        ? null
-        : await this.getRequiredUserInfo(params.userId);
-    const chatContext =
-      params.userId == null
-        ? null
-        : await this.getRecentChatContext(params.userId);
-    const filter = params.filter ?? '전반적인 적합도';
-    const prompt = `
-식당 메뉴 중 사용자에게 적합한 메뉴를 최대 5개 선택하고 JSON object만 반환해.
-마크다운, 설명, 코드펜스는 쓰지 마.
+  // 식당 메뉴 추천 입력. 채팅 메시지·세션 요약처럼 대화마다 바뀌는 값은 넣지 않아
+  // 식단 기록과 프로필이 같으면 입력도 같다(호출부가 이 값으로 결과 캐시 키를 만든다).
+  async getRestaurantRecommendationUserContext(
+    userId: number,
+  ): Promise<RestaurantRecommendationUserContext> {
+    const [userInfo, recentMealRecords, memory] = await Promise.all([
+      this.getRequiredUserInfo(userId),
+      this.getRecentMealRecordContext(userId, CHAT_RECORD_CONTEXT_DAYS),
+      this.chatUserMemoryRepository.findOneBy({ userId }),
+    ]);
 
-선택 기준:
-- 요청 필터: ${filter}
-- "균형"은 사용자 목표와 탄수화물·단백질·지방 구성을 종합해 선택해.
-- "저칼로리"는 실제 제공량 기준 칼로리가 낮은 주문 가능한 메뉴를 선택해. 소스·토핑·재료만 따로 고르지 마.
-- "단백질"은 실제 제공량의 단백질과 칼로리 대비 단백질을 함께 고려해.
-- 필터가 없으면 사용자 목표와 최근 기록에 전반적으로 적합한 메뉴를 선택해.
-- 사용자 정보나 기록에 없는 내용은 추측하지 마.
-- 반드시 제공된 menu_id만 사용하고, 중복 ID나 새 메뉴를 만들지 마.
-- 영양성분이 null인 항목은 0이 아니라 미제공 데이터야.
-
-식당:
-${JSON.stringify({ name: params.restaurantName, category: params.restaurantCategory })}
-
-사용자 기본 정보:
-${JSON.stringify(
-  userInfo
-    ? {
+    return {
+      user_profile: {
         gender: userInfo.gender,
         birth_year: userInfo.birthYear,
         height: userInfo.height,
@@ -2530,21 +2522,60 @@ ${JSON.stringify(
         eating_out_freq_weekly: userInfo.eating_out_freq_weekly,
         job_type: userInfo.job_type,
         lunch_location: userInfo.lunch_location,
-      }
-    : null,
-)}
+      },
+      long_term_profile_traits: this.normalizeVerifiedProfileTraits(
+        memory?.profileTraits,
+      ),
+      recent_meal_records_3_days: recentMealRecords,
+    };
+  }
 
-최근 기록과 대화 맥락:
-${JSON.stringify(
-  chatContext ? this.toLightweightChatContext(chatContext) : null,
-)}
+  // 세 필터(균형·저칼로리·단백질)의 메뉴 순위를 Gemini 한 번으로 받는다.
+  // 필터 간 중복 제거는 호출부(RestaurantService)가 우선순위대로 한다.
+  async rankRestaurantMenusByFilter(params: {
+    restaurantName: string;
+    restaurantCategory: string | null;
+    userContext: RestaurantRecommendationUserContext;
+    menus: RestaurantRecommendationMenuInput[];
+  }): Promise<RestaurantMenuRankings> {
+    const prompt = `
+식당 메뉴를 세 가지 기준별로 사용자에게 적합한 순서대로 정렬하고 JSON object만 반환해.
+마크다운, 설명, 코드펜스는 쓰지 마.
+
+기준:
+- balanced(균형): 사용자 목표와 탄수화물·단백질·지방 구성을 종합해 판단해.
+- low_calorie(저칼로리): 실제 제공량 기준 칼로리가 낮은 주문 가능한 메뉴를 앞에 둬. 소스·토핑·재료만 따로 고르지 마.
+- protein(단백질): 실제 제공량의 단백질과 칼로리 대비 단백질을 함께 고려해.
+
+규칙:
+- 기준마다 가장 적합한 메뉴부터 최대 ${RESTAURANT_RECOMMENDATION_RANKING_SIZE}개를 독립적으로 정렬해. 기준 사이에 같은 메뉴가 있어도 돼.
+- 사용자 정보나 기록에 없는 내용은 추측하지 마.
+- 반드시 제공된 menu_id만 사용하고, 한 기준 안에서 중복 ID나 새 메뉴를 만들지 마.
+- 영양성분이 null인 항목은 0이 아니라 미제공 데이터야.
+
+식당:
+${JSON.stringify({ name: params.restaurantName, category: params.restaurantCategory })}
+
+사용자 기본 정보:
+${JSON.stringify(params.userContext.user_profile)}
+
+사용자가 직접 말한 장기 특성:
+${JSON.stringify(params.userContext.long_term_profile_traits)}
+
+최근 3일 식사 기록:
+${JSON.stringify({
+  consumption_interpretation: CHAT_CONSUMPTION_INTERPRETATION,
+  records: params.userContext.recent_meal_records_3_days,
+})}
 
 선택 가능한 메뉴:
 ${JSON.stringify(params.menus)}
 
 반환 shape:
 {
-  "menu_ids": [1, 2, 3]
+  "balanced": [1, 2, 3],
+  "low_calorie": [3, 1, 2],
+  "protein": [2, 3, 1]
 }
 `.trim();
 
@@ -2552,22 +2583,30 @@ ${JSON.stringify(params.menus)}
       context: 'restaurant-menu-recommendation',
       systemInstruction:
         '제공된 사용자 정보와 식당 메뉴 영양성분만 근거로 사용하는 식당 메뉴 선택기야.',
+      temperature: 0,
     });
     const allowedIds = new Set(params.menus.map((menu) => menu.menu_id));
-    const rawIds = Array.isArray(data?.menu_ids) ? data.menu_ids : [];
-    const validatedIds: number[] = [];
-    for (const rawId of rawIds) {
-      const menuId = Number(rawId);
-      if (
-        Number.isInteger(menuId) &&
-        allowedIds.has(menuId) &&
-        !validatedIds.includes(menuId)
-      ) {
-        validatedIds.push(menuId);
+    const validateIds = (rawIds: unknown): number[] => {
+      const validatedIds: number[] = [];
+      for (const rawId of Array.isArray(rawIds) ? rawIds : []) {
+        const menuId = Number(rawId);
+        if (
+          Number.isInteger(menuId) &&
+          allowedIds.has(menuId) &&
+          !validatedIds.includes(menuId)
+        ) {
+          validatedIds.push(menuId);
+        }
       }
-    }
 
-    return validatedIds.slice(0, 5);
+      return validatedIds.slice(0, RESTAURANT_RECOMMENDATION_RANKING_SIZE);
+    };
+
+    return {
+      균형: validateIds(data?.balanced),
+      저칼로리: validateIds(data?.low_calorie),
+      단백질: validateIds(data?.protein),
+    };
   }
 
   async getChatHistory(user: UserEntity): Promise<ChatHistoryResponseDto> {
@@ -11045,6 +11084,7 @@ ${storedContext}`
       context?: string;
       timeoutMs?: number;
       systemInstruction?: string;
+      temperature?: number;
     } = {},
   ): Promise<any> {
     // Gemini 공통 호출부: JSON 응답 강제와 에러 변환을 한곳에서 처리합니다.
@@ -11060,7 +11100,7 @@ ${storedContext}`
         },
       ],
       generationConfig: {
-        temperature: 0.2,
+        temperature: options.temperature ?? 0.2,
         responseMimeType: 'application/json',
       },
       timeoutMs: options.timeoutMs ?? this.getGeminiTextTimeoutMs(),

@@ -48,7 +48,7 @@ npm run db:migration:show                           # 적용 상태 확인 (run/
 | `src/chat` | Gemini 코칭: 일반 대화, 개인화 관리, 30일 패턴 분석, 식단 점수 피드백, 메뉴판·음식 사진·영양성분표 이미지 분석, 자연어 식사 기록, 대화 세션 요약·장기 기억. `chat.service.ts` 하나가 매우 크다(약 11,600줄) |
 | `src/home` | 메뉴 검색, 식사 기록, 폴더·세트, 개인 메뉴, 사진·영양성분표 인식, 운동·체중·걸음·물 기록, 캘린더·30일 분석, CSV import |
 | `src/auth` | Kakao·Apple·관리자 로그인, JWT access/refresh, 구독 코드, 온보딩, 기본 칼로리·탄단지 계산 |
-| `src/restaurant` | 프랜차이즈 식당 검색, 필터별 메뉴 추천(`ChatService.recommendRestaurantMenuIds`, 실패 시 규칙 기반), 카카오 장소 ID → 브랜드 조회(`restaurant_branch`, `docs/kakao-restaurant-branch-import.md`) |
+| `src/restaurant` | 프랜차이즈 식당 검색, 필터별 메뉴 추천(`ChatService.rankRestaurantMenusByFilter`로 세 필터 순위를 한 번에 받아 저칼로리>단백질>균형 순으로 중복 제외, 입력 해시 키로 24시간 메모리 캐시, 실패 시 규칙 기반·캐시 안 함), 카카오 장소 ID → 브랜드 조회(`restaurant_branch`, `docs/kakao-restaurant-branch-import.md`) |
 | `src/profile`, `src/menstrual` | 프로필 수정(수정마다 `user_goal` 스냅샷 추가), 생리 기록 |
 | `src/gemini` | Gemini generateContent 공용 클라이언트. `GeminiClient`(abstract, DI 토큰) / `HttpGeminiClient` / 테스트용 `FakeGeminiClient` |
 | `src/storage` | 파일 업로드·삭제. `FileStorage`(abstract, DI 토큰) / `S3FileStorage` / 테스트용 `FakeFileStorage`, 업로드 키 util |
