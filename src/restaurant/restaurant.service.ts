@@ -30,6 +30,10 @@ import { RestaurantBranchEntity } from './entity/restaurant-branch.entity';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 import { RestaurantEntity } from './entity/restaurant.entity';
 import { KeyedTtlCache } from '../utils/keyed-ttl-cache.util';
+import {
+  getRequestAbortSignal,
+  isRequestCancellationError,
+} from '../utils/request-abort.util';
 
 // 같은 메뉴가 여러 필터에 걸리면 앞선 필터에 남긴다(#34 결정).
 const RESTAURANT_FILTER_PRIORITY = [
@@ -206,44 +210,78 @@ export class RestaurantService {
       userContext =
         await this.chatService.getRestaurantRecommendationUserContext(userId);
     } catch (error) {
-      this.logRecommendationFallback(restaurant, userId, error);
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
+      this.logRecommendationFallback(
+        'User context unavailable',
+        restaurant,
+        userId,
+        error,
+      );
       return this.assignRecommendations(
         this.fallbackRankings(candidates),
         limit,
       );
     }
 
+    // limit은 식당 이름으로 정해지므로 키에 따로 넣지 않는다.
     const cacheKey = createHash('sha256')
       .update(
         JSON.stringify({
           userId,
-          restaurantId: restaurant.id,
-          limit,
+          restaurant: {
+            id: restaurant.id,
+            name: restaurant.name,
+            category: restaurant.category,
+          },
           menus,
           userContext,
         }),
       )
       .digest('hex');
-    const cached = this.recommendationCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
 
-    let pending = this.pendingRecommendations.get(cacheKey);
-    if (!pending) {
-      pending = this.computeFilterRecommendations(
-        restaurant,
-        candidates,
-        menus,
-        userContext,
-        userId,
-        limit,
-        cacheKey,
-      ).finally(() => this.pendingRecommendations.delete(cacheKey));
-      this.pendingRecommendations.set(cacheKey, pending);
-    }
+    for (;;) {
+      const cached = this.recommendationCache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
 
-    return await pending;
+      let pending = this.pendingRecommendations.get(cacheKey);
+      const startedByOtherRequest = pending != null;
+      if (!pending) {
+        pending = this.computeFilterRecommendations(
+          restaurant,
+          candidates,
+          menus,
+          userContext,
+          userId,
+          limit,
+        )
+          .then((recommendations) => {
+            if (recommendations.cacheable) {
+              this.recommendationCache.set(cacheKey, recommendations.value);
+            }
+            return recommendations.value;
+          })
+          .finally(() => this.pendingRecommendations.delete(cacheKey));
+        this.pendingRecommendations.set(cacheKey, pending);
+      }
+
+      try {
+        return await pending;
+      } catch (error) {
+        // 계산을 시작한 다른 요청의 연결이 끊겨 취소됐으면 이 요청에서 다시 계산한다.
+        if (
+          startedByOtherRequest &&
+          isRequestCancellationError(error) &&
+          getRequestAbortSignal()?.aborted !== true
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   private async computeFilterRecommendations(
@@ -253,8 +291,7 @@ export class RestaurantService {
     userContext: RestaurantRecommendationUserContext,
     userId: number,
     limit: number,
-    cacheKey: string,
-  ): Promise<FilterRecommendations> {
+  ): Promise<{ value: FilterRecommendations; cacheable: boolean }> {
     const fallbackRankings = this.fallbackRankings(candidates);
     let geminiRankings: RestaurantMenuRankings;
     try {
@@ -265,30 +302,58 @@ export class RestaurantService {
         menus,
       });
     } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
       // 실패 결과는 캐시하지 않아 다음 요청에서 Gemini를 다시 시도한다.
-      this.logRecommendationFallback(restaurant, userId, error);
-      return this.assignRecommendations(fallbackRankings, limit);
+      this.logRecommendationFallback(
+        'Gemini recommendation failed',
+        restaurant,
+        userId,
+        error,
+      );
+      return {
+        value: this.assignRecommendations(fallbackRankings, limit),
+        cacheable: false,
+      };
     }
 
     // Gemini 순위가 짧으면 규칙 기반 순위로 뒤를 채운다.
     const candidateIds = new Set(candidates.map((menu) => menu.id));
+    const validGeminiRankings = Object.fromEntries(
+      RESTAURANT_FILTER_PRIORITY.map((filter) => [
+        filter,
+        (geminiRankings[filter] ?? []).filter((id) => candidateIds.has(id)),
+      ]),
+    ) as RestaurantMenuRankings;
     const rankings = Object.fromEntries(
       RESTAURANT_FILTER_PRIORITY.map((filter) => [
         filter,
         [
           ...new Set([
-            ...(geminiRankings[filter] ?? []).filter((id) =>
-              candidateIds.has(id),
-            ),
+            ...validGeminiRankings[filter],
             ...fallbackRankings[filter],
           ]),
         ],
       ]),
     ) as RestaurantMenuRankings;
-    const recommendations = this.assignRecommendations(rankings, limit);
-    this.recommendationCache.set(cacheKey, recommendations);
+    // 쓸 수 있는 순위가 하나도 없으면(응답 형식 오류 등) 실패처럼 캐시하지 않는다.
+    const cacheable = RESTAURANT_FILTER_PRIORITY.some(
+      (filter) => validGeminiRankings[filter].length > 0,
+    );
+    if (!cacheable) {
+      this.logRecommendationFallback(
+        'Gemini recommendation returned no usable ranking',
+        restaurant,
+        userId,
+        null,
+      );
+    }
 
-    return recommendations;
+    return {
+      value: this.assignRecommendations(rankings, limit),
+      cacheable,
+    };
   }
 
   // 우선순위가 높은 필터부터 메뉴를 차지한다. 겹치지 않는 메뉴로 limit을 못 채우면
@@ -330,14 +395,20 @@ export class RestaurantService {
   }
 
   private logRecommendationFallback(
+    reason: string,
     restaurant: RestaurantEntity,
     userId: number,
     error: unknown,
   ): void {
-    console.error('[RESTAURANT] Gemini recommendation failed; fallback used', {
+    console.error(`[RESTAURANT] ${reason}; fallback used`, {
       restaurantId: restaurant.id,
       userId,
-      error: error instanceof Error ? error.message : String(error),
+      error:
+        error == null
+          ? null
+          : error instanceof Error
+            ? error.message
+            : String(error),
     });
   }
 

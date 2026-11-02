@@ -382,13 +382,11 @@ describe('RestaurantService', () => {
     ) {
       return new RestaurantService(
         {
-          findOne: jest
-            .fn()
-            .mockResolvedValue({
-              id: 1,
-              name: '테스트 버거',
-              category: '버거',
-            }),
+          findOne: jest.fn().mockResolvedValue({
+            id: 1,
+            name: '테스트 버거',
+            category: '버거',
+          }),
         } as never,
         { find: jest.fn().mockResolvedValue(menus) } as never,
         chatService as never,
@@ -482,6 +480,49 @@ describe('RestaurantService', () => {
 
       expect(await recommend(service, '저칼로리')).toEqual([1, 2, 3, 4, 5]);
       expect(await recommend(service, '단백질')).toEqual([6, 7, 8, 9, 10]);
+      expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not cache a Gemini reply without any usable ranking', async () => {
+      const chatService = createChatService({});
+      const service = createService(createMenus(15), chatService);
+
+      expect(await recommend(service, '저칼로리')).toEqual([1, 2, 3, 4, 5]);
+      await recommend(service, '저칼로리');
+      expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledTimes(2);
+    });
+
+    it('rethrows request cancellation instead of falling back', async () => {
+      const chatService = createChatService({});
+      const canceled = Object.assign(new Error('canceled'), {
+        name: 'CanceledError',
+      });
+      chatService.rankRestaurantMenusByFilter.mockRejectedValueOnce(canceled);
+      const service = createService(createMenus(15), chatService);
+
+      await expect(recommend(service, '저칼로리')).rejects.toBe(canceled);
+      expect(consoleError).not.toHaveBeenCalled();
+    });
+
+    it('recalculates when the request that started the shared call is canceled', async () => {
+      const chatService = createChatService({ 저칼로리: [9] });
+      const canceled = Object.assign(new Error('canceled'), {
+        name: 'CanceledError',
+      });
+      chatService.rankRestaurantMenusByFilter.mockRejectedValueOnce(canceled);
+      const service = createService(createMenus(15), chatService);
+
+      const [first, second] = await Promise.allSettled([
+        recommend(service, '저칼로리'),
+        recommend(service, '단백질'),
+      ]);
+
+      expect(first).toEqual({ status: 'rejected', reason: canceled });
+      // 저칼로리가 9·1·2·3·4를 먼저 차지해 단백질은 남은 메뉴에서 고른다.
+      expect(second).toEqual({
+        status: 'fulfilled',
+        value: [5, 6, 7, 8, 10],
+      });
       expect(chatService.rankRestaurantMenusByFilter).toHaveBeenCalledTimes(2);
     });
 

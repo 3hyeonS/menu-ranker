@@ -178,6 +178,29 @@ describe('ChatService restaurant menu rankings', () => {
     expect(prompt).not.toContain('recent_messages');
   });
 
+  it('sorts meal record menus so the recommendation cache key stays stable', async () => {
+    const service = Object.create(ChatService.prototype) as any;
+    service.getRequiredUserInfo = jest.fn().mockResolvedValue({ goal: 0 });
+    service.getRecentMealRecordContext = jest
+      .fn()
+      .mockResolvedValue([
+        {
+          date: '2026-11-01',
+          menus: [{ name: '현미밥' }, { name: '닭가슴살' }],
+        },
+      ]);
+    service.chatUserMemoryRepository = {
+      findOneBy: jest.fn().mockResolvedValue(null),
+    };
+
+    const context = await service.getRestaurantRecommendationUserContext(7);
+
+    expect(context.recent_meal_records_3_days[0].menus).toEqual([
+      { name: '닭가슴살' },
+      { name: '현미밥' },
+    ]);
+  });
+
   it('propagates Gemini failures so the caller can fall back', async () => {
     const { service, gemini } = createService();
     gemini.failUnavailable();

@@ -2526,7 +2526,13 @@ ${JSON.stringify({
       long_term_profile_traits: this.normalizeVerifiedProfileTraits(
         memory?.profileTraits,
       ),
-      recent_meal_records_3_days: recentMealRecords,
+      // mealMenus 관계는 조회 순서가 보장되지 않아 캐시 키가 흔들리지 않게 정렬한다.
+      recent_meal_records_3_days: recentMealRecords.map((record) => ({
+        ...record,
+        menus: [...record.menus].sort((a, b) =>
+          JSON.stringify(a).localeCompare(JSON.stringify(b)),
+        ),
+      })),
     };
   }
 
