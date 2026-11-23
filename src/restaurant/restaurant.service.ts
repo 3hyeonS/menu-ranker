@@ -1,7 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
-import { ChatService } from '../chat/chat.service';
+import {
+  ChatService,
+  RestaurantMenuRankings,
+  RestaurantRecommendationMenuInput,
+  RestaurantRecommendationUserContext,
+} from '../chat/chat.service';
 import {
   RestaurantDetailRequestDto,
   RestaurantMenuFilter,
@@ -23,11 +29,36 @@ import {
 import { RestaurantBranchEntity } from './entity/restaurant-branch.entity';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 import { RestaurantEntity } from './entity/restaurant.entity';
+import { KeyedTtlCache } from '../utils/keyed-ttl-cache.util';
+import {
+  getRequestAbortSignal,
+  isRequestCancellationError,
+} from '../utils/request-abort.util';
+
+// 같은 메뉴가 여러 필터에 걸리면 앞선 필터에 남긴다(#34 결정).
+const RESTAURANT_FILTER_PRIORITY = [
+  RestaurantMenuFilter.LOW_CALORIE,
+  RestaurantMenuFilter.PROTEIN,
+  RestaurantMenuFilter.BALANCED,
+] as const;
+const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const RECOMMENDATION_CACHE_MAX_ENTRIES = 10_000;
+
+type FilterRecommendations = Record<RestaurantMenuFilter, number[]>;
 
 @Injectable()
 export class RestaurantService {
   private readonly recommendationLimit = 5;
   private readonly gcovaRecommendationLimit = 2;
+  private readonly recommendationCache =
+    new KeyedTtlCache<FilterRecommendations>(
+      RECOMMENDATION_CACHE_TTL_MS,
+      RECOMMENDATION_CACHE_MAX_ENTRIES,
+    );
+  private readonly pendingRecommendations = new Map<
+    string,
+    Promise<FilterRecommendations>
+  >();
 
   constructor(
     @InjectRepository(RestaurantEntity)
@@ -145,66 +176,245 @@ export class RestaurantService {
       return { restaurant_name: restaurant.name, menu_list: [] };
     }
 
-    let selectedIds: number[] = [];
-
-    try {
-      selectedIds = await this.chatService.recommendRestaurantMenuIds({
-        userId,
-        restaurantName: restaurant.name,
-        restaurantCategory: restaurant.category,
-        filter: dto.filter ?? null,
-        menus: recommendationCandidates.map((menu) =>
-          this.toRecommendationInput(menu),
-        ),
-      });
-    } catch (error) {
-      console.error(
-        '[RESTAURANT] Gemini recommendation failed; fallback used',
-        {
-          restaurantId: restaurant.id,
-          userId,
-          filter: dto.filter ?? null,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      );
-    }
-
-    const selectedMenus = this.selectRecommendedMenus(
+    const recommendations = await this.getFilterRecommendations(
+      restaurant,
       recommendationCandidates,
-      selectedIds,
-      dto.filter ?? null,
+      userId,
       restaurant.name === '지코바치킨'
         ? this.gcovaRecommendationLimit
         : this.recommendationLimit,
     );
+    const menuById = new Map(
+      recommendationCandidates.map((menu) => [menu.id, menu]),
+    );
 
     return {
       restaurant_name: restaurant.name,
-      menu_list: selectedMenus.map((menu) => this.toResponse(menu)),
+      menu_list: recommendations[dto.filter].map((menuId) =>
+        this.toResponse(menuById.get(menuId)),
+      ),
     };
   }
 
-  private selectRecommendedMenus(
-    menus: RestaurantMenuEntity[],
-    selectedIds: number[],
-    filter: RestaurantMenuFilter | null,
-    limit: number = this.recommendationLimit,
-  ): RestaurantMenuEntity[] {
-    const menuById = new Map(menus.map((menu) => [menu.id, menu]));
-    const selected = selectedIds
-      .map((id) => menuById.get(id))
-      .filter((menu): menu is RestaurantMenuEntity => menu != null);
-
-    if (selected.length > 0) {
-      return selected.slice(0, limit);
+  // 세 필터 추천을 한 번에 계산해 필터 간 중복을 빼고, 입력이 같으면 같은 결과를 내도록 캐시한다.
+  // 캐시 키에는 프로필·최근 3일 식사 기록·후보 메뉴가 들어가므로 식사를 기록하면 새로 계산한다.
+  private async getFilterRecommendations(
+    restaurant: RestaurantEntity,
+    candidates: RestaurantMenuEntity[],
+    userId: number,
+    limit: number,
+  ): Promise<FilterRecommendations> {
+    const menus = candidates.map((menu) => this.toRecommendationInput(menu));
+    let userContext: RestaurantRecommendationUserContext;
+    try {
+      userContext =
+        await this.chatService.getRestaurantRecommendationUserContext(userId);
+    } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
+      this.logRecommendationFallback(
+        'User context unavailable',
+        restaurant,
+        userId,
+        error,
+      );
+      return this.assignRecommendations(
+        this.fallbackRankings(candidates),
+        limit,
+      );
     }
 
-    return this.fallbackRecommendations(menus, filter).slice(0, limit);
+    // limit은 식당 이름으로 정해지므로 키에 따로 넣지 않는다.
+    const cacheKey = createHash('sha256')
+      .update(
+        JSON.stringify({
+          userId,
+          restaurant: {
+            id: restaurant.id,
+            name: restaurant.name,
+            category: restaurant.category,
+          },
+          menus,
+          userContext,
+        }),
+      )
+      .digest('hex');
+
+    for (;;) {
+      const cached = this.recommendationCache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      let pending = this.pendingRecommendations.get(cacheKey);
+      const startedByOtherRequest = pending != null;
+      if (!pending) {
+        pending = this.computeFilterRecommendations(
+          restaurant,
+          candidates,
+          menus,
+          userContext,
+          userId,
+          limit,
+        )
+          .then((recommendations) => {
+            if (recommendations.cacheable) {
+              this.recommendationCache.set(cacheKey, recommendations.value);
+            }
+            return recommendations.value;
+          })
+          .finally(() => this.pendingRecommendations.delete(cacheKey));
+        this.pendingRecommendations.set(cacheKey, pending);
+      }
+
+      try {
+        return await pending;
+      } catch (error) {
+        // 계산을 시작한 다른 요청의 연결이 끊겨 취소됐으면 이 요청에서 다시 계산한다.
+        if (
+          startedByOtherRequest &&
+          isRequestCancellationError(error) &&
+          getRequestAbortSignal()?.aborted !== true
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  private async computeFilterRecommendations(
+    restaurant: RestaurantEntity,
+    candidates: RestaurantMenuEntity[],
+    menus: RestaurantRecommendationMenuInput[],
+    userContext: RestaurantRecommendationUserContext,
+    userId: number,
+    limit: number,
+  ): Promise<{ value: FilterRecommendations; cacheable: boolean }> {
+    const fallbackRankings = this.fallbackRankings(candidates);
+    let geminiRankings: RestaurantMenuRankings;
+    try {
+      geminiRankings = await this.chatService.rankRestaurantMenusByFilter({
+        restaurantName: restaurant.name,
+        restaurantCategory: restaurant.category,
+        userContext,
+        menus,
+      });
+    } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
+      // 실패 결과는 캐시하지 않아 다음 요청에서 Gemini를 다시 시도한다.
+      this.logRecommendationFallback(
+        'Gemini recommendation failed',
+        restaurant,
+        userId,
+        error,
+      );
+      return {
+        value: this.assignRecommendations(fallbackRankings, limit),
+        cacheable: false,
+      };
+    }
+
+    // Gemini 순위가 짧으면 규칙 기반 순위로 뒤를 채운다.
+    const candidateIds = new Set(candidates.map((menu) => menu.id));
+    const validGeminiRankings = Object.fromEntries(
+      RESTAURANT_FILTER_PRIORITY.map((filter) => [
+        filter,
+        (geminiRankings[filter] ?? []).filter((id) => candidateIds.has(id)),
+      ]),
+    ) as RestaurantMenuRankings;
+    const rankings = Object.fromEntries(
+      RESTAURANT_FILTER_PRIORITY.map((filter) => [
+        filter,
+        [
+          ...new Set([
+            ...validGeminiRankings[filter],
+            ...fallbackRankings[filter],
+          ]),
+        ],
+      ]),
+    ) as RestaurantMenuRankings;
+    // 쓸 수 있는 순위가 하나도 없으면(응답 형식 오류 등) 실패처럼 캐시하지 않는다.
+    const cacheable = RESTAURANT_FILTER_PRIORITY.some(
+      (filter) => validGeminiRankings[filter].length > 0,
+    );
+    if (!cacheable) {
+      this.logRecommendationFallback(
+        'Gemini recommendation returned no usable ranking',
+        restaurant,
+        userId,
+        null,
+      );
+    }
+
+    return {
+      value: this.assignRecommendations(rankings, limit),
+      cacheable,
+    };
+  }
+
+  // 우선순위가 높은 필터부터 메뉴를 차지한다. 겹치지 않는 메뉴로 limit을 못 채우면
+  // 그 필터 순위에서 다른 필터가 가져간 메뉴로 채우고, 결과는 그 필터의 순위 순서로 둔다.
+  private assignRecommendations(
+    rankings: RestaurantMenuRankings,
+    limit: number,
+  ): FilterRecommendations {
+    const assignedIds = new Set<number>();
+    const recommendations = {} as FilterRecommendations;
+
+    for (const filter of RESTAURANT_FILTER_PRIORITY) {
+      const ranking = rankings[filter];
+      const unique = ranking.filter((id) => !assignedIds.has(id));
+      const picked = new Set(unique.slice(0, limit));
+      for (const id of ranking) {
+        if (picked.size >= limit) {
+          break;
+        }
+        picked.add(id);
+      }
+
+      recommendations[filter] = ranking.filter((id) => picked.has(id));
+      recommendations[filter].forEach((id) => assignedIds.add(id));
+    }
+
+    return recommendations;
+  }
+
+  private fallbackRankings(
+    menus: RestaurantMenuEntity[],
+  ): RestaurantMenuRankings {
+    return Object.fromEntries(
+      RESTAURANT_FILTER_PRIORITY.map((filter) => [
+        filter,
+        this.fallbackRecommendations(menus, filter).map((menu) => menu.id),
+      ]),
+    ) as RestaurantMenuRankings;
+  }
+
+  private logRecommendationFallback(
+    reason: string,
+    restaurant: RestaurantEntity,
+    userId: number,
+    error: unknown,
+  ): void {
+    console.error(`[RESTAURANT] ${reason}; fallback used`, {
+      restaurantId: restaurant.id,
+      userId,
+      error:
+        error == null
+          ? null
+          : error instanceof Error
+            ? error.message
+            : String(error),
+    });
   }
 
   private fallbackRecommendations(
     menus: RestaurantMenuEntity[],
-    filter: RestaurantMenuFilter | null,
+    filter: RestaurantMenuFilter,
   ): RestaurantMenuEntity[] {
     const sorted = [...menus];
 
