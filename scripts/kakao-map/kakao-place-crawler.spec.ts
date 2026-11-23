@@ -31,6 +31,7 @@ const POLICY = {
 
 const OPTIONS: KakaoCrawlOptions = {
   restApiKey: 'test-key',
+  categoryGroup: 'FD6',
   rect: RECT,
   district: '송파구',
   maxDepth: 3,
@@ -375,6 +376,69 @@ describe('KakaoPlaceCrawler', () => {
     const again = await crawler(second, { discoverOnly: true }).run();
     expect(second.calls).toEqual([categorySearchUrl(children[1], 1)]);
     expect(again).toMatchObject({ failedRects: 0, discoveredPlaces: 2 });
+  });
+
+  it('CE7(카페)은 카페 그룹으로 검색하고 카페를 제외하지 않으며 메뉴를 요청하지 않는다', async () => {
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(RECT, 1, 'CE7')]: [ok('cafe-category-search.json')],
+    });
+
+    const summary = await crawler(fetcher, {
+      categoryGroup: 'CE7',
+      excludedCategories: [],
+      discoverOnly: true,
+    }).run();
+
+    expect(fetcher.calls).toEqual([categorySearchUrl(RECT, 1, 'CE7')]);
+    expect(fetcher.calls[0]).toContain('category_group_code=CE7');
+    // 강남구(2000003)만 주소 필터로 빠지고 카페·디저트카페는 남는다.
+    expect(summary).toMatchObject({
+      discoveredPlaces: 2,
+      restaurants: 2,
+      excludedByCategory: 0,
+      crawledPlaces: 0,
+    });
+    expect(store.discoveredPlaces().get('2000002')?.category).toBe(
+      '음식점 > 카페 > 디저트카페',
+    );
+    expect(readFileSync(store.categoryGroupPath, 'utf8')).toBe('CE7\n');
+  });
+
+  it('CE7(카페)에 메뉴 수집이나 카테고리 제외 필터를 주면 거부한다', () => {
+    const fetcher = new FakeFetcher({});
+    expect(() =>
+      crawler(fetcher, { categoryGroup: 'CE7', excludedCategories: [] }),
+    ).toThrow('--discover-only');
+    expect(() =>
+      crawler(fetcher, { categoryGroup: 'CE7', discoverOnly: true }),
+    ).toThrow('제외 필터');
+  });
+
+  it('음식점(FD6) 출력 폴더에서는 CE7을 수집하지 않는다(기록 없는 #32 이전 폴더 포함)', async () => {
+    writeFileSync(
+      store.rectsPath,
+      `leaf ${RECT.map((v) => v.toFixed(6)).join(',')}\n`,
+    );
+    const fetcher = new FakeFetcher({});
+    await expect(
+      crawler(fetcher, {
+        categoryGroup: 'CE7',
+        excludedCategories: [],
+        discoverOnly: true,
+      }).run(),
+    ).rejects.toThrow('FD6 수집용');
+    expect(fetcher.calls).toEqual([]);
+
+    // FD6로는 그대로 이어서 실행되고 그룹을 기록한다.
+    await crawler(fetcher, { discoverOnly: true }).run();
+    expect(readFileSync(store.categoryGroupPath, 'utf8')).toBe('FD6\n');
+  });
+
+  it('카페(CE7) 출력 폴더에서는 FD6을 수집하지 않는다', async () => {
+    writeFileSync(store.categoryGroupPath, 'CE7\n');
+    await expect(
+      crawler(new FakeFetcher({}), { discoverOnly: true }).run(),
+    ).rejects.toThrow('CE7 수집용');
   });
 
   it('--max-places만큼만 메뉴를 수집한다', async () => {

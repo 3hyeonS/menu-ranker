@@ -1,4 +1,10 @@
-import { appendFileSync, renameSync, writeFileSync } from 'fs';
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'fs';
 import { join } from 'path';
 import {
   csvField,
@@ -25,6 +31,13 @@ import {
 export const RESTAURANT_CSV_HEADERS = ['장소id', '식당명', '주소'] as const;
 export const MENU_CSV_HEADERS = ['메뉴명', '사진URL', '식당id'] as const;
 
+/**
+ * 카카오 로컬 API `category_group_code`. FD6: 음식점(식당·메뉴 수집), CE7: 카페(장소 목록만, #32).
+ * CE7은 카페가 대상이라 카페·디저트 제외 필터와 메뉴 수집을 쓰지 않는다.
+ */
+export const KAKAO_CATEGORY_GROUPS = ['FD6', 'CE7'] as const;
+export type KakaoCategoryGroup = (typeof KAKAO_CATEGORY_GROUPS)[number];
+
 /** 경도·위도 사각형 [x1, y1, x2, y2] (왼쪽 아래, 오른쪽 위). */
 export type Rect = [number, number, number, number];
 
@@ -45,6 +58,7 @@ function isCategorySearch(body: string): boolean {
 
 export interface KakaoCrawlOptions {
   restApiKey: string;
+  categoryGroup: KakaoCategoryGroup;
   rect: Rect;
   /** 주소에 이 문자열이 있는 식당만 남긴다. 빈 문자열이면 거르지 않는다. */
   district: string;
@@ -88,9 +102,13 @@ export interface KakaoCrawlSummary {
 
 const SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/category.json';
 
-export function categorySearchUrl(rect: Rect, page: number): string {
+export function categorySearchUrl(
+  rect: Rect,
+  page: number,
+  categoryGroup: KakaoCategoryGroup = 'FD6',
+): string {
   const params = new URLSearchParams({
-    category_group_code: 'FD6',
+    category_group_code: categoryGroup,
     rect: rectKey(rect),
     page: String(page),
     size: String(SEARCH_PAGE_SIZE),
@@ -139,6 +157,7 @@ export class KakaoCrawlStore {
   readonly rectsPath: string;
   readonly menuDonePath: string;
   readonly failedPath: string;
+  readonly categoryGroupPath: string;
 
   constructor(readonly dir: string) {
     this.restaurantsPath = join(dir, 'restaurants.csv');
@@ -147,6 +166,7 @@ export class KakaoCrawlStore {
     this.rectsPath = join(dir, 'search-rects.txt');
     this.menuDonePath = join(dir, 'menu-done.txt');
     this.failedPath = join(dir, 'failed.jsonl');
+    this.categoryGroupPath = join(dir, 'category-group.txt');
   }
 
   /** 이 저장소가 쓰는 모든 파일 경로. */
@@ -158,7 +178,28 @@ export class KakaoCrawlStore {
       this.rectsPath,
       this.menuDonePath,
       this.failedPath,
+      this.categoryGroupPath,
     ];
+  }
+
+  /**
+   * 출력 폴더의 카테고리 그룹을 확인하고 처음이면 기록한다.
+   * 끝난 사각형 기록(`search-rects.txt`)은 그룹을 구분하지 않으므로, 음식점 폴더에서 카페를 검색하면
+   * 모든 사각형을 건너뛰고 음식점 목록에 카페가 섞인다. 그래서 그룹이 다르면 거부한다.
+   * 기록이 없는데 진행 파일이 있으면 #32 이전에 만든 음식점(FD6) 폴더로 본다.
+   */
+  claimCategoryGroup(group: KakaoCategoryGroup): void {
+    const recorded = existsSync(this.categoryGroupPath)
+      ? readFileSync(this.categoryGroupPath, 'utf8').trim()
+      : existsSync(this.rectsPath) || existsSync(this.placesPath)
+        ? 'FD6'
+        : null;
+    if (recorded && recorded !== group)
+      throw new Error(
+        `출력 폴더 ${this.dir}는 ${recorded} 수집용입니다. ${group}는 다른 --out-dir로 수집하세요.`,
+      );
+    if (!existsSync(this.categoryGroupPath))
+      writeFileSync(this.categoryGroupPath, `${group}\n`, 'utf8');
   }
 
   ensureMenusCsv(): void {
@@ -251,6 +292,13 @@ export class KakaoPlaceCrawler {
     private readonly store: KakaoCrawlStore,
     private readonly deps: KakaoCrawlDeps,
   ) {
+    // 카페(CE7)는 장소 목록만 모은다(#32 결정). 카페 제외 필터가 걸리면 전부 빠지므로 막는다.
+    if (options.categoryGroup === 'CE7') {
+      if (!options.discoverOnly)
+        throw new Error('CE7(카페)은 장소 목록만 수집합니다(--discover-only).');
+      if (options.excludedCategories.length)
+        throw new Error('CE7(카페)에는 카테고리 제외 필터를 쓰지 않습니다.');
+    }
     // 공식 API는 429·5xx와 형식이 맞지 않는 200 응답(중간 장비의 HTML 등)만 재시도한다.
     // 401·403(키·권한 문제) 등 나머지 4xx는 재시도해도 같아서 바로 멈춘다.
     this.searchRequester = new PoliteRequester(
@@ -288,6 +336,7 @@ export class KakaoPlaceCrawler {
       menuRows: 0,
       menuRowsWithPhoto: 0,
     };
+    this.store.claimCategoryGroup(this.options.categoryGroup);
     const known = this.store.discoveredPlaces();
     await this.walk(
       this.options.rect,
@@ -312,7 +361,7 @@ export class KakaoPlaceCrawler {
     summary.restaurants = restaurants.length;
     summary.excludedByCategory = known.size - restaurants.length;
     this.deps.log(
-      `식당 목록: ${restaurants.length}곳 (발견 ${known.size}곳, 제외 카테고리 ${summary.excludedByCategory}곳)`,
+      `${this.options.categoryGroup === 'CE7' ? '카페' : '식당'} 목록: ${restaurants.length}곳 (발견 ${known.size}곳, 제외 카테고리 ${summary.excludedByCategory}곳)`,
     );
     if (this.options.discoverOnly) return summary;
 
@@ -426,7 +475,7 @@ export class KakaoPlaceCrawler {
   /** 카테고리 검색 한 쪽. 재시도를 소진하면 null, 키·권한·요청 오류(4xx)면 실행을 멈춘다. */
   private async search(rect: Rect, page: number) {
     const response = await this.searchRequester.get(
-      categorySearchUrl(rect, page),
+      categorySearchUrl(rect, page, this.options.categoryGroup),
       { Authorization: `KakaoAK ${this.options.restApiKey}` },
     );
     if (this.searchRequester.stopped)
