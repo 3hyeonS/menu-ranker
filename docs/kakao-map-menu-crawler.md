@@ -65,7 +65,7 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 - 카페가 대상이므로 **카테고리 제외 필터를 쓰지 않는다.** 기본 제외 목록이 비고, `--exclude-categories`에 값을 주면 실행을 거부한다.
 - **메뉴는 수집하지 않는다.** `--discover-only`가 자동으로 켜지고 panel3를 부르지 않는다. 결과는 `places.jsonl`·`restaurants.csv`(이름은 같지만 카페 목록)·`search-rects.txt`다.
 - 출력 폴더마다 카테고리 그룹을 `category-group.txt`에 남긴다. 그룹이 다른 폴더(또는 기록이 없는데 진행 파일이 있는 #32 이전 음식점 폴더)에서 실행하면 거부한다. 끝난 사각형 기록이 그룹을 구분하지 않아, 같은 폴더를 쓰면 모든 사각형을 건너뛰고 음식점 목록에 카페가 섞이기 때문이다.
-- 출력 폴더는 `kakao-map/cafe/<구>/`로 둔다. 음식점 import 경로 `kakao-map/*/places.jsonl`과 겹치지 않는다.
+- 출력 폴더는 `kakao-map/cafe/<구>/`로 둔다. 음식점 import 경로 `kakao-map/*구/`와 겹치지 않는다. import는 `category-group.txt`가 `CE7`인 폴더를 카페 폴더로 보고 `places.jsonl`만 읽는다(`restaurants.csv`는 쓰지 않는다).
 
 ```sh
 # 구 하나 (사각형·주소 필터는 음식점 수집에 쓴 districts.tsv와 같은 값)

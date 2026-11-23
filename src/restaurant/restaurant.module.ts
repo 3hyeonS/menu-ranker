@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ChatModule } from '../chat/chat.module';
 import { RestaurantBranchEntity } from './entity/restaurant-branch.entity';
+import { RestaurantBranchMenuEntity } from './entity/restaurant-branch-menu.entity';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 import { RestaurantEntity } from './entity/restaurant.entity';
 import { RestaurantController } from './restaurant.controller';
@@ -13,6 +14,7 @@ import { RestaurantService } from './restaurant.service';
       RestaurantEntity,
       RestaurantMenuEntity,
       RestaurantBranchEntity,
+      RestaurantBranchMenuEntity,
     ]),
     ChatModule,
   ],

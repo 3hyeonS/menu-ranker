@@ -22,9 +22,11 @@ import { ResponseDto } from '../response-dto';
 import { RestaurantSearchRequestDto } from './dto/request-dto/restaurant-search-request-dto';
 import { RestaurantDetailRequestDto } from './dto/request-dto/restaurant-detail-request-dto';
 import { RestaurantBrandsRequestDto } from './dto/request-dto/restaurant-brands-request-dto';
+import { RestaurantPlaceRequestDto } from './dto/request-dto/restaurant-place-request-dto';
 import { RestaurantSearchResponseDto } from './dto/response-dto/restaurant-search-response-dto';
 import { RestaurantDetailResponseDto } from './dto/response-dto/restaurant-detail-response-dto';
 import { RestaurantBrandsResponseDto } from './dto/response-dto/restaurant-brands-response-dto';
+import { RestaurantPlaceResponseDto } from './dto/response-dto/restaurant-place-response-dto';
 import { RestaurantService } from './restaurant.service';
 
 @ApiTags('식당 탭')
@@ -104,5 +106,36 @@ export class RestaurantController {
     @Body() dto: RestaurantBrandsRequestDto,
   ): Promise<RestaurantBrandsResponseDto> {
     return await this.restaurantService.findRegisteredBrands(dto);
+  }
+
+  @ApiOperation({
+    summary: '카카오 장소 ID로 지점 메뉴 조회',
+    description:
+      '수집한 카카오 장소(서울 25개 구 음식점)의 카카오 메뉴명·사진을 반환합니다. 영양정보는 없습니다. 프랜차이즈 지점이면 restaurant_id로 /restaurant/detail에서 영양정보 메뉴를 조회할 수 있습니다.',
+  })
+  @GenericApiResponse({
+    status: 201,
+    description: '지점 메뉴 조회 성공',
+    message: 'Place returned successfully',
+    model: RestaurantPlaceResponseDto,
+  })
+  @ErrorApiResponse({
+    status: 400,
+    description: 'place_id 형식 오류(number 또는 숫자 문자열)',
+    message: 'Invalid request body',
+    error: 'BadRequestException',
+  })
+  @ErrorApiResponse({
+    status: 404,
+    description: '수집하지 않은 장소',
+    message: 'Place not found',
+    error: 'NotFoundException',
+  })
+  @ResponseMsg('Place returned successfully')
+  @Post('/place')
+  async place(
+    @Body() dto: RestaurantPlaceRequestDto,
+  ): Promise<RestaurantPlaceResponseDto> {
+    return await this.restaurantService.findPlace(dto);
   }
 }

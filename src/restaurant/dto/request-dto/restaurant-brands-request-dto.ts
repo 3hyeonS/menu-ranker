@@ -9,6 +9,8 @@ import {
 } from 'class-validator';
 
 export const RESTAURANT_BRANDS_MAX_PLACE_IDS = 100;
+// 응답에서 number로 돌려주므로 안전한 정수 범위(15자리)까지만 받는다. /restaurant/place와 공용.
+export const KAKAO_PLACE_ID_PATTERN = /^[1-9]\d{0,14}$/;
 
 export class RestaurantBrandsRequestDto {
   @ApiProperty({
@@ -30,7 +32,6 @@ export class RestaurantBrandsRequestDto {
   @ArrayMinSize(1)
   @ArrayMaxSize(RESTAURANT_BRANDS_MAX_PLACE_IDS)
   @IsString({ each: true })
-  // 응답에서 number로 돌려주므로 안전한 정수 범위(15자리)까지만 받는다.
-  @Matches(/^[1-9]\d{0,14}$/, { each: true })
+  @Matches(KAKAO_PLACE_ID_PATTERN, { each: true })
   place_ids: string[];
 }

@@ -1,5 +1,6 @@
 import {
   ForbiddenException,
+  NotFoundException,
   INestApplication,
   ValidationPipe,
 } from '@nestjs/common';
@@ -46,6 +47,7 @@ import { RestaurantController } from '../restaurant/restaurant.controller';
 import { RestaurantService } from '../restaurant/restaurant.service';
 import { RestaurantDetailResponseDto } from '../restaurant/dto/response-dto/restaurant-detail-response-dto';
 import { RestaurantBrandsResponseDto } from '../restaurant/dto/response-dto/restaurant-brands-response-dto';
+import { RestaurantPlaceResponseDto } from '../restaurant/dto/response-dto/restaurant-place-response-dto';
 
 // 주요 엔드포인트의 HTTP 응답 형태 스냅샷. 서비스는 mock이고, mock은 실제 응답 DTO 생성자로
 // 만든 값을 돌려준다. 그래서 컨트롤러·DTO 매핑·ResponseTransformInterceptor 래퍼·상태 코드·
@@ -162,6 +164,7 @@ const menstrualService = { getRecords: jest.fn() };
 const restaurantService = {
   getRestaurantDetail: jest.fn(),
   findRegisteredBrands: jest.fn(),
+  findPlace: jest.fn(),
 };
 // jest.resetAllMocks()의 영향을 받지 않도록 jest.fn이 아닌 일반 함수로 둔다.
 const usersRepository = {
@@ -462,6 +465,46 @@ describe('API response contract', () => {
       );
     });
 
+    it('POST /restaurant/place', async () => {
+      const place: RestaurantPlaceResponseDto = {
+        place_id: 27531028,
+        place_name: '롯데리아 잠실새내점',
+        address: '서울 송파구 백제고분로 1',
+        restaurant_id: 1,
+        restaurant_name: '롯데리아',
+        menu_list: [
+          {
+            menu_name: '불고기버거',
+            photo_url: 'https://t1.kakaocdn.net/mystore/A',
+          },
+          { menu_name: '치즈스틱', photo_url: null },
+        ],
+      };
+      restaurantService.findPlace.mockResolvedValue(place);
+      const res = await post('/restaurant/place').send({ place_id: 27531028 });
+      expect(describeSuccess(res)).toMatchSnapshot();
+      // number로 와도 문자열로 바꿔 서비스에 넘긴다.
+      expect(restaurantService.findPlace).toHaveBeenCalledWith(
+        expect.objectContaining({ place_id: '27531028' }),
+      );
+    });
+
+    it('POST /restaurant/place for an independent restaurant', async () => {
+      const place: RestaurantPlaceResponseDto = {
+        place_id: 21605481,
+        place_name: '착한떡볶이',
+        address: null,
+        restaurant_id: null,
+        restaurant_name: null,
+        menu_list: [],
+      };
+      restaurantService.findPlace.mockResolvedValue(place);
+      const res = await post('/restaurant/place').send({
+        place_id: '21605481',
+      });
+      expect(describeSuccess(res)).toMatchSnapshot();
+    });
+
     it('exposes x-request-id header', async () => {
       authService.hasUserInfo.mockResolvedValue(true);
       const res = await post('/userAuth/hasUserInfo');
@@ -485,6 +528,25 @@ describe('API response contract', () => {
       const res = await post('/restaurant/brands').send({ place_ids: ids });
       expect(describeError(res)).toMatchSnapshot();
       expect(restaurantService.findRegisteredBrands).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['missing', {}],
+      ['non-numeric string', { place_id: 'abc' }],
+      ['decimal number', { place_id: 1.5 }],
+      ['array', { place_id: [1] }],
+    ])('400 when /restaurant/place place_id is %s', async (_name, body) => {
+      const res = await post('/restaurant/place').send(body);
+      expect(describeError(res)).toMatchSnapshot();
+      expect(restaurantService.findPlace).not.toHaveBeenCalled();
+    });
+
+    it('404 when /restaurant/place is not collected', async () => {
+      restaurantService.findPlace.mockRejectedValue(
+        new NotFoundException('Place not found'),
+      );
+      const res = await post('/restaurant/place').send({ place_id: 1 });
+      expect(describeError(res)).toMatchSnapshot();
     });
 
     it('400 when a non-whitelisted field is sent', async () => {
