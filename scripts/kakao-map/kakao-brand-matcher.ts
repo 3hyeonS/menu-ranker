@@ -35,6 +35,9 @@ export const BRAND_ALIAS_GROUPS: readonly (readonly string[])[] = [
   ['파리바게뜨', '파리바게트'],
   ['앤티앤스 프레즐', '앤티앤스'],
   ['써브웨이', '서브웨이'],
+  // 카페(CE7, #32). 나머지 카페 표기는 CE7 수집 후 미매칭 세그먼트 출력을 보고 추가한다.
+  ['메가커피', '메가MGC커피'],
+  ['할리스', '할리스커피'],
 ];
 
 // 브랜드 키로 시작하지만 메뉴가 다른 파생 브랜드. 정규화한 장소명이나 카테고리 세그먼트가 이 값으로 시작하면 매칭하지 않는다.
@@ -46,6 +49,42 @@ export const EXCLUDED_DERIVED_BRANDS: readonly string[] = [
 /** 소문자로 바꾸고 문자·숫자 외(공백·기호)를 지운다. */
 export function normalizeBrandKey(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** `음식점 > 패스트푸드 > 롯데리아`처럼 3단계부터 브랜드가 들어간다. 그 세그먼트들. */
+export function brandSegments(category: string | null): string[] {
+  return (category ?? '')
+    .split('>')
+    .slice(2)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 매칭되지 않은 장소의 브랜드일 수 있는 카테고리 세그먼트를 많은 순으로 센다.
+ * 카카오 표기가 DB 브랜드명과 달라 놓친 별칭을 찾는 검수용이다(예: `메가MGC커피`).
+ * 프랜차이즈는 장소명이 브랜드로 시작하므로, `갈비`·`디저트카페` 같은 일반 분류가 목록을 채우지 않도록
+ * 공백을 지운 장소명이 그 세그먼트로 시작하는 경우만 센다(`투썸 플레이스 잠실점` / `투썸플레이스`).
+ * 3단계 이후 세그먼트 중 이 조건에 맞는 가장 깊은 것 하나를 센다.
+ */
+export function countUnmatchedBrandSegments(
+  unmatchedPlaces: readonly KakaoPlace[],
+  limit: number,
+): Array<[string, number]> {
+  const counts = new Map<string, number>();
+  for (const place of unmatchedPlaces) {
+    const name = normalizeBrandKey(place.name);
+    const segment = brandSegments(place.category)
+      .reverse()
+      .find((value) => {
+        const key = normalizeBrandKey(value);
+        return key !== '' && name.startsWith(key);
+      });
+    if (segment) counts.set(segment, (counts.get(segment) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit);
 }
 
 export class KakaoBrandMatcher {
@@ -73,9 +112,8 @@ export class KakaoBrandMatcher {
   }
 
   match(place: KakaoPlace): BrandMatch | null {
-    // `음식점 > 패스트푸드 > 롯데리아`처럼 3단계부터 브랜드가 들어간다.
-    const brandSegments = (place.category ?? '').split('>').slice(2);
-    const isDerived = [place.name, ...brandSegments].some((value) => {
+    const segments = brandSegments(place.category);
+    const isDerived = [place.name, ...segments].some((value) => {
       const key = normalizeBrandKey(value);
       return this.excludedPrefixes.some((prefix) => key.startsWith(prefix));
     });
@@ -83,7 +121,7 @@ export class KakaoBrandMatcher {
       return null;
     }
 
-    for (const segment of brandSegments) {
+    for (const segment of segments) {
       const restaurantId = this.lookup(segment);
       if (restaurantId != null) {
         return { restaurantId, source: 'category' };

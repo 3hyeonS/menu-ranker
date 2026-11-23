@@ -225,15 +225,17 @@ import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 �
 ## Kakao place → brand mapping
 
 `POST /restaurant/brands`(카카오 장소 ID로 등록 브랜드 조회)가 쓰는 `restaurant_branch` 테이블을
-메인 체크아웃의 `kakao-map/<구>/places.jsonl`로 채운다. 매칭 규칙·한계는 `docs/kakao-restaurant-branch-import.md`.
+메인 체크아웃의 `kakao-map/<구>/places.jsonl`(음식점)과 `kakao-map/cafe/<구>/places.jsonl`(카페)로 채운다.
+매칭 규칙·한계는 `docs/kakao-restaurant-branch-import.md`.
 `restaurant:import`로 restaurant를 다시 넣었으면 이 import도 다시 실행한다.
 
 ```bash
+# 카페(CE7)를 아직 수집하지 않았으면 kakao-map/cafe/*/places.jsonl은 빼고 실행한다(없는 파일이면 오류로 멈춘다).
 # 매칭 결과만 확인 (DB 변경 없음)
-$ npm run restaurant:branch-import -- kakao-map/*/places.jsonl --validate-only
+$ npm run restaurant:branch-import -- kakao-map/*/places.jsonl kakao-map/cafe/*/places.jsonl --validate-only
 
 # restaurant_branch에 upsert. 명시적으로 결정한 뒤에만 실행한다.
-$ npm run restaurant:branch-import -- kakao-map/*/places.jsonl
+$ npm run restaurant:branch-import -- kakao-map/*/places.jsonl kakao-map/cafe/*/places.jsonl
 ```
 
 ## Naver map menu crawl (internal analysis)
@@ -255,6 +257,9 @@ $ npm run naver-map:crawl-songpa -- --out=naver-map/songpa-menus.csv
 
 ```bash
 $ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
+
+# 카페(CE7) 장소 목록만 (메뉴 수집·카테고리 제외 없음, 음식점과 다른 폴더)
+$ npm run kakao-map:crawl-songpa -- --category-group=CE7 --out-dir=kakao-map/cafe/송파구
 ```
 
 ## Compile and run the project

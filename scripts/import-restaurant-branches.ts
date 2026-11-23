@@ -6,51 +6,27 @@ import dataSource from '../src/config/typeorm.datasource';
 import { RestaurantBranchEntity } from '../src/restaurant/entity/restaurant-branch.entity';
 import { RestaurantEntity } from '../src/restaurant/entity/restaurant.entity';
 import { arg } from './crawl-common/crawl-cli';
-import { readJsonLines, readLines } from './crawl-common/crawl-files';
+import { readLines } from './crawl-common/crawl-files';
 import {
   BrandMatchSource,
   BrandRestaurant,
+  countUnmatchedBrandSegments,
   KakaoBrandMatcher,
   KakaoPlace,
-  parseKakaoPlace,
 } from './kakao-map/kakao-brand-matcher';
+import { readPlaces } from './kakao-map/kakao-places-reader';
 
 // 카카오 수집 장소(places.jsonl)를 등록 브랜드에 매칭해 restaurant_branch에 upsert한다.
 // 입력에 있는 장소만 건드린다. 매칭이 풀린 장소는 restaurant_id를 NULL로 바꾼다.
+// 음식점(FD6)과 카페(CE7, #32) 수집 결과를 함께 넘길 수 있다.
+
+/** 별칭 검수용으로 출력할 미매칭 카테고리 세그먼트 수. */
+const UNMATCHED_SEGMENT_LIMIT = 30;
 
 interface MatchedPlace {
   place: KakaoPlace;
   restaurantId: number;
   source: BrandMatchSource;
-}
-
-function readPlaces(paths: string[]): {
-  places: KakaoPlace[];
-  invalidLineCount: number;
-  duplicateCount: number;
-} {
-  const placeById = new Map<string, KakaoPlace>();
-  let invalidLineCount = 0;
-  let duplicateCount = 0;
-
-  for (const path of paths) {
-    // readJsonLines는 JSON이 깨진 줄(중단으로 덜 쓰인 줄)을 건너뛴다.
-    for (const row of readJsonLines<unknown>(path)) {
-      const place = parseKakaoPlace(row);
-      if (!place) {
-        invalidLineCount += 1;
-        continue;
-      }
-      // 구 경계에 걸친 장소는 두 구 파일에 모두 있을 수 있다. 처음 것을 쓴다.
-      if (placeById.has(place.id)) {
-        duplicateCount += 1;
-        continue;
-      }
-      placeById.set(place.id, place);
-    }
-  }
-
-  return { places: [...placeById.values()], invalidLineCount, duplicateCount };
 }
 
 /** --brands-file: 한 줄에 브랜드명 하나. DB 없이 매칭 결과만 미리 볼 때 쓴다(가짜 id). */
@@ -92,6 +68,17 @@ function summarize(
   for (const match of matches.filter((m) => m.source === 'name')) {
     console.log(
       `[RESTAURANT_BRANCH_IMPORT] name match: ${match.place.id}\t${match.place.name}\t${match.place.category ?? ''}\t-> ${nameById.get(match.restaurantId)}`,
+    );
+  }
+  // 매칭되지 않은 장소의 마지막 카테고리 세그먼트. 카카오 표기가 DB 브랜드명과 달라 놓친 별칭을 찾는다.
+  const matchedIds = new Set(matches.map((match) => match.place.id));
+  const unmatchedSegments = countUnmatchedBrandSegments(
+    places.filter((place) => !matchedIds.has(place.id)),
+    UNMATCHED_SEGMENT_LIMIT,
+  );
+  for (const [segment, count] of unmatchedSegments) {
+    console.log(
+      `[RESTAURANT_BRANCH_IMPORT] unmatched segment: ${count}\t${segment}`,
     );
   }
 }
