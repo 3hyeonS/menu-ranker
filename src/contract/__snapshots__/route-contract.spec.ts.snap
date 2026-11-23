@@ -1480,6 +1480,23 @@ exports[`API route contract RestaurantController routes 1`] = `
     "roles": null,
     "status": 201,
   },
+  "POST /restaurant/place": {
+    "filters": [],
+    "guards": [
+      "AuthGuard()",
+    ],
+    "handler": "place",
+    "interceptors": [
+      "ResponseTransformInterceptor",
+    ],
+    "params": [
+      "0: @Body() RestaurantPlaceRequestDto",
+    ],
+    "pipes": [],
+    "responseMessage": "Place returned successfully",
+    "roles": null,
+    "status": 201,
+  },
   "POST /restaurant/search": {
     "filters": [],
     "guards": [

@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import dataSource from '../src/config/typeorm.datasource';
+import { parseCsv } from './crawl-common/crawl-files';
 import { RestaurantMenuEntity } from '../src/restaurant/entity/restaurant-menu.entity';
 import { RestaurantEntity } from '../src/restaurant/entity/restaurant.entity';
 
@@ -64,53 +65,6 @@ interface ParsedMenu {
   cholesterol: number | null;
   alcohol: number | null;
   sourceKey: string;
-}
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-
-    if (quoted) {
-      if (character === '"' && text[index + 1] === '"') {
-        field += '"';
-        index += 1;
-      } else if (character === '"') {
-        quoted = false;
-      } else {
-        field += character;
-      }
-      continue;
-    }
-
-    if (character === '"') {
-      quoted = true;
-    } else if (character === ',') {
-      row.push(field);
-      field = '';
-    } else if (character === '\n') {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = '';
-    } else if (character !== '\r') {
-      field += character;
-    }
-  }
-
-  if (quoted) {
-    throw new Error('CSV의 따옴표가 닫히지 않았습니다.');
-  }
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
-  return rows;
 }
 
 function normalizeBrand(value: string): string {

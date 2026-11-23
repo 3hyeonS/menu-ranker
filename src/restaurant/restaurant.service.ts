@@ -14,6 +14,7 @@ import {
 } from './dto/request-dto/restaurant-detail-request-dto';
 import { RestaurantSearchRequestDto } from './dto/request-dto/restaurant-search-request-dto';
 import { RestaurantBrandsRequestDto } from './dto/request-dto/restaurant-brands-request-dto';
+import { RestaurantPlaceRequestDto } from './dto/request-dto/restaurant-place-request-dto';
 import {
   RestaurantBrandPlaceResponseDto,
   RestaurantBrandsResponseDto,
@@ -22,11 +23,13 @@ import {
   RestaurantDetailResponseDto,
   RestaurantMenuResponseDto,
 } from './dto/response-dto/restaurant-detail-response-dto';
+import { RestaurantPlaceResponseDto } from './dto/response-dto/restaurant-place-response-dto';
 import {
   RestaurantSearchResponseDto,
   RestaurantSummaryResponseDto,
 } from './dto/response-dto/restaurant-search-response-dto';
 import { RestaurantBranchEntity } from './entity/restaurant-branch.entity';
+import { RestaurantBranchMenuEntity } from './entity/restaurant-branch-menu.entity';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 import { RestaurantEntity } from './entity/restaurant.entity';
 import { KeyedTtlCache } from '../utils/keyed-ttl-cache.util';
@@ -68,6 +71,8 @@ export class RestaurantService {
     private readonly chatService: ChatService,
     @InjectRepository(RestaurantBranchEntity)
     private readonly restaurantBranchRepository: Repository<RestaurantBranchEntity>,
+    @InjectRepository(RestaurantBranchMenuEntity)
+    private readonly restaurantBranchMenuRepository: Repository<RestaurantBranchMenuEntity>,
   ) {}
 
   async searchRestaurants(
@@ -141,6 +146,45 @@ export class RestaurantService {
     );
 
     return { restaurants };
+  }
+
+  // 카카오 장소(지점) 하나의 카카오 메뉴와 브랜드 매핑. 프랜차이즈 지점의 영양정보 메뉴는
+  // 프론트가 restaurant_id로 /restaurant/detail을 따로 부른다(#30 결정).
+  async findPlace(
+    dto: RestaurantPlaceRequestDto,
+  ): Promise<RestaurantPlaceResponseDto> {
+    const branch = await this.restaurantBranchRepository.findOne({
+      where: { kakaoPlaceId: dto.place_id },
+      relations: { restaurant: true },
+      select: {
+        id: true,
+        kakaoPlaceId: true,
+        placeName: true,
+        address: true,
+        restaurant: { id: true, name: true },
+      },
+    });
+    if (!branch) {
+      throw new NotFoundException('Place not found');
+    }
+
+    const menus = await this.restaurantBranchMenuRepository.find({
+      where: { branchId: branch.id },
+      order: { sortOrder: 'ASC' },
+      select: { id: true, name: true, photoUrl: true },
+    });
+
+    return {
+      place_id: Number(branch.kakaoPlaceId),
+      place_name: branch.placeName,
+      address: branch.address ?? null,
+      restaurant_id: branch.restaurant?.id ?? null,
+      restaurant_name: branch.restaurant?.name ?? null,
+      menu_list: menus.map((menu) => ({
+        menu_name: menu.name,
+        photo_url: menu.photoUrl ?? null,
+      })),
+    };
   }
 
   async getRestaurantDetail(

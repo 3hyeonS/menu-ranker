@@ -52,6 +52,60 @@ exports[`API response contract error responses 400 when /restaurant/brands place
 }
 `;
 
+exports[`API response contract error responses 400 when /restaurant/place place_id is array 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "place_id must match /^[1-9]\\d{0,14}$/ regular expression",
+      "place_id must be a string",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when /restaurant/place place_id is decimal number 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "place_id must match /^[1-9]\\d{0,14}$/ regular expression",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when /restaurant/place place_id is missing 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "place_id must match /^[1-9]\\d{0,14}$/ regular expression",
+      "place_id must be a string",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
+exports[`API response contract error responses 400 when /restaurant/place place_id is non-numeric string 1`] = `
+{
+  "body": {
+    "error": "BadRequestException",
+    "message": [
+      "place_id must match /^[1-9]\\d{0,14}$/ regular expression",
+    ],
+    "statusCode": 400,
+  },
+  "httpStatus": 400,
+}
+`;
+
 exports[`API response contract error responses 400 when a non-whitelisted field is sent 1`] = `
 {
   "body": {
@@ -158,6 +212,17 @@ exports[`API response contract error responses 404 for an unknown route 1`] = `
   "body": {
     "error": "NotFoundException",
     "message": "Cannot POST /home/unknown-route",
+    "statusCode": 404,
+  },
+  "httpStatus": 404,
+}
+`;
+
+exports[`API response contract error responses 404 when /restaurant/place is not collected 1`] = `
+{
+  "body": {
+    "error": "NotFoundException",
+    "message": "Place not found",
     "statusCode": 404,
   },
   "httpStatus": 404,
@@ -530,6 +595,45 @@ exports[`API response contract success responses POST /restaurant/detail 1`] = `
   "extraKeys": [],
   "httpStatus": 201,
   "message": "Restaurant recommendations returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /restaurant/place 1`] = `
+{
+  "data": {
+    "address": "string",
+    "menu_list": [
+      {
+        "menu_name": "string",
+        "photo_url": "string",
+      },
+    ],
+    "place_id": "number",
+    "place_name": "string",
+    "restaurant_id": "number",
+    "restaurant_name": "string",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Place returned successfully",
+  "statusCode": 201,
+}
+`;
+
+exports[`API response contract success responses POST /restaurant/place for an independent restaurant 1`] = `
+{
+  "data": {
+    "address": "null",
+    "menu_list": [],
+    "place_id": "number",
+    "place_name": "string",
+    "restaurant_id": "null",
+    "restaurant_name": "null",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Place returned successfully",
   "statusCode": 201,
 }
 `;

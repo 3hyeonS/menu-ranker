@@ -22,7 +22,7 @@ function createChatService(
 
 describe('RestaurantService', () => {
   it('returns sugars and saturated fat in restaurant menu details', () => {
-    const service = new RestaurantService(null, null, null, null);
+    const service = new RestaurantService(null, null, null, null, null);
     const menu = {
       id: 1,
       name: '테스트 메뉴',
@@ -60,7 +60,7 @@ describe('RestaurantService', () => {
   });
 
   it('returns the menu category for the food card badge', () => {
-    const service = new RestaurantService(null, null, null, null);
+    const service = new RestaurantService(null, null, null, null, null);
     const menu = {
       id: 3,
       name: '고구마 피자',
@@ -81,7 +81,7 @@ describe('RestaurantService', () => {
   });
 
   it('keeps an unavailable restaurant menu weight as null', () => {
-    const service = new RestaurantService(null, null, null, null);
+    const service = new RestaurantService(null, null, null, null, null);
     const menu = {
       id: 2,
       name: '중량 미제공 메뉴',
@@ -133,6 +133,7 @@ describe('RestaurantService', () => {
       restaurantRepository as never,
       restaurantMenuRepository as never,
       chatService as never,
+      null,
       null,
     );
 
@@ -197,6 +198,7 @@ describe('RestaurantService', () => {
       restaurantMenuRepository as never,
       chatService as never,
       null,
+      null,
     );
 
     const response = await service.getRestaurantDetail(
@@ -243,6 +245,7 @@ describe('RestaurantService', () => {
       restaurantRepository as never,
       restaurantMenuRepository as never,
       chatService as never,
+      null,
       null,
     );
 
@@ -293,6 +296,7 @@ describe('RestaurantService', () => {
       restaurantMenuRepository as never,
       chatService as never,
       null,
+      null,
     );
 
     const response = await service.getRestaurantDetail(
@@ -311,7 +315,7 @@ describe('RestaurantService', () => {
     ['샌드위치/샐러드', '빵'],
     ['베이커리', '크림'],
   ])('%s 추천에서 %s 구성품을 제외한다', (restaurantCategory, menuCategory) => {
-    const service = new RestaurantService(null, null, null, null);
+    const service = new RestaurantService(null, null, null, null, null);
     const menu = { menuCategory } as RestaurantMenuEntity;
 
     const isCandidate = (
@@ -327,7 +331,7 @@ describe('RestaurantService', () => {
   });
 
   it('keeps bakery bread and cafe add-ons as recommendation candidates', () => {
-    const service = new RestaurantService(null, null, null, null);
+    const service = new RestaurantService(null, null, null, null, null);
     const candidateChecker = service as unknown as {
       isRecommendationCandidate(
         menu: RestaurantMenuEntity,
@@ -390,6 +394,7 @@ describe('RestaurantService', () => {
         } as never,
         { find: jest.fn().mockResolvedValue(menus) } as never,
         chatService as never,
+        null,
         null,
       );
     }
@@ -561,6 +566,7 @@ describe('RestaurantService', () => {
         null,
         null,
         restaurantBranchRepository as never,
+        null,
       );
 
       const response = await service.findRegisteredBrands({
@@ -579,13 +585,111 @@ describe('RestaurantService', () => {
     });
 
     it('returns an empty list when nothing is registered', async () => {
-      const service = new RestaurantService(null, null, null, {
-        find: jest.fn().mockResolvedValue([]),
-      } as never);
+      const service = new RestaurantService(
+        null,
+        null,
+        null,
+        {
+          find: jest.fn().mockResolvedValue([]),
+        } as never,
+        null,
+      );
 
       await expect(
         service.findRegisteredBrands({ place_ids: ['1'] }),
       ).resolves.toEqual({ restaurants: [] });
+    });
+  });
+
+  describe('findPlace', () => {
+    function createService(branch: unknown, menus: unknown[] = []) {
+      const restaurantBranchRepository = {
+        findOne: jest.fn().mockResolvedValue(branch),
+      };
+      const restaurantBranchMenuRepository = {
+        find: jest.fn().mockResolvedValue(menus),
+      };
+      const service = new RestaurantService(
+        null,
+        null,
+        null,
+        restaurantBranchRepository as never,
+        restaurantBranchMenuRepository as never,
+      );
+      return {
+        service,
+        restaurantBranchRepository,
+        restaurantBranchMenuRepository,
+      };
+    }
+
+    it('returns kakao menus in display order with the brand mapping', async () => {
+      const {
+        service,
+        restaurantBranchRepository,
+        restaurantBranchMenuRepository,
+      } = createService(
+        {
+          id: 7,
+          kakaoPlaceId: '27531028',
+          placeName: '롯데리아 잠실새내점',
+          address: '서울 송파구 백제고분로 1',
+          restaurant: { id: 2, name: '롯데리아' },
+        },
+        [
+          { id: 10, name: '불고기버거', photoUrl: 'https://t1.kakaocdn.net/a' },
+          { id: 11, name: '치즈스틱', photoUrl: null },
+        ],
+      );
+
+      await expect(
+        service.findPlace({ place_id: '27531028' }),
+      ).resolves.toEqual({
+        place_id: 27531028,
+        place_name: '롯데리아 잠실새내점',
+        address: '서울 송파구 백제고분로 1',
+        restaurant_id: 2,
+        restaurant_name: '롯데리아',
+        menu_list: [
+          { menu_name: '불고기버거', photo_url: 'https://t1.kakaocdn.net/a' },
+          { menu_name: '치즈스틱', photo_url: null },
+        ],
+      });
+      const [branchOptions] = restaurantBranchRepository.findOne.mock.calls[0];
+      expect(branchOptions.where).toEqual({ kakaoPlaceId: '27531028' });
+      const [menuOptions] = restaurantBranchMenuRepository.find.mock.calls[0];
+      expect(menuOptions.where).toEqual({ branchId: 7 });
+      expect(menuOptions.order).toEqual({ sortOrder: 'ASC' });
+    });
+
+    it('returns null brand fields for an independent restaurant', async () => {
+      const { service } = createService({
+        id: 8,
+        kakaoPlaceId: '21605481',
+        placeName: '착한떡볶이',
+        address: null,
+        restaurant: null,
+      });
+
+      await expect(
+        service.findPlace({ place_id: '21605481' }),
+      ).resolves.toEqual({
+        place_id: 21605481,
+        place_name: '착한떡볶이',
+        address: null,
+        restaurant_id: null,
+        restaurant_name: null,
+        menu_list: [],
+      });
+    });
+
+    it('throws 404 for a place that was not collected', async () => {
+      const { service, restaurantBranchMenuRepository } = createService(null);
+
+      await expect(service.findPlace({ place_id: '1' })).rejects.toThrow(
+        'Place not found',
+      );
+      expect(restaurantBranchMenuRepository.find).not.toHaveBeenCalled();
     });
   });
 });

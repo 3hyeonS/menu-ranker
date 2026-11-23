@@ -1731,6 +1731,20 @@ exports[`API request DTO contract RestaurantDetailRequestDto 1`] = `
 }
 `;
 
+exports[`API request DTO contract RestaurantPlaceRequestDto 1`] = `
+{
+  "place_id": {
+    "designType": "String",
+    "hasTransform": true,
+    "transformType": null,
+    "validators": [
+      "isString",
+      "matches ["/^[1-9]\\\\d{0,14}$/",null]",
+    ],
+  },
+}
+`;
+
 exports[`API request DTO contract RestaurantSearchRequestDto 1`] = `
 {
   "cursor": {
@@ -2414,6 +2428,7 @@ exports[`API request DTO contract lists every request DTO 1`] = `
   "RegisterWeightRequestDto",
   "RestaurantBrandsRequestDto",
   "RestaurantDetailRequestDto",
+  "RestaurantPlaceRequestDto",
   "RestaurantSearchRequestDto",
   "SaveMenstrualRecordsRequestDto",
   "SearchBrandRequestDto",
