@@ -69,3 +69,34 @@ describe('음식점(FD6)·카페(CE7) places.jsonl 함께 매칭', () => {
     ]);
   });
 });
+
+describe('countUnmatchedBrandSegments', () => {
+  const place = (name: string, category: string) => ({
+    id: '1',
+    name,
+    address: null,
+    category,
+  });
+
+  it('장소명에 공백이 있어도, 브랜드 뒤에 세분류가 붙어도 브랜드 세그먼트를 센다', () => {
+    expect(
+      countUnmatchedBrandSegments(
+        [
+          place(
+            '투썸 플레이스 잠실점',
+            '음식점 > 카페 > 커피전문점 > 투썸플레이스',
+          ),
+          place(
+            '브랜드X 잠실점',
+            '음식점 > 카페 > 커피전문점 > 브랜드X > 브랜드X 리저브',
+          ),
+          place('가상갈비 본점', '음식점 > 한식 > 육류,고기 > 갈비'),
+        ],
+        10,
+      ),
+    ).toEqual([
+      ['브랜드X', 1],
+      ['투썸플레이스', 1],
+    ]);
+  });
+});

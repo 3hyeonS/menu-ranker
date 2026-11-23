@@ -183,22 +183,27 @@ export class KakaoCrawlStore {
   }
 
   /**
-   * 출력 폴더의 카테고리 그룹을 확인하고 처음이면 기록한다.
+   * 출력 폴더의 카테고리 그룹을 확인하고 기록한다.
    * 끝난 사각형 기록(`search-rects.txt`)은 그룹을 구분하지 않으므로, 음식점 폴더에서 카페를 검색하면
-   * 모든 사각형을 건너뛰고 음식점 목록에 카페가 섞인다. 그래서 그룹이 다르면 거부한다.
-   * 기록이 없는데 진행 파일이 있으면 #32 이전에 만든 음식점(FD6) 폴더로 본다.
+   * 모든 사각형을 건너뛰고 음식점 목록에 카페가 섞인다. 그래서 진행·결과 파일이 있는 폴더의 그룹이 다르면 거부한다.
+   * - 기록이 없거나 깨졌는데(빈 파일 등) 진행·결과 파일이 있으면 #32 이전에 만든 음식점(FD6) 폴더로 본다.
+   * - 기록만 있고 다른 파일이 없으면(키 오류로 첫 요청에서 멈춘 경우 등) 이번 그룹으로 다시 기록한다.
    */
   claimCategoryGroup(group: KakaoCategoryGroup): void {
-    const recorded = existsSync(this.categoryGroupPath)
+    const hasData = this.paths
+      .filter((path) => path !== this.categoryGroupPath)
+      .some((path) => existsSync(path));
+    const raw = existsSync(this.categoryGroupPath)
       ? readFileSync(this.categoryGroupPath, 'utf8').trim()
-      : existsSync(this.rectsPath) || existsSync(this.placesPath)
-        ? 'FD6'
-        : null;
-    if (recorded && recorded !== group)
+      : '';
+    const recorded =
+      KAKAO_CATEGORY_GROUPS.find((value) => value === raw) ??
+      (hasData ? 'FD6' : null);
+    if (hasData && recorded && recorded !== group)
       throw new Error(
         `출력 폴더 ${this.dir}는 ${recorded} 수집용입니다. ${group}는 다른 --out-dir로 수집하세요.`,
       );
-    if (!existsSync(this.categoryGroupPath))
+    if (raw !== group)
       writeFileSync(this.categoryGroupPath, `${group}\n`, 'utf8');
   }
 

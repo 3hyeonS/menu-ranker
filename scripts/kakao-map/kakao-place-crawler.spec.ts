@@ -434,8 +434,41 @@ describe('KakaoPlaceCrawler', () => {
     expect(readFileSync(store.categoryGroupPath, 'utf8')).toBe('FD6\n');
   });
 
+  it('결과 파일만 남은 이전 음식점 폴더나 그룹 기록이 비어 있는 폴더도 FD6으로 보고 CE7을 거부한다', async () => {
+    const cafe = {
+      categoryGroup: 'CE7' as const,
+      excludedCategories: [],
+      discoverOnly: true,
+    };
+    writeFileSync(store.menusPath, '﻿메뉴명,사진URL,식당id\r\n');
+    await expect(crawler(new FakeFetcher({}), cafe).run()).rejects.toThrow(
+      'FD6 수집용',
+    );
+    writeFileSync(store.categoryGroupPath, '');
+    await expect(crawler(new FakeFetcher({}), cafe).run()).rejects.toThrow(
+      'FD6 수집용',
+    );
+  });
+
+  it('그룹 기록만 있고 다른 파일이 없으면(첫 요청에서 멈춘 폴더) 새 그룹으로 다시 기록한다', async () => {
+    writeFileSync(store.categoryGroupPath, 'FD6\n');
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(RECT, 1, 'CE7')]: [searchPage(0, [])],
+    });
+    await crawler(fetcher, {
+      categoryGroup: 'CE7',
+      excludedCategories: [],
+      discoverOnly: true,
+    }).run();
+    expect(readFileSync(store.categoryGroupPath, 'utf8')).toBe('CE7\n');
+  });
+
   it('카페(CE7) 출력 폴더에서는 FD6을 수집하지 않는다', async () => {
     writeFileSync(store.categoryGroupPath, 'CE7\n');
+    writeFileSync(
+      store.rectsPath,
+      `leaf ${RECT.map((v) => v.toFixed(6)).join(',')}\n`,
+    );
     await expect(
       crawler(new FakeFetcher({}), { discoverOnly: true }).run(),
     ).rejects.toThrow('CE7 수집용');

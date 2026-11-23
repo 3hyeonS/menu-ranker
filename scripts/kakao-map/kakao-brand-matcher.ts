@@ -61,10 +61,11 @@ export function brandSegments(category: string | null): string[] {
 }
 
 /**
- * 매칭되지 않은 장소의 마지막 카테고리 세그먼트(브랜드일 수 있는 값)를 많은 순으로 센다.
+ * 매칭되지 않은 장소의 브랜드일 수 있는 카테고리 세그먼트를 많은 순으로 센다.
  * 카카오 표기가 DB 브랜드명과 달라 놓친 별칭을 찾는 검수용이다(예: `메가MGC커피`).
- * 프랜차이즈는 장소명에 브랜드가 들어가므로, `육류,고기`·`디저트카페` 같은 일반 분류가 목록을
- * 채우지 않도록 장소명 첫 단어가 그 세그먼트로 시작하는 장소만 센다(`메가MGC커피 문정점`).
+ * 프랜차이즈는 장소명이 브랜드로 시작하므로, `갈비`·`디저트카페` 같은 일반 분류가 목록을 채우지 않도록
+ * 공백을 지운 장소명이 그 세그먼트로 시작하는 경우만 센다(`투썸 플레이스 잠실점` / `투썸플레이스`).
+ * 3단계 이후 세그먼트 중 이 조건에 맞는 가장 깊은 것 하나를 센다.
  */
 export function countUnmatchedBrandSegments(
   unmatchedPlaces: readonly KakaoPlace[],
@@ -72,12 +73,14 @@ export function countUnmatchedBrandSegments(
 ): Array<[string, number]> {
   const counts = new Map<string, number>();
   for (const place of unmatchedPlaces) {
-    const segments = brandSegments(place.category);
-    const segment = segments[segments.length - 1];
-    const key = segment ? normalizeBrandKey(segment) : '';
-    const firstWord = normalizeBrandKey(place.name.trim().split(/\s+/)[0]);
-    if (!key || !firstWord.startsWith(key)) continue;
-    counts.set(segment, (counts.get(segment) ?? 0) + 1);
+    const name = normalizeBrandKey(place.name);
+    const segment = brandSegments(place.category)
+      .reverse()
+      .find((value) => {
+        const key = normalizeBrandKey(value);
+        return key !== '' && name.startsWith(key);
+      });
+    if (segment) counts.set(segment, (counts.get(segment) ?? 0) + 1);
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))

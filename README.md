@@ -230,6 +230,7 @@ import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 �
 `restaurant:import`로 restaurant를 다시 넣었으면 이 import도 다시 실행한다.
 
 ```bash
+# 카페(CE7)를 아직 수집하지 않았으면 kakao-map/cafe/*/places.jsonl은 빼고 실행한다(없는 파일이면 오류로 멈춘다).
 # 매칭 결과만 확인 (DB 변경 없음)
 $ npm run restaurant:branch-import -- kakao-map/*/places.jsonl kakao-map/cafe/*/places.jsonl --validate-only
 
