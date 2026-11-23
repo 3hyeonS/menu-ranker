@@ -95,6 +95,23 @@ describe('KakaoBrandMatcher', () => {
     ).toEqual({ restaurantId: 10, source: 'category' });
   });
 
+  it('matches cafe aliases from the kakao category or the place name', () => {
+    const cafes = new KakaoBrandMatcher([{ id: 20, name: '메가커피' }]);
+    expect(
+      cafes.match(
+        place('메가MGC커피 잠실점', '음식점 > 카페 > 커피전문점 > 메가MGC커피'),
+      ),
+    ).toEqual({ restaurantId: 20, source: 'category' });
+    expect(
+      cafes.match(place('메가MGC커피 문정점', '음식점 > 카페 > 커피전문점')),
+    ).toEqual({ restaurantId: 20, source: 'name' });
+    expect(
+      matcher.match(
+        place('할리스 잠실점', '음식점 > 카페 > 커피전문점 > 할리스커피'),
+      ),
+    ).toEqual({ restaurantId: 8, source: 'category' });
+  });
+
   it('ignores unknown places', () => {
     expect(
       matcher.match(place('착한떡볶이', '음식점 > 분식 > 떡볶이')),

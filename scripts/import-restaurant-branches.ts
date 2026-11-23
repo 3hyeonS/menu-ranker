@@ -7,7 +7,7 @@ import { RestaurantBranchMenuEntity } from '../src/restaurant/entity/restaurant-
 import { RestaurantBranchEntity } from '../src/restaurant/entity/restaurant-branch.entity';
 import { RestaurantEntity } from '../src/restaurant/entity/restaurant.entity';
 import { arg } from './crawl-common/crawl-cli';
-import { parseCsv, readJsonLines, readLines } from './crawl-common/crawl-files';
+import { parseCsv, readLines } from './crawl-common/crawl-files';
 import {
   BranchFolderInput,
   BranchImportPlan,
@@ -20,12 +20,15 @@ import {
 import {
   BrandMatchSource,
   BrandRestaurant,
+  countUnmatchedBrandSegments,
   KakaoBrandMatcher,
   KakaoPlace,
-  parseKakaoPlace,
 } from './kakao-map/kakao-brand-matcher';
+import { KAKAO_CATEGORY_GROUPS } from './kakao-map/kakao-place-crawler';
+import { readPlaces } from './kakao-map/kakao-places-reader';
 
 // 카카오 수집 구 폴더(places.jsonl·restaurants.csv·menus.csv)를 restaurant_branch·restaurant_branch_menu에 적재한다.
+// 카페(CE7, #32) 폴더는 places.jsonl만 있고 메뉴가 없다.
 // 적재 대상: restaurants.csv의 장소 전부(개인 식당 포함) + places.jsonl에서 브랜드에 매칭된 장소.
 // 장소는 upsert하고 메뉴는 지점 단위로 지우고 다시 넣는다. 입력에 없는 장소는 건드리지 않는다.
 // 입력에 있지만 적재 대상이 아닌 장소는 restaurant_id를 NULL로 바꾼다(#31·#30 결정).
@@ -33,18 +36,33 @@ import {
 // 한 트랜잭션에 쓰는 장소 수와 INSERT 한 번의 행 수. 운영 RDS(버퍼 풀 128MB)에 부담이 적게 나눈다.
 const PLACE_CHUNK_SIZE = 1_000;
 const ROW_CHUNK_SIZE = 1_000;
+/** 별칭 검수용으로 출력할 미매칭 카테고리 세그먼트 수(#32). */
+const UNMATCHED_SEGMENT_LIMIT = 30;
 
 interface FolderFiles {
   dir: string;
+  // 카페(CE7) 폴더. 장소 목록만 수집하므로 restaurants.csv·menus.csv·menu-done.txt가 없다.
+  placesOnly: boolean;
   placesPath: string;
   restaurantsPath: string;
   menusPath: string;
   menuDonePath: string;
 }
 
+/**
+ * 수집기가 남긴 category-group.txt로 폴더의 카테고리 그룹을 본다.
+ * 기록이 없거나 알 수 없는 값이면 #32 이전 음식점 폴더(FD6)로 본다(수집기와 같은 기준).
+ */
+function folderCategoryGroup(dir: string): string {
+  const path = join(dir, 'category-group.txt');
+  const raw = existsSync(path) ? readFileSync(path, 'utf8').trim() : '';
+  return KAKAO_CATEGORY_GROUPS.find((group) => group === raw) ?? 'FD6';
+}
+
 function folderFiles(dir: string): FolderFiles {
   return {
     dir,
+    placesOnly: folderCategoryGroup(dir) === 'CE7',
     placesPath: join(dir, 'places.jsonl'),
     restaurantsPath: join(dir, 'restaurants.csv'),
     menusPath: join(dir, 'menus.csv'),
@@ -61,16 +79,14 @@ function readFolder(files: FolderFiles): {
   invalidPlaceCount: number;
   invalidRestaurantCount: number;
 } {
-  const places: KakaoPlace[] = [];
-  let invalidPlaceCount = 0;
-  // readJsonLines는 JSON이 깨진 줄(중단으로 덜 쓰인 줄)을 건너뛴다.
-  for (const row of readJsonLines<unknown>(files.placesPath)) {
-    const place = parseKakaoPlace(row);
-    if (place) {
-      places.push(place);
-    } else {
-      invalidPlaceCount += 1;
-    }
+  // 폴더 사이의 같은 장소 id는 planBranchImport가 센다.
+  const { places, invalidLineCount } = readPlaces([files.placesPath]);
+  if (files.placesOnly) {
+    return {
+      input: { places, restaurants: [], menuDoneIds: new Set() },
+      invalidPlaceCount: invalidLineCount,
+      invalidRestaurantCount: 0,
+    };
   }
   const { restaurants, invalidRowCount } = parseRestaurantRows(
     readCsvRows(files.restaurantsPath),
@@ -83,7 +99,7 @@ function readFolder(files: FolderFiles): {
         readLines(files.menuDonePath).map((id) => id.trim()),
       ),
     },
-    invalidPlaceCount,
+    invalidPlaceCount: invalidLineCount,
     invalidRestaurantCount: invalidRowCount,
   };
 }
@@ -97,6 +113,7 @@ function readBrandsFile(path: string): BrandRestaurant[] {
 
 function summarize(
   placeCount: number,
+  places: readonly KakaoPlace[],
   plan: BranchImportPlan,
   restaurants: BrandRestaurant[],
 ): void {
@@ -138,6 +155,17 @@ function summarize(
   for (const target of matched.filter((t) => t.matchSource === 'name')) {
     console.log(
       `[RESTAURANT_BRANCH_IMPORT] name match: ${target.place.id}\t${target.place.name}\t${target.place.category ?? ''}\t-> ${nameById.get(target.restaurantId)}`,
+    );
+  }
+  // 매칭되지 않은 장소의 브랜드일 수 있는 카테고리 세그먼트. 카카오 표기가 DB 브랜드명과 달라 놓친 별칭을 찾는다(#32).
+  const matchedIds = new Set(matched.map((target) => target.place.id));
+  const unmatchedSegments = countUnmatchedBrandSegments(
+    places.filter((place) => !matchedIds.has(place.id)),
+    UNMATCHED_SEGMENT_LIMIT,
+  );
+  for (const [segment, count] of unmatchedSegments) {
+    console.log(
+      `[RESTAURANT_BRANCH_IMPORT] unmatched segment: ${count}\t${segment}`,
     );
   }
 }
@@ -259,7 +287,7 @@ async function main(): Promise<void> {
     .map((path) => resolve(process.cwd(), path));
   if (dirs.length === 0) {
     throw new Error(
-      '구 폴더를 하나 이상 지정해야 합니다. 예: npm run restaurant:branch-import -- kakao-map/송파구 ... --validate-only',
+      '구 폴더를 하나 이상 지정해야 합니다. 예: npm run restaurant:branch-import -- kakao-map/송파구 kakao-map/cafe/송파구 --validate-only',
     );
   }
   if (args.includes('--brands-file')) {
@@ -273,12 +301,15 @@ async function main(): Promise<void> {
   // readLines·readJsonLines는 없는 파일을 빈 목록으로 읽으므로, 오타·펼쳐지지 않은 glob·빠진 파일을 여기서 막는다.
   const folders = dirs.map(folderFiles);
   const missingPaths = folders.flatMap((files) =>
-    [
-      files.placesPath,
-      files.restaurantsPath,
-      files.menusPath,
-      files.menuDonePath,
-    ].filter((path) => !existsSync(path)),
+    (files.placesOnly
+      ? [files.placesPath]
+      : [
+          files.placesPath,
+          files.restaurantsPath,
+          files.menusPath,
+          files.menuDonePath,
+        ]
+    ).filter((path) => !existsSync(path)),
   );
   if (missingPaths.length > 0) {
     throw new Error(`입력 파일이 없습니다: ${missingPaths.join(', ')}`);
@@ -300,8 +331,16 @@ async function main(): Promise<void> {
       ...folder.restaurants.map((place) => place.id),
     ]),
   ).size;
+  // places.jsonl 장소(카테고리 있음). 같은 id는 처음 것만 쓴다(미매칭 세그먼트 집계용).
+  const placeById = new Map<string, KakaoPlace>();
+  for (const place of folderInputs.flatMap((folder) => folder.places)) {
+    if (!placeById.has(place.id)) {
+      placeById.set(place.id, place);
+    }
+  }
   console.log('[RESTAURANT_BRANCH_IMPORT] folders loaded', {
     folderCount: folders.length,
+    cafeFolderCount: folders.filter((files) => files.placesOnly).length,
     placeCount,
     invalidPlaceCount,
     invalidRestaurantCount,
@@ -328,7 +367,7 @@ async function main(): Promise<void> {
       folderInputs,
       new KakaoBrandMatcher(restaurants),
     );
-    summarize(placeCount, plan, restaurants);
+    summarize(placeCount, [...placeById.values()], plan, restaurants);
 
     // 브랜드 해제를 먼저 한다. 뒤의 폴더 적재가 중간에 실패해도 잘못된 브랜드 매핑이 남지 않는다.
     if (!validateOnly) {
@@ -358,7 +397,14 @@ async function main(): Promise<void> {
       const targets = plan.targets.filter(
         (target) => target.folderIndex === folderIndex,
       );
-      const menus = parseMenuRows(readCsvRows(files.menusPath));
+      // 카페 폴더는 메뉴를 수집하지 않는다. 브랜드 지점만 들어가고 지점 메뉴는 비어 있다.
+      const menus = files.placesOnly
+        ? {
+            menusByPlaceId: new Map<string, KakaoBranchMenu[]>(),
+            invalidRowCount: 0,
+            droppedPhotoCount: 0,
+          }
+        : parseMenuRows(readCsvRows(files.menusPath));
       totals.invalidMenuRowCount += menus.invalidRowCount;
       totals.droppedPhotoCount += menus.droppedPhotoCount;
       for (const [placeId, placeMenus] of menus.menusByPlaceId) {

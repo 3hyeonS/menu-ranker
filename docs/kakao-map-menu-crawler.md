@@ -6,6 +6,8 @@
 - 메뉴는 카카오맵 **비공식** 내부 API를 크롤링하므로 약관 위험이 네이버(#26)와 같다. 실제 카카오 호출은 사용자 허락을 받은 뒤에만 한다.
 - 사진은 URL만 저장하고 이미지 파일은 내려받지 않는다. 사진은 카카오에 있는 것만 쓴다(네이버로 보충하지 않음).
 
+- `--category-group=CE7`이면 **카페 장소 목록만** 모은다(#32). 아래 「카페(CE7) 장소 목록」 절을 본다.
+
 ## 동작
 
 1. **식당 목록**: 공식 로컬 API `GET https://dapi.kakao.com/v2/local/search/category.json`(`category_group_code=FD6` 음식점)을 `rect` 사각형으로 검색한다. 검색 한 번에 최대 45곳(15곳 × 3쪽)만 받을 수 있어서, `total_count`가 45를 넘으면 사각형을 4등분해 재귀로 검색한다. 주소(도로명, 없으면 지번)에 `송파구`가 있는 식당만 남긴다. 이전 분석(2026-10-28)에서 송파구 전체가 약 2,100번 호출, 송파구 식당 약 6,100곳이었다.
@@ -35,6 +37,7 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 | 옵션 | 기본값 | 설명 |
 |---|---|---|
 | `--out-dir=` | (필수) | 결과·진행 상태 파일을 둘 폴더 |
+| `--category-group=` | `FD6` | 카카오 카테고리 그룹. `FD6` 음식점, `CE7` 카페(장소 목록만, 제외 필터 없음) |
 | `--rect=` | `127.05,37.455,127.2,37.555` | 검색 사각형 `x1,y1,x2,y2`(경도·위도). 기본값은 송파구 전체를 덮는다 |
 | `--district=` | `송파구` | 주소 필터. 빈 값이면 거르지 않음 |
 | `--max-depth=` | 12 | 사각형 4등분 최대 깊이(0~14). 이 깊이에서도 45곳을 넘으면 45곳만 받고 `truncatedRects`로 센다(재시작해도 유지). 좌표를 소수 6자리로 보내므로 14보다 깊게 나누면 사각형이 겹친다 |
@@ -54,6 +57,21 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 
 `KAKAO_CLIENT_ID`는 앱(`src/main.ts`)과 같이 `.env` 값이 셸 환경변수보다 우선한다.
 
+## 카페(CE7) 장소 목록
+
+이슈 #32. 카페 브랜드(스타벅스·메가커피 등)의 카카오 장소 ID를 `restaurant_branch`에 매핑하려고 카페 장소 목록만 모은다(`docs/kakao-restaurant-branch-import.md`).
+
+- `--category-group=CE7`이면 검색 API에 `category_group_code=CE7`을 보낸다. 사각형 분할·주소 필터·재시작은 음식점과 같다.
+- 카페가 대상이므로 **카테고리 제외 필터를 쓰지 않는다.** 기본 제외 목록이 비고, `--exclude-categories`에 값을 주면 실행을 거부한다.
+- **메뉴는 수집하지 않는다.** `--discover-only`가 자동으로 켜지고 panel3를 부르지 않는다. 결과는 `places.jsonl`·`restaurants.csv`(이름은 같지만 카페 목록)·`search-rects.txt`다.
+- 출력 폴더마다 카테고리 그룹을 `category-group.txt`에 남긴다. 그룹이 다른 폴더(또는 기록이 없는데 진행 파일이 있는 #32 이전 음식점 폴더)에서 실행하면 거부한다. 끝난 사각형 기록이 그룹을 구분하지 않아, 같은 폴더를 쓰면 모든 사각형을 건너뛰고 음식점 목록에 카페가 섞이기 때문이다.
+- 출력 폴더는 `kakao-map/cafe/<구>/`로 둔다. 음식점 import 경로 `kakao-map/*구/`와 겹치지 않는다. import는 `category-group.txt`가 `CE7`인 폴더를 카페 폴더로 보고 `places.jsonl`만 읽는다(`restaurants.csv`는 쓰지 않는다).
+
+```sh
+# 구 하나 (사각형·주소 필터는 음식점 수집에 쓴 districts.tsv와 같은 값)
+npm run kakao-map:crawl-songpa -- --category-group=CE7 --out-dir=kakao-map/cafe/송파구 --district=송파구 --rect=127.05,37.455,127.2,37.555
+```
+
 ## 결과 파일과 재시작
 
 모두 `--out-dir` 안에 생긴다. CSV는 Excel에서 바로 열리도록 UTF-8(BOM) + CRLF다.
@@ -66,6 +84,7 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 | `search-rects.txt` | 끝난 검색 사각형(`leaf`: 결과를 받음, `split`: 4등분함, `truncated`: 최대 깊이에서 45곳만 받음) |
 | `menu-done.txt` | 메뉴 수집이 끝난 장소 ID(메뉴 없음, 없는 장소 404·410 포함) |
 | `failed.jsonl` | 메뉴 수집에 실패한 장소와 이유(기록용) |
+| `category-group.txt` | 이 폴더의 카테고리 그룹(`FD6`/`CE7`). 다른 그룹으로 실행하면 거부한다 |
 
 - 중단(Ctrl+C, 차단으로 멈춤 등)된 뒤 **같은 명령을 다시 실행**하면 이어서 한다. 끝난 사각형은 다시 검색하지 않고, `menu-done.txt`에 있거나 `menus.csv`에 행이 있는 식당은 건너뛴다. 재시도를 소진해 실패한 식당은 다음 실행에서 다시 시도한다.
 - 식당 하나의 메뉴 행은 한 번의 쓰기로 덧붙인다. 중단으로 `menus.csv` 마지막 줄이 덜 쓰였으면 다음 실행 시작 때 그 줄을 지운다. `places.jsonl`의 깨진 줄은 무시한다.
@@ -78,7 +97,7 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 |---|---|
 | `scripts/kakao-map/kakao-place-parser.ts` | 로컬 API 응답과 panel3 응답 파싱 |
 | `scripts/kakao-map/kakao-place-crawler.ts` | 사각형 재귀 검색, 메뉴 수집, 결과·진행 상태 파일(`KakaoCrawlStore`) |
-| `scripts/kakao-map/crawl-songpa-kakao.ts` | CLI(옵션 검증, 실제 `fetch`, git ignore 확인) |
+| `scripts/kakao-map/crawl-songpa-kakao.ts` | CLI(옵션 검증, 실제 `fetch`, git ignore 확인). 이름은 #28 때 그대로지만 `--rect`·`--district`·`--category-group`으로 다른 구·카페도 수집한다 |
 | `scripts/crawl-common/` | 네이버·카카오 공용: 지연·재시도·백오프·연속 차단 중단(`PoliteRequester`), CSV·진행 파일 유틸, CLI 옵션·git ignore 확인, 카페·술집 제외 단어 |
 
 ## 테스트
@@ -87,4 +106,4 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 npm test -- --runInBand scripts/kakao-map
 ```
 
-`scripts/kakao-map/__fixtures__/`의 JSON 픽스처와 Fake fetcher로 파싱, CSV 출력, 지역·카테고리 필터, 사각형 분할, 쪽 넘김, 재시작, 백오프, 키 오류 시 중단, 연속 차단 시 중단을 검증한다. 네트워크를 쓰지 않는다. 픽스처는 실제 응답 구조(2026-10-28)를 축약하고 값만 가상으로 바꾼 것이다.
+`scripts/kakao-map/__fixtures__/`의 JSON 픽스처와 Fake fetcher로 파싱, CSV 출력, 지역·카테고리 필터, 사각형 분할, 쪽 넘김, 재시작, 백오프, 키 오류 시 중단, 연속 차단 시 중단을 검증한다. 카페(CE7)는 `cafe-category-search.json`으로 그룹 코드·제외 필터 미적용·메뉴 미수집·폴더 그룹 충돌 거부를 검증한다. 네트워크를 쓰지 않는다. 픽스처는 실제 응답 구조(2026-10-28)를 축약하고 값만 가상으로 바꾼 것이다.

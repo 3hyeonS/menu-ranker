@@ -1,5 +1,6 @@
 // 카카오 기준 서울 송파구 식당 목록(공식 로컬 API)과 메뉴명·사진 URL(카카오맵 비공식 panel3)을 수집해
-// 식당 CSV·메뉴 CSV로 저장한다. 이슈 #28. 실행 방법은 docs/kakao-map-menu-crawler.md.
+// 식당 CSV·메뉴 CSV로 저장한다. 이슈 #28. `--category-group=CE7`이면 카페 장소 목록만 모은다(#32).
+// 실행 방법은 docs/kakao-map-menu-crawler.md.
 import * as dotenv from 'dotenv';
 import { mkdirSync } from 'fs';
 import { resolve } from 'path';
@@ -12,6 +13,8 @@ import {
 import { HttpFetcher } from '../crawl-common/polite-requester';
 import { DEFAULT_EXCLUDED_CATEGORIES } from '../crawl-common/excluded-categories';
 import {
+  KAKAO_CATEGORY_GROUPS,
+  KakaoCategoryGroup,
   KakaoCrawlOptions,
   KakaoCrawlStore,
   KakaoPlaceCrawler,
@@ -56,6 +59,16 @@ function rectArg(): Rect {
   return values as Rect;
 }
 
+function categoryGroupArg(): KakaoCategoryGroup {
+  const raw = arg('category-group') ?? 'FD6';
+  const group = KAKAO_CATEGORY_GROUPS.find((value) => value === raw);
+  if (!group)
+    throw new Error(
+      `--category-group는 ${KAKAO_CATEGORY_GROUPS.join('|')} 중 하나여야 합니다: ${raw}`,
+    );
+  return group;
+}
+
 export function parseOptions(): {
   outDir: string;
   options: KakaoCrawlOptions;
@@ -71,15 +84,24 @@ export function parseOptions(): {
   const maxRetries = intArg('max-retries', 3, 0);
   const backoffBaseMs = intArg('backoff-ms', 10000, 0);
   const maxConsecutiveBlocks = intArg('max-consecutive-blocks', 3, 1);
+  const categoryGroup = categoryGroupArg();
+  // 카페(CE7)는 장소 목록만 모으고 카페·디저트 제외 필터를 쓰지 않는다(#32).
+  const isCafe = categoryGroup === 'CE7';
+  const excludedCategories = listArg(
+    'exclude-categories',
+    isCafe ? [] : DEFAULT_EXCLUDED_CATEGORIES,
+  );
+  if (isCafe && excludedCategories.length)
+    throw new Error(
+      '--category-group=CE7(카페)에는 --exclude-categories를 쓰지 않습니다. 음식점용 제외 목록을 넘기면 카페가 모두 빠집니다.',
+    );
   const options: KakaoCrawlOptions = {
     restApiKey,
+    categoryGroup,
     rect: rectArg(),
     district: arg('district') ?? '송파구',
     maxDepth: intArg('max-depth', 12, 0, 14),
-    excludedCategories: listArg(
-      'exclude-categories',
-      DEFAULT_EXCLUDED_CATEGORIES,
-    ),
+    excludedCategories,
     search: {
       minDelayMs: intArg('search-min-delay-ms', 100, 0),
       maxDelayMs: intArg('search-max-delay-ms', 300, 0),
@@ -97,7 +119,7 @@ export function parseOptions(): {
     appVersion: arg('app-version') ?? '6.6.0',
     concurrency: intArg('concurrency', 1, 1, 2),
     maxPlaces: intArg('max-places', 0, 0),
-    discoverOnly: process.argv.includes('--discover-only'),
+    discoverOnly: isCafe || process.argv.includes('--discover-only'),
   };
   for (const [name, policy] of [
     ['search-', options.search],
@@ -127,11 +149,15 @@ async function main(): Promise<void> {
     random: Math.random,
     log: (message) => console.log(message),
   });
-  console.log(`출력: ${outDir}\n검색 영역: ${options.rect.join(',')}`);
+  console.log(
+    `출력: ${outDir}\n카테고리 그룹: ${options.categoryGroup}\n검색 영역: ${options.rect.join(',')}`,
+  );
   const summary = await crawler.run();
   console.log(JSON.stringify(summary, null, 2));
   console.log(
-    `식당: ${store.restaurantsPath}\n메뉴: ${store.menusPath}\n실패 목록: ${store.failedPath} (다시 실행하면 완료되지 않은 식당만 재시도)`,
+    options.discoverOnly
+      ? `장소 목록: ${store.restaurantsPath}, ${store.placesPath}`
+      : `식당: ${store.restaurantsPath}\n메뉴: ${store.menusPath}\n실패 목록: ${store.failedPath} (다시 실행하면 완료되지 않은 식당만 재시도)`,
   );
 }
 
