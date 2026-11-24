@@ -20,6 +20,7 @@ function reference(id: number, name: string, brand = '한솥'): ReferenceMenu {
     unit: 0,
     weight: 400,
     unitQuantity: '1인분',
+    totalWeight: null,
     nutrition: {
       calories: 450,
       carbs: 30,
@@ -105,6 +106,8 @@ describe('MenuNutritionEstimator', () => {
     expect(promptOf(client, 0)).toContain('referenceMenus');
     expect(client.requests[0]).toMatchObject({
       modelGroup: 'text',
+      // 정한 모델 하나만 쓴다(fallback 모델 없음).
+      models: ['gemini-2.5-flash-lite'],
       timeoutMs: 30_000,
       generationConfig: { responseMimeType: 'application/json' },
     });
@@ -178,6 +181,21 @@ describe('MenuNutritionEstimator', () => {
       path: 'rag',
       confidence: 0.5,
       ragConfidence: 0.5,
+    });
+  });
+
+  it('keeps a displayable RAG value over a re-estimate below the display threshold', async () => {
+    const client = new FakeGeminiClient()
+      .respondJson([item('1', 300, 0.65)])
+      .respondJson([item('1', 900, 0.4)]);
+    const { estimator, records } = createEstimator(client);
+
+    await estimator.run([target('김치찌개')]);
+
+    expect(records[0]).toMatchObject({
+      path: 'rag',
+      confidence: 0.65,
+      ragConfidence: 0.65,
     });
   });
 

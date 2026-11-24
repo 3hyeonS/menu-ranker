@@ -114,6 +114,8 @@ async function main(): Promise<void> {
     output: numberArg('output-price', DEFAULT_PRICES.output, 0, 100),
   };
   if (!dryRun) {
+    // git check-ignore를 출력 폴더에서 실행하므로 폴더를 먼저 만든다.
+    mkdirSync(dirname(outputPath), { recursive: true });
     assertUntrackedOutput(outputPath, DEFAULT_OUTPUT);
   }
 
@@ -208,7 +210,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  mkdirSync(dirname(outputPath), { recursive: true });
   const write = (record: EstimateRecord) =>
     appendFileSync(outputPath, `${JSON.stringify(record)}\n`, 'utf8');
   const now = new Date();
@@ -223,10 +224,6 @@ async function main(): Promise<void> {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY가 필요합니다.');
   }
-  // 정한 모델 하나만 쓴다. HttpGeminiClient는 env로 모델 목록을 정하므로 fallback 모델 env를 비운다.
-  process.env.GEMINI_MODEL = model;
-  process.env.GEMINI_FALLBACK_MODELS = '';
-  delete process.env.GEMINI_FALLBACK_MODEL;
   const client = new HttpGeminiClient(new HttpService());
   const startedAt = Date.now();
   let lastLogAt = 0;

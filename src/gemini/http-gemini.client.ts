@@ -162,7 +162,9 @@ export class HttpGeminiClient extends GeminiClient {
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
-    const attempts = resolveGeminiModelAttempts(request.modelGroup);
+    const attempts = request.models?.length
+      ? [...new Set(request.models)]
+      : resolveGeminiModelAttempts(request.modelGroup);
     const baseUrlOverride = resolveGeminiBaseUrlOverride(request.modelGroup);
 
     for (const [index, model] of attempts.entries()) {

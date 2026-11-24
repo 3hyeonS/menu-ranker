@@ -6,6 +6,7 @@ import {
   costUsd,
   estimateRun,
   hasSizeMark,
+  isWholeMenuReference,
   latestOkRecords,
   mfdsRecord,
   MfdsMenu,
@@ -44,6 +45,7 @@ function reference(
     unit: 0,
     weight: 300,
     unitQuantity: '1인분',
+    totalWeight: null,
     nutrition: {
       calories,
       carbs: 50,
@@ -173,6 +175,7 @@ describe('parseReferenceMenus', () => {
         unit: 0,
         weight: 263,
         unitQuantity: '1개',
+        totalWeight: null,
         nutrition: {
           calories: 572,
           carbs: 60,
@@ -493,6 +496,26 @@ describe('estimateRun', () => {
   });
 });
 
+describe('isWholeMenuReference', () => {
+  it.each([
+    ['1개', null, true],
+    ['1인분', 300, true],
+    [null, null, true],
+    ['100g', null, false],
+    ['1조각', null, false],
+    ['반 판', null, false],
+    ['1개', 900, false],
+  ])('단위량 %s, 총중량 %s → %s', (unitQuantity, totalWeight, expected) => {
+    expect(
+      isWholeMenuReference({
+        ...reference(1, '피자', '피자스쿨', '피자'),
+        unitQuantity,
+        totalWeight,
+      }),
+    ).toBe(expected);
+  });
+});
+
 describe('buildBrandEvaluationTargets', () => {
   it('matches kakao menus of brand branches to the same brand official menu and interleaves brands', () => {
     const references = [
@@ -500,6 +523,11 @@ describe('buildBrandEvaluationTargets', () => {
       reference(2, '레드콤보', '교촌치킨', '치킨', 1900),
       reference(3, '불고기버거', '롯데리아', '버거', 572),
       reference(4, '허니콤보', '다른브랜드', '치킨', 1000),
+      // 1조각 기준 공식 값은 1인분 추정과 비교할 수 없어 정답에서 뺀다.
+      {
+        ...reference(5, '고구마피자', '피자스쿨', '피자', 250),
+        unitQuantity: '1조각',
+      },
     ];
     const targets = buildBrandEvaluationTargets(
       [
@@ -508,6 +536,7 @@ describe('buildBrandEvaluationTargets', () => {
         { placeId: '1', name: '레드콤보(L)', brand: '교촌치킨' },
         { placeId: '3', name: '불고기버거', brand: '롯데리아' },
         { placeId: '3', name: '없는메뉴', brand: '롯데리아' },
+        { placeId: '4', name: '고구마피자', brand: '피자스쿨' },
       ],
       references,
       new Map(),

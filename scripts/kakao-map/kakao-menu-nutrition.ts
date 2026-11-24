@@ -174,6 +174,8 @@ export interface ReferenceMenu {
   weight: number | null;
   /** 단위량(1개, 1조각, 100g 등). 영양값이 무엇 기준인지 알려 준다. */
   unitQuantity: string | null;
+  /** 총중량. 기준 중량과 다르면 영양값은 메뉴 일부 기준이다. */
+  totalWeight: number | null;
   nutrition: NutritionValues;
 }
 
@@ -184,6 +186,7 @@ const REFERENCE_HEADERS = {
   menuCategory: '메뉴 카테고리',
   unit: '중량 단위',
   weight: '중량',
+  totalWeight: '총중량',
   unitQuantity: '단위량',
   calories: '칼로리',
   carbs: '탄수화물',
@@ -234,6 +237,7 @@ export function parseReferenceMenus(rows: string[][]): ReferenceMenu[] {
       unit: nullableNumber(cell('unit')) === 1 ? 1 : 0,
       weight: nullableNumber(cell('weight')),
       unitQuantity: cell('unitQuantity') || null,
+      totalWeight: nullableNumber(cell('totalWeight')),
       nutrition: {
         calories,
         carbs: nullableNumber(cell('carbs')),
@@ -757,6 +761,25 @@ export function estimateRun(
 // ---------------------------------------------------------------------------
 // 평가 지표
 
+/**
+ * 공식 영양값이 메뉴 1개(주문 단위) 전체 기준인지. 총중량이 기준 중량과 다르거나 단위량이
+ * `100g`·`1조각`·`반 판`처럼 일부 기준이면 1인분 추정과 비교할 수 없다(수집 규칙 5절).
+ */
+export function isWholeMenuReference(menu: ReferenceMenu): boolean {
+  if (
+    menu.totalWeight != null &&
+    menu.weight != null &&
+    Math.abs(menu.totalWeight - menu.weight) > 1
+  ) {
+    return false;
+  }
+  const unitQuantity = (menu.unitQuantity ?? '').replace(/\s+/g, '');
+  return (
+    !/^\d+(?:\.\d+)?(?:g|ml|kg|l)$/i.test(unitQuantity) &&
+    !/조각|반|\/|피스/.test(unitQuantity)
+  );
+}
+
 export interface BrandEvaluationTarget extends MenuNameTarget {
   brand: string;
   truth: NutritionValues;
@@ -764,6 +787,7 @@ export interface BrandEvaluationTarget extends MenuNameTarget {
 
 /**
  * 브랜드 연결 지점의 카카오 메뉴 중 같은 브랜드 공식 메뉴와 정규화 이름이 같은 것을 정답 표본으로 만든다.
+ * 공식 값이 메뉴 전체 기준인 메뉴만 쓴다(isWholeMenuReference).
  * 추정할 때 그 브랜드의 공식 메뉴는 근거에서 빼서(excludeBrand) 개인 식당(미관측 브랜드)처럼 평가한다.
  */
 export function buildBrandEvaluationTargets(
@@ -773,6 +797,7 @@ export function buildBrandEvaluationTargets(
 ): BrandEvaluationTarget[] {
   const officialByBrandKey = new Map<string, ReferenceMenu>();
   for (const menu of references) {
+    if (!isWholeMenuReference(menu)) continue;
     const key = `${menu.brand}\u0000${normalizeBranchMenuName(menu.name)}`;
     if (!officialByBrandKey.has(key)) officialByBrandKey.set(key, menu);
   }

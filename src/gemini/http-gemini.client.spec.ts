@@ -163,6 +163,17 @@ describe('HttpGeminiClient', () => {
     });
   });
 
+  it('tries only the requested models without the high-demand fallback', async () => {
+    process.env.GEMINI_MODEL = 'env-model';
+    const http = createFakeHttp(() => httpError(429));
+    const client = new HttpGeminiClient(http as never);
+
+    await expect(
+      client.generateJsonWithUsage(baseRequest({ models: ['pinned-model'] })),
+    ).rejects.toThrow(new ServiceUnavailableException('unavailable for test'));
+    expect(calledModels(http.post)).toEqual(['pinned-model']);
+  });
+
   it('returns null usage when usageMetadata is missing', async () => {
     const http = createFakeHttp(() => textResponse('{"ok":true}'));
     const client = new HttpGeminiClient(http as never);

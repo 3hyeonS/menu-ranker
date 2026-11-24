@@ -18,6 +18,8 @@ export type GeminiGenerateRequest = {
   contents: GeminiContent[];
   generationConfig: Record<string, unknown>;
   timeoutMs: number;
+  // 지정하면 env 대신 이 모델만 순서대로 시도한다(고수요 대체 모델도 붙이지 않음). 대량 추정에서 모델을 고정할 때 쓴다.
+  models?: string[];
   // 모든 모델이 실패했을 때 던지는 ServiceUnavailableException 메시지
   unavailableMessage: string;
   // 요청 취소가 아닌 시도 실패마다 호출된다(로그용). 없으면 아무것도 남기지 않는다.

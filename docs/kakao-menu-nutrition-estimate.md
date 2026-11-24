@@ -49,7 +49,7 @@
    - 프로토콜의 Gemini 임베딩(55%)은 쓰지 않는다. 미관측 브랜드에서는 임베딩이 문자 유사도보다 나빴고(`benchmark-results/restaurant-nutrition-embedding-summary.md`), 쿼리마다 임베딩 API를 더 불러야 한다.
    - 근거 메뉴의 영양값은 `중량`·`단위량` 기준(수집 규칙 5절)이라 둘 다 프롬프트에 넣는다.
 2. 10개 묶음 RAG 호출(`gemini-2.5-flash-lite`, temperature 0.1, JSON). 근거가 하나도 없는 메뉴는 RAG를 건너뛴다.
-3. RAG confidence가 0.7 미만이거나 근거가 없으면 근거 없이 순수 LLM으로 다시 추정한다(`--fallback-threshold`, 0이면 끔). 재추정이 실패하면 RAG 값을 둔다.
+3. RAG confidence가 0.7 미만이거나 근거가 없으면 근거 없이 순수 LLM으로 다시 추정한다(`--fallback-threshold`, 0이면 끔). 재추정이 실패하거나, 재추정 confidence가 표시 기준(0.6) 미만인데 RAG는 0.6 이상이면 RAG 값을 둔다.
 4. 숫자 형식이 틀린 항목만 모아 한 번 더 묻는다. 그래도 틀리면 `status: failed`로 남기고 적재하지 않는다(다음 실행에서 다시 시도).
 5. 호출 실패(429·5xx·타임아웃)는 지수 백오프(2초 × 2^n, 지터 0.5~1.5배)로 `--max-retries`번 다시 보낸다. `--rpm`으로 요청 시작 간격을 둔다.
 
@@ -90,7 +90,7 @@ $ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estim
 | `--timeout-ms` | 30000 | 요청 타임아웃 |
 | `--fallback-threshold` | 0.7 | 이 confidence 미만이면 순수 LLM 재추정. 0이면 끔 |
 | `--reference-limit` | 8 | RAG 근거 메뉴 수 |
-| `--model` | `gemini-2.5-flash-lite` | 이 모델 하나만 쓴다(실행 중 `GEMINI_MODEL`을 덮어쓰고 fallback 모델 env를 비운다) |
+| `--model` | `gemini-2.5-flash-lite` | 이 모델 하나만 쓴다(`GeminiGenerateRequest.models`로 고정, env의 fallback·고수요 대체 모델 없음) |
 | `--input-price`, `--output-price` | 0.1, 0.4 | dry-run·로그 비용 계산용 1M 토큰당 USD(2026-10-18 Standard). 실행 전 현재 단가를 확인한다 |
 | `--output` | `kakao-map/nutrition-estimate/*.jsonl` | git ignore 경로만 허용 |
 
@@ -115,7 +115,7 @@ $ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estim
 정답이 있는 메뉴를 같은 파이프라인(RAG → 재추정)에 넣어 비교한다. 결과는 `kakao-map/nutrition-estimate/evaluation.jsonl`과 `evaluation-summary.json`.
 
 - `mfds`: 개인 식당 메뉴 중 식약처 음식명과 같은 이름(매장 수 상위). 정답은 식약처 값. 식약처 1인분 기준과 식당 1인분이 달라 오차에 양 차이도 섞인다.
-- `brand`: 브랜드 연결 지점의 카카오 메뉴 중 같은 브랜드 공식 메뉴와 이름이 같은 것. 브랜드를 번갈아 뽑는다. 그 브랜드 공식 메뉴는 근거에서 빼서 미관측 브랜드처럼 평가한다.
+- `brand`: 브랜드 연결 지점의 카카오 메뉴 중 같은 브랜드 공식 메뉴와 이름이 같은 것. 브랜드를 번갈아 뽑는다. 공식 값이 메뉴 전체 기준인 것만 쓴다(총중량이 기준 중량과 다르거나 단위량이 `100g`·`1조각`·`반 판` 같은 일부 기준이면 뺀다). 그 브랜드 공식 메뉴는 근거에서 빼서 미관측 브랜드처럼 평가한다.
 - 요약: 표본별 `heldRate`(실패 + confidence 0.6 미만), `shown`(앱에 내보내는 값)·`allValid`(보류 전)의 칼로리·탄수화물·단백질·지방 MAE와 ±30% 비율, 경로별 수, 메뉴당 실제 토큰·비용.
 
 ## API 연동
@@ -127,6 +127,7 @@ $ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estim
 
 - 추천(filter 있음)은 브랜드 식당과 같은 `rankRestaurantMenusByFilter` → 규칙 기반 대체 → 24시간 캐시를 쓴다. 식당 카테고리는 카카오 카테고리(`음식점 > ` 제외)다. 메뉴 카테고리가 없으므로 이름 끝이 음료·주류·공기밥·사리·추가 옵션 등인 메뉴는 후보에서 뺀다.
 - 가상 `menu_id`는 표시·추천용이고 식사 기록(`meal_menu`)과 잇지 않는다(#41 결정 2, 기존 브랜드 메뉴 id와 같음).
+- 가상 `menu_id`는 `restaurant:branch-import`가 지점 메뉴를 지우고 다시 넣을 때마다 바뀐다(브랜드 메뉴 id도 `restaurant:import` 때 바뀌는 것과 같다). 앱이 오래 저장할 키로 쓰면 안 된다.
 - 앱이 "추정" 표시를 하려면 가상 ID 범위(100000000 이상)로 구분할 수 있다. 프론트에 공유가 필요하다(#41 결정 5는 "추정" 표시를 전제로 한다).
 
 ## 한계
@@ -135,3 +136,4 @@ $ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estim
 - 크기 표기가 다른 메뉴가 같은 값을 쓴다(결정 6 미결).
 - 정규화 이름이 같은데 식당마다 구성이 다른 메뉴(`정식`, `세트`, `오늘의 메뉴`)도 값을 공유한다. confidence가 낮으면 보류된다.
 - 사진은 쓰지 않는다(#41 결정 3).
+- 토큰·비용 기록은 성공한 응답의 `usageMetadata`만 더한다. 모든 재시도가 실패한 호출이나 응답이 JSON이 아니어서 버린 응답의 토큰은 빠지므로, 실제 청구액은 Google AI Studio 사용량에서 확인한다.

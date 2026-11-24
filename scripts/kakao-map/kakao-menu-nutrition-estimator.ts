@@ -1,5 +1,6 @@
 // 카카오 지점 메뉴 영양 추정(#41)의 Gemini 호출부. 묶음 → RAG 추정 → (confidence 미만이면) 순수 LLM 재추정.
 // GeminiClient 뒤에 있으므로 테스트는 FakeGeminiClient로 응답·오류를 주입한다.
+import { MIN_DISPLAY_ESTIMATE_CONFIDENCE } from '../../src/restaurant/branch-menu-estimate.constants';
 import type {
   GeminiClient,
   GeminiJsonResult,
@@ -27,7 +28,7 @@ export interface EstimatorTarget {
 export interface EstimatorOptions<T extends EstimatorTarget> {
   client: GeminiClient;
   references: ReferenceIndex;
-  /** 결과 레코드에 남길 요청 모델(응답 모델을 모르면 이 값). */
+  /** 이 모델 하나만 호출한다(fallback 모델 없음). */
   model: string;
   batchSize: number;
   concurrency: number;
@@ -197,12 +198,18 @@ export class MenuNutritionEstimator<T extends EstimatorTarget> {
       const ragValue = rag.values.get(target.key) ?? null;
       const llmValue = llmOnly?.values.get(target.key) ?? null;
       // 프로토콜: RAG confidence가 기준 이상이면 RAG, 아니면 순수 LLM. 재추정이 실패하면 RAG 값을 둔다.
-      const path: EstimateMethod | null = llmValue
-        ? 'llm_only'
-        : ragValue
-          ? 'rag'
+      // 재추정이 표시 기준(0.6) 미만인데 RAG는 표시 기준 이상이면, 앱에 보일 RAG 값을 버리지 않는다.
+      const keepRag =
+        ragValue != null &&
+        (llmValue == null ||
+          (llmValue.confidence < MIN_DISPLAY_ESTIMATE_CONFIDENCE &&
+            ragValue.confidence >= MIN_DISPLAY_ESTIMATE_CONFIDENCE));
+      const path: EstimateMethod | null = keepRag
+        ? 'rag'
+        : llmValue
+          ? 'llm_only'
           : null;
-      const chosen = llmValue ?? ragValue;
+      const chosen = keepRag ? ragValue : llmValue;
       const tokenUse = tokens.get(target.key);
       const record: EstimateRecord = {
         normalizedName: target.key,
@@ -298,6 +305,7 @@ export class MenuNutritionEstimator<T extends EstimatorTarget> {
       try {
         result = await this.options.client.generateJsonWithUsage<unknown>({
           modelGroup: 'text',
+          models: [this.options.model],
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.1,

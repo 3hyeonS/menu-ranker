@@ -113,6 +113,9 @@ async function main(): Promise<void> {
     output: numberArg('output-price', DEFAULT_PRICES.output, 0, 100),
   };
   if (!dryRun) {
+    // git check-ignore를 출력 폴더에서 실행하므로 폴더를 먼저 만든다.
+    mkdirSync(dirname(outputPath), { recursive: true });
+    mkdirSync(dirname(summaryPath), { recursive: true });
     assertUntrackedOutput(outputPath, DEFAULT_OUTPUT);
     assertUntrackedOutput(summaryPath, DEFAULT_OUTPUT);
   }
@@ -193,7 +196,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  mkdirSync(dirname(outputPath), { recursive: true });
   const lines = previous.filter((line) =>
     targets.some((target) => target.key === line.record.normalizedName),
   );
@@ -201,9 +203,6 @@ async function main(): Promise<void> {
     if (!process.env.GEMINI_API_KEY) {
       throw new Error('GEMINI_API_KEY가 필요합니다.');
     }
-    process.env.GEMINI_MODEL = model;
-    process.env.GEMINI_FALLBACK_MODELS = '';
-    delete process.env.GEMINI_FALLBACK_MODEL;
     const estimator = new MenuNutritionEstimator<EvaluationTarget>({
       client: new HttpGeminiClient(new HttpService()),
       references: index,

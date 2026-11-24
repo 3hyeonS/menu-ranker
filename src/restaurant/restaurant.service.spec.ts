@@ -862,12 +862,14 @@ describe('RestaurantService', () => {
           { id: 2, name: '순두부찌개' },
           { id: 3, name: '콜라 500ml' },
           { id: 4, name: '공기밥' },
+          { id: 5, name: '딸기스무디' },
         ],
         [
           estimate('제육볶음', '650'),
           estimate('순두부찌개', '380'),
           estimate('콜라', '210'),
           estimate('공기밥', '300'),
+          estimate('딸기스무디', '250'),
         ],
         chatService,
       );
