@@ -16,6 +16,11 @@
 - 목표 메뉴의 정답 영양성분
 - API 키와 내부 인증 정보
 
+카카오 지점 메뉴 일괄 추정(`restaurant:menu-nutrition:estimate`·`evaluate`, #41)은 메뉴명(정규화
+이름의 대표 원문)과 카카오 식당 카테고리, RAG 근거 메뉴의 위 항목·단위량·공식 영양성분만 보낸다.
+묶음 안의 id는 순번("1".."10")이고 카카오 장소 id·장소명·주소는 보내지 않는다
+(`scripts/kakao-map/kakao-menu-nutrition.spec.ts`의 `buildEstimatePrompt` 테스트).
+
 영양 추정은 메뉴 자체의 속성만으로 수행하므로 사용자 데이터가 필요하지 않다.
 향후 API 구현 시 restaurant 모듈의 메뉴 입력 DTO만 추정 서비스에 넘기고,
 `UserEntity`, `MealEntity`, `ChatHistoryEntity`를 의존성으로 주입하지 않는다.

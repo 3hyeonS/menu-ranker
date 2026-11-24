@@ -2,10 +2,10 @@
 
 프론트 지도(카카오 로컬 API)의 장소 `id`로 조회하는 두 API의 데이터다.
 
-- `POST /restaurant/brands`: 요청한 장소 중 `restaurant_branch`에 있는 장소를 개인 식당까지 모두 요청 순서대로 돌려준다(#31, #39). 프랜차이즈 지점은 브랜드 `restaurant_id`·브랜드명, 개인 식당(브랜드 매칭 없음)은 `restaurant_id: null`·카카오 장소명(`place_name`)이다. 적재하지 않은 장소는 빠진다.
+- `POST /restaurant/brands`: 요청한 장소 중 `restaurant_branch`에 있는 장소를 개인 식당까지 모두 요청 순서대로 돌려준다(#31, #39). 프랜차이즈 지점은 브랜드 `restaurant_id`·브랜드명, 개인 식당(브랜드 매칭 없음)은 카카오 장소명(`place_name`)이다. 개인 식당의 `restaurant_id`는 표시할 영양 추정 메뉴가 있으면 가상 ID(`100000000 + restaurant_branch.id`, #41), 없으면 `null`이다. 적재하지 않은 장소는 빠진다.
 - `POST /restaurant/place`: 장소 하나의 카카오 메뉴(메뉴명·사진)와 브랜드 매핑을 돌려준다(#30). 영양정보는 없다. 프랜차이즈 지점이면 응답의 `restaurant_id`로 `/restaurant/detail`을 불러 영양정보 메뉴·추천을 받는다.
 
-앱은 `/restaurant/brands` 항목의 `restaurant_id`가 있으면 `/restaurant/detail`(영양 기반 추천), null이면 `/restaurant/place`(카카오 메뉴판)를 부른다(#39 결정, 2026-11-24 "개인 식당도 하나의 브랜드").
+앱은 `/restaurant/brands` 항목의 `restaurant_id`가 있으면 `/restaurant/detail`(영양 기반 추천), null이면 `/restaurant/place`(카카오 메뉴판)를 부른다(#39 결정, 2026-11-24 "개인 식당도 하나의 브랜드"). 개인 식당 가상 ID의 `/restaurant/detail`은 지점 메뉴 중 영양 추정값이 있는 메뉴만 준다(`docs/kakao-menu-nutrition-estimate.md`).
 
 결정 근거는 이슈 #31·#30의 `## 결정` 댓글과 #39 본문의 `## 결정`이다.
 
@@ -29,7 +29,7 @@
 | `name` | 메뉴명. 같은 식당에 같은 이름이 있어도(카카오 원본 중복) 그대로 둔다 |
 | `photo_url` | 카카오 CDN 사진 URL. 적재할 때 `http://`를 `https://`로 바꾼다(iOS ATS). 없으면 NULL |
 
-가격·영양정보는 저장하지 않는다(#30 결정).
+가격·영양정보는 저장하지 않는다(#30 결정). 개인 식당 메뉴의 영양 추정값은 정규화 메뉴명 단위로 `restaurant_menu_nutrition_estimate`에 따로 두고 조회할 때 잇는다(#41, `docs/kakao-menu-nutrition-estimate.md`).
 
 ## 적재 대상
 

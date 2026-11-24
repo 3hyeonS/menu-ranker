@@ -448,6 +448,37 @@ describe('API response contract', () => {
       expect(describeSuccess(res)).toMatchSnapshot();
     });
 
+    it('POST /restaurant/detail (개인 식당 가상 restaurant_id)', async () => {
+      // 개인 식당 추정 메뉴(#41)도 같은 응답 형식이다. 메뉴 카테고리는 없어 null이다.
+      const detail: RestaurantDetailResponseDto = {
+        restaurant_name: '옥된장 논현점',
+        menu_list: [
+          {
+            menu_id: 100_000_005,
+            menu_name: '된장찌개',
+            menu_category: null,
+            calories: 420.5,
+            sugars: 3,
+            protein: 20,
+            sat_fat: 2,
+            unit: 0,
+            weight: 450,
+            unit_quantity: '인분',
+          },
+        ],
+      };
+      restaurantService.getRestaurantDetail.mockResolvedValue(detail);
+      const res = await post('/restaurant/detail').send({
+        restaurant_id: 100_000_040,
+        filter: null,
+      });
+      expect(describeSuccess(res)).toMatchSnapshot();
+      expect(restaurantService.getRestaurantDetail).toHaveBeenCalledWith(
+        expect.objectContaining({ restaurant_id: 100_000_040 }),
+        expect.anything(),
+      );
+    });
+
     it('POST /restaurant/brands', async () => {
       const brands: RestaurantBrandsResponseDto = {
         restaurants: [

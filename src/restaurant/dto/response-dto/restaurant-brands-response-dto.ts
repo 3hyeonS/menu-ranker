@@ -12,7 +12,7 @@ export class RestaurantBrandPlaceResponseDto {
     type: Number,
     nullable: true,
     description:
-      '브랜드 식당 ID(/restaurant/detail 요청에 사용). 개인 식당이면 null이고, 이때는 /restaurant/place로 카카오 메뉴를 조회합니다.',
+      '/restaurant/detail 요청에 쓰는 식당 ID. 프랜차이즈 지점은 브랜드 ID, 영양 추정 메뉴가 있는 개인 식당은 100000000 이상의 가상 ID입니다. 추정 메뉴가 없는 개인 식당이면 null이고, 이때는 /restaurant/place로 카카오 메뉴를 조회합니다.',
     example: 1204,
   })
   restaurant_id: number | null;

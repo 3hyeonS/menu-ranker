@@ -591,6 +591,32 @@ exports[`API response contract success responses POST /restaurant/brands 1`] = `
 }
 `;
 
+exports[`API response contract success responses POST /restaurant/detail (개인 식당 가상 restaurant_id) 1`] = `
+{
+  "data": {
+    "menu_list": [
+      {
+        "calories": "number",
+        "menu_category": "null",
+        "menu_id": "number",
+        "menu_name": "string",
+        "protein": "number",
+        "sat_fat": "number",
+        "sugars": "number",
+        "unit": "number",
+        "unit_quantity": "string",
+        "weight": "number",
+      },
+    ],
+    "restaurant_name": "string",
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Restaurant recommendations returned successfully",
+  "statusCode": 201,
+}
+`;
+
 exports[`API response contract success responses POST /restaurant/detail 1`] = `
 {
   "data": {

@@ -11,7 +11,8 @@ export enum RestaurantMenuFilter {
 export class RestaurantDetailRequestDto {
   @ApiProperty({
     type: Number,
-    description: '식당 검색 API에서 받은 식당 ID',
+    description:
+      '식당 검색 API 또는 /restaurant/brands에서 받은 식당 ID. 100000000 이상이면 개인 식당 가상 ID입니다.',
     example: 1204,
   })
   @Type(() => Number)
