@@ -1,5 +1,8 @@
 import { IsNull, MoreThanOrEqual, Not } from 'typeorm';
-import { RestaurantService } from './restaurant.service';
+import {
+  isBranchNonMealMenuName,
+  RestaurantService,
+} from './restaurant.service';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 
 const userContext = {
@@ -319,6 +322,12 @@ describe('RestaurantService', () => {
     ['샌드위치/샐러드', '드레싱'],
     ['샌드위치/샐러드', '빵'],
     ['베이커리', '크림'],
+    ['도시락', '소스'],
+    ['도시락', '미니반찬&집반찬'],
+    ['도시락', '미니반찬 & 집반찬'],
+    ['도시락', '밥'],
+    ['도시락', '스낵'],
+    ['도시락', '디저트'],
   ])('%s 추천에서 %s 구성품을 제외한다', (restaurantCategory, menuCategory) => {
     const service = new RestaurantService(null, null, null, null, null, null);
     const menu = { menuCategory } as RestaurantMenuEntity;
@@ -334,6 +343,33 @@ describe('RestaurantService', () => {
 
     expect(isCandidate).toBe(false);
   });
+
+  it.each([
+    ['도시락', '단품/실속반찬'],
+    ['도시락', '덮밥'],
+    ['도시락', '정식'],
+    ['도시락', '볶음밥'],
+    ['버거', '버거'],
+    ['치킨', '치킨'],
+    ['샌드위치/샐러드', '샐러드'],
+  ])(
+    '%s 추천에서 %s 메뉴는 후보로 남긴다',
+    (restaurantCategory, menuCategory) => {
+      const service = new RestaurantService(null, null, null, null, null, null);
+      const menu = { menuCategory } as RestaurantMenuEntity;
+
+      const isCandidate = (
+        service as unknown as {
+          isRecommendationCandidate(
+            menu: RestaurantMenuEntity,
+            category: string,
+          ): boolean;
+        }
+      ).isRecommendationCandidate(menu, restaurantCategory);
+
+      expect(isCandidate).toBe(true);
+    },
+  );
 
   it('keeps bakery bread and cafe add-ons as recommendation candidates', () => {
     const service = new RestaurantService(null, null, null, null, null, null);
@@ -737,6 +773,61 @@ describe('RestaurantService', () => {
       await expect(
         service.findRegisteredBrands({ place_ids: ['1'] }),
       ).resolves.toEqual({ restaurants: [] });
+    });
+  });
+
+  describe('isBranchNonMealMenuName', () => {
+    it.each([
+      '라유소스',
+      '덮밥용 소이소스',
+      '오리엔탈 드레싱',
+      '치즈버터 시즈닝',
+      '치즈 토핑',
+      '모듬반찬',
+      '맛김치',
+      '볶음김치',
+      '깍두기',
+      '단무지',
+      '오이피클',
+      '양파장아찌',
+      '생와사비',
+      '토마토 케찹',
+      '케첩',
+      '머스타드',
+      '쌈장',
+      '일회용 참기름',
+      '공깃밥',
+      '공기밥(추가)',
+      '콜라 500ml',
+      '라면사리',
+      '반찬 3종',
+      '치킨무',
+      '한솥 조미김',
+      '현미밥',
+      '양념간장',
+      '초고추장',
+      '초장',
+      '마요네즈',
+    ])('%s는 추천 후보에서 뺀다', (menuName) => {
+      expect(isBranchNonMealMenuName(menuName)).toBe(true);
+    });
+
+    it.each([
+      '김치찌개',
+      '김치볶음밥',
+      '김치전',
+      '두부김치',
+      '소스돈까스',
+      '반찬정식',
+      '참치마요덮밥',
+      '제육볶음',
+      '김밥',
+      '보리밥',
+      '간장게장',
+      '고추장불고기',
+      '참치마요',
+    ])('%s는 추천 후보로 남긴다', (menuName) => {
+      expect(isBranchNonMealMenuName(menuName)).toBe(false);
     });
   });
 

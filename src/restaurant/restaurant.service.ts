@@ -78,10 +78,17 @@ type DetailRestaurant = Pick<RestaurantEntity, 'id' | 'name' | 'category'>;
 
 // IN 목록 한 번에 넣는 정규화 메뉴명 수.
 const ESTIMATE_LOOKUP_CHUNK_SIZE = 1_000;
-// 개인 식당 메뉴는 메뉴 카테고리가 없어 이름 끝으로 음료·주류·사이드·추가 옵션을 추천에서 뺀다.
-// 정규화 이름(소문자, 공백·기호 없음) 기준이고 뒤에 붙은 용량 표기(500cc 등)는 허용한다.
+// 개인 식당 메뉴는 메뉴 카테고리가 없어 이름 끝으로 비식사 메뉴를 추천에서 뺀다:
+// 음료·주류, 곱빼기·추가·사리·포장·배달 같은 주문 옵션, 소스·드레싱·시즈닝·토핑, 반찬·김치·절임류,
+// 장류·양념, 공깃밥·흰밥 같은 밥 단품.
+// 정규화 이름(소문자, 공백·기호 없음) 기준이고 뒤에 붙은 용량·개수 표기(500cc, 3종 등)는 허용한다.
+// 이름 "끝"에만 매칭해 김치찌개·김치볶음밥·소스돈까스 같은 식사 메뉴는 남긴다. 두부김치는 안주 식사라 남긴다.
 const BRANCH_NON_MEAL_MENU_PATTERN =
-  /(콜라|사이다|환타|스프라이트|음료|주스|쥬스|에이드|아메리카노|라떼|커피|소주|맥주|막걸리|하이볼|와인|사케|청하|생수|탄산수|식혜|아이스티|밀크티|홍차|녹차|보리차|유자차|스무디|쉐이크|셰이크|소다|우유|두유|공기밥|곱빼기|추가|사리|포장|배달)(\d+[a-z]*)?$/;
+  /(콜라|사이다|환타|스프라이트|음료|주스|쥬스|에이드|아메리카노|라떼|커피|소주|맥주|막걸리|하이볼|와인|사케|청하|생수|탄산수|식혜|아이스티|밀크티|홍차|녹차|보리차|유자차|스무디|쉐이크|셰이크|소다|우유|두유|공기밥|공깃밥|흰밥|쌀밥|현미밥|잡곡밥|곱빼기|추가|사리|포장|배달|소스|드레싱|시즈닝|토핑|반찬|(?<!두부)김치|깍두기|단무지|치킨무|피클|장아찌|조미김|와사비|케찹|케첩|머스타드|마요네즈|쌈장|고추장|간장|초장|양념장|참기름)(\d+(?:[a-z]*|종))?$/;
+
+export function isBranchNonMealMenuName(menuName: string): boolean {
+  return BRANCH_NON_MEAL_MENU_PATTERN.test(normalizeBranchMenuName(menuName));
+}
 
 @Injectable()
 export class RestaurantService {
@@ -338,8 +345,7 @@ export class RestaurantService {
     }
 
     const candidates = menus.filter(
-      (menu) =>
-        !BRANCH_NON_MEAL_MENU_PATTERN.test(normalizeBranchMenuName(menu.name)),
+      (menu) => !isBranchNonMealMenuName(menu.name),
     );
     if (candidates.length === 0) {
       return { restaurant_name: branch.placeName, menu_list: [] };
@@ -812,6 +818,8 @@ export class RestaurantService {
         '치즈',
       ]),
       베이커리: new Set(['토핑', '크림', '딥']),
+      // 단품/실속반찬(반찬 제육볶음, 단품 카레 등)은 식사로 볼 수 있어 후보에 남긴다(#43).
+      도시락: new Set(['소스', '미니반찬&집반찬', '밥', '스낵', '디저트']),
     };
 
     return (
