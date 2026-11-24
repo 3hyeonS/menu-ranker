@@ -1,8 +1,5 @@
 import { IsNull, MoreThanOrEqual, Not } from 'typeorm';
-import {
-  isBranchNonMealMenuName,
-  RestaurantService,
-} from './restaurant.service';
+import { isBranchNonMealMenu, RestaurantService } from './restaurant.service';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 
 const userContext = {
@@ -776,58 +773,107 @@ describe('RestaurantService', () => {
     });
   });
 
-  describe('isBranchNonMealMenuName', () => {
+  describe('isBranchNonMealMenu', () => {
+    // 음료·주문 옵션과 밥 단품은 칼로리와 관계없이 뺀다.
     it.each([
-      '라유소스',
-      '덮밥용 소이소스',
-      '오리엔탈 드레싱',
-      '치즈버터 시즈닝',
-      '치즈 토핑',
-      '모듬반찬',
-      '맛김치',
-      '볶음김치',
-      '깍두기',
-      '단무지',
-      '오이피클',
-      '양파장아찌',
-      '생와사비',
-      '토마토 케찹',
-      '케첩',
-      '머스타드',
-      '쌈장',
-      '일회용 참기름',
-      '공깃밥',
-      '공기밥(추가)',
-      '콜라 500ml',
-      '라면사리',
-      '반찬 3종',
-      '치킨무',
-      '한솥 조미김',
-      '현미밥',
-      '양념간장',
-      '초고추장',
-      '초장',
-      '마요네즈',
-    ])('%s는 추천 후보에서 뺀다', (menuName) => {
-      expect(isBranchNonMealMenuName(menuName)).toBe(true);
+      ['콜라 500ml', 210],
+      ['딸기스무디', 350],
+      ['라면사리', 450],
+      ['곱빼기', 300],
+      ['공기밥(추가)', 300],
+      ['공깃밥', 300],
+      ['공깃밥 2', 600],
+      ['흰밥', 300],
+      ['쌀밥', 300],
+      ['현미밥', 280],
+      ['잡곡밥', 290],
+      ['흑미밥', 290],
+      ['찹쌀밥', 320],
+      ['밥', 300],
+      ['백미밥', 300],
+      ['오곡밥', 320],
+      ['즉석밥', 300],
+      ['햇반', 300],
+      ['추가 공깃밥', 300],
+      ['추가공기밥', 300],
+      ['공기밥 추가', 300],
+      ['음료 3종', 400],
+    ])('%s(%skcal)는 칼로리와 관계없이 뺀다', (menuName, calories) => {
+      expect(isBranchNonMealMenu(menuName, calories)).toBe(true);
     });
 
+    // 소스·반찬·김치·장류 묶음은 200kcal 미만일 때만 뺀다.
     it.each([
-      '김치찌개',
-      '김치볶음밥',
-      '김치전',
-      '두부김치',
-      '소스돈까스',
-      '반찬정식',
-      '참치마요덮밥',
-      '제육볶음',
-      '김밥',
-      '보리밥',
-      '간장게장',
-      '고추장불고기',
-      '참치마요',
-    ])('%s는 추천 후보로 남긴다', (menuName) => {
-      expect(isBranchNonMealMenuName(menuName)).toBe(false);
+      ['라유소스', 45],
+      ['덮밥용 소이소스', 20],
+      ['감베리핫갈릭크림소스', 165],
+      ['돈까스소스', '150'],
+      ['오리엔탈 드레싱', 90],
+      ['치즈버터 시즈닝', 30],
+      ['치즈 토핑', 80],
+      ['모듬반찬', 120],
+      ['반찬 3종', 150],
+      ['맛김치', 20],
+      ['쪽파김치', 150],
+      ['깍두기', 30],
+      ['단무지', 20],
+      ['치킨무', 40],
+      ['오이피클', 25],
+      ['양파장아찌', 40],
+      ['한솥 조미김', 30],
+      ['생와사비', 10],
+      ['토마토 케찹', 20],
+      ['머스타드', 15],
+      ['마요네즈', 100],
+      ['쌈장', 40],
+      ['초고추장', 50],
+      ['양념간장', 30],
+      ['일회용 참기름', 45],
+      ['소스', 199.9],
+    ])('%s(%skcal)는 추천 후보에서 뺀다', (menuName, calories) => {
+      expect(isBranchNonMealMenu(menuName, calories)).toBe(true);
+    });
+
+    // 메인 세션이 추정 결과에서 찾은 오탐(치킨 간장 맛, 김치 요리, 소스 요리, 밥 세트)과 식사 메뉴.
+    it.each([
+      ['에그청양버터간장', 450],
+      ['치즈버터간장', 450],
+      ['순살마늘간장', 500],
+      ['순살간장', 400],
+      ['순살더블링간장', 400],
+      ['치즈에빠진닭특제간장', 700],
+      ['참치김치', 500],
+      ['돼지김치', 600],
+      ['7분돼지김치', 750],
+      ['두부제육김치', 550],
+      ['포항어머니갈치김치', 600],
+      ['양푼이통돼지김치', 650],
+      ['두부김치', 400],
+      ['새우칠리소스', 700],
+      ['청경채굴소스', 450],
+      ['미트소스', 400],
+      ['소고기굴소스', 750],
+      ['수비드목살현미밥', 488],
+      ['연어포케현미밥', 600],
+      ['돼지갈비찜계란찜공깃밥2', 1200],
+      ['대패삼겹살정식김치찌개공깃밥', 1200],
+      ['대패삼겹살정식김치찌개공기밥', 1200],
+      ['제육볶음+공기밥', 750],
+      ['소스', 200],
+      ['김치찌개', 450],
+      ['김치볶음밥', 600],
+      ['소스돈까스', 800],
+      ['간장게장', 500],
+      ['보리밥', 550],
+      ['참치마요', 650],
+    ])('%s(%skcal)는 추천 후보로 남긴다', (menuName, calories) => {
+      expect(isBranchNonMealMenu(menuName, calories)).toBe(false);
+    });
+
+    it('does not drop a side-like name when the estimated calories are missing', () => {
+      expect(isBranchNonMealMenu('라유소스', null)).toBe(false);
+      expect(isBranchNonMealMenu('라유소스', '')).toBe(false);
+      expect(isBranchNonMealMenu('콜라', null)).toBe(true);
     });
   });
 
@@ -954,6 +1000,8 @@ describe('RestaurantService', () => {
           { id: 3, name: '콜라 500ml' },
           { id: 4, name: '공기밥' },
           { id: 5, name: '딸기스무디' },
+          { id: 6, name: '양념간장' },
+          { id: 7, name: '돼지김치' },
         ],
         [
           estimate('제육볶음', '650'),
@@ -961,6 +1009,8 @@ describe('RestaurantService', () => {
           estimate('콜라', '210'),
           estimate('공기밥', '300'),
           estimate('딸기스무디', '250'),
+          estimate('양념간장', '30'),
+          estimate('돼지김치', '600'),
         ],
         chatService,
       );
@@ -970,15 +1020,18 @@ describe('RestaurantService', () => {
         7,
       );
 
+      // Gemini 순위가 5개보다 적으면 남은 후보를 규칙 기반으로 채운다.
       expect(response.menu_list.map((menu) => menu.menu_name)).toEqual([
         '순두부찌개',
         '제육볶음',
+        '돼지김치',
       ]);
       const [params] = chatService.rankRestaurantMenusByFilter.mock.calls[0];
       expect(params.restaurantName).toBe('옥된장 논현점');
       expect(params.restaurantCategory).toBe('한식 > 찌개,전골');
+      // 양념간장(30kcal)은 빠지고 돼지김치(600kcal)는 추정 칼로리 때문에 후보로 남는다.
       expect(params.menus.map((menu) => menu.menu_id)).toEqual([
-        100_000_001, 100_000_002,
+        100_000_001, 100_000_002, 100_000_007,
       ]);
     });
 

@@ -177,10 +177,11 @@ describe('ChatService restaurant menu rankings', () => {
     expect(prompt).toContain('"goal":"감량"');
     expect(prompt).not.toContain('recent_messages');
     // 소스·토핑 단독 금지는 저칼로리만이 아니라 세 기준 공통 규칙이다(#43).
-    const rules = prompt.slice(
-      prompt.indexOf('규칙:'),
-      prompt.indexOf('식당:'),
-    );
+    const rulesStart = prompt.indexOf('규칙:');
+    const rulesEnd = prompt.indexOf('식당:');
+    expect(rulesStart).toBeGreaterThanOrEqual(0);
+    expect(rulesEnd).toBeGreaterThan(rulesStart);
+    const rules = prompt.slice(rulesStart, rulesEnd);
     expect(rules).toContain('세 기준 모두 한 끼로 주문할 메뉴만 골라');
     expect(rules).toContain('소스·시즈닝·토핑·재료만 따로 고르지 마');
   });

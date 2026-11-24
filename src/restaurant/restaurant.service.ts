@@ -78,16 +78,40 @@ type DetailRestaurant = Pick<RestaurantEntity, 'id' | 'name' | 'category'>;
 
 // IN 목록 한 번에 넣는 정규화 메뉴명 수.
 const ESTIMATE_LOOKUP_CHUNK_SIZE = 1_000;
-// 개인 식당 메뉴는 메뉴 카테고리가 없어 이름 끝으로 비식사 메뉴를 추천에서 뺀다:
-// 음료·주류, 곱빼기·추가·사리·포장·배달 같은 주문 옵션, 소스·드레싱·시즈닝·토핑, 반찬·김치·절임류,
-// 장류·양념, 공깃밥·흰밥 같은 밥 단품.
-// 정규화 이름(소문자, 공백·기호 없음) 기준이고 뒤에 붙은 용량·개수 표기(500cc, 3종 등)는 허용한다.
-// 이름 "끝"에만 매칭해 김치찌개·김치볶음밥·소스돈까스 같은 식사 메뉴는 남긴다. 두부김치는 안주 식사라 남긴다.
+// 개인 식당 메뉴는 메뉴 카테고리가 없어 정규화 이름(소문자, 공백·기호 없음)과 추정 칼로리로 비식사 메뉴를 추천에서 뺀다.
+// 음료·주류와 곱빼기·추가·사리·포장·배달 같은 주문 옵션: 이름 끝이 맞으면 칼로리와 관계없이 뺀다.
+// 뒤에 붙은 용량·개수 표기(500cc, 3종 등)는 허용한다.
 const BRANCH_NON_MEAL_MENU_PATTERN =
-  /(콜라|사이다|환타|스프라이트|음료|주스|쥬스|에이드|아메리카노|라떼|커피|소주|맥주|막걸리|하이볼|와인|사케|청하|생수|탄산수|식혜|아이스티|밀크티|홍차|녹차|보리차|유자차|스무디|쉐이크|셰이크|소다|우유|두유|공기밥|공깃밥|흰밥|쌀밥|현미밥|잡곡밥|곱빼기|추가|사리|포장|배달|소스|드레싱|시즈닝|토핑|반찬|(?<!두부)김치|깍두기|단무지|치킨무|피클|장아찌|조미김|와사비|케찹|케첩|머스타드|마요네즈|쌈장|고추장|간장|초장|양념장|참기름)(\d+(?:[a-z]*|종))?$/;
+  /(콜라|사이다|환타|스프라이트|음료|주스|쥬스|에이드|아메리카노|라떼|커피|소주|맥주|막걸리|하이볼|와인|사케|청하|생수|탄산수|식혜|아이스티|밀크티|홍차|녹차|보리차|유자차|스무디|쉐이크|셰이크|소다|우유|두유|곱빼기|추가|사리|포장|배달)(\d+(?:[a-z]*|종))?$/;
+// 소스·드레싱·토핑, 반찬·김치·절임류, 장류·양념: 이름 끝이 맞고 추정 칼로리가 기준 미만일 때만 뺀다.
+// 순살간장(치킨)·돼지김치·새우칠리소스처럼 이름 끝이 같아도 칼로리가 큰 식사 메뉴는 남긴다(#43 PR 메인 세션 확인).
+// 끝에 붙은 용량·개수 표기(30g, 3종 등)는 허용한다.
+const BRANCH_SIDE_MENU_PATTERN =
+  /(소스|드레싱|시즈닝|토핑|반찬|김치|깍두기|단무지|치킨무|피클|장아찌|조미김|와사비|케찹|케첩|머스타드|마요네즈|쌈장|고추장|간장|초장|양념장|참기름)(\d+(?:[a-z]*|종))?$/;
+const BRANCH_SIDE_MENU_MAX_CALORIES = 200;
+// 밥 단품: 이름 전체가 맞을 때만 뺀다(앞의 "추가"는 허용). 수비드목살현미밥·...정식공기밥 같은 세트는 남긴다.
+// #43 이전에는 공기밥을 이름 끝으로 뺐지만 세트 메뉴 오탐이 생겨 다른 밥 단품과 같은 전체 매칭으로 바꿨다.
+const BRANCH_PLAIN_RICE_MENU_PATTERN =
+  /^(추가)?(밥|공기밥|공깃밥|흰밥|쌀밥|백미밥|현미밥|잡곡밥|흑미밥|찹쌀밥|오곡밥|즉석밥|햇반)(\d+[a-z]*)?$/;
 
-export function isBranchNonMealMenuName(menuName: string): boolean {
-  return BRANCH_NON_MEAL_MENU_PATTERN.test(normalizeBranchMenuName(menuName));
+// 추정 칼로리가 없으면(null·빈 값) 소스·반찬 묶음으로 빼지 않는다. 표시 대상 추정값은 칼로리가 항상 있다.
+export function isBranchNonMealMenu(
+  menuName: string,
+  calories: number | string | null | undefined,
+): boolean {
+  const name = normalizeBranchMenuName(menuName);
+  if (
+    BRANCH_NON_MEAL_MENU_PATTERN.test(name) ||
+    BRANCH_PLAIN_RICE_MENU_PATTERN.test(name)
+  ) {
+    return true;
+  }
+  const kcal = calories == null || calories === '' ? NaN : Number(calories);
+  return (
+    Number.isFinite(kcal) &&
+    kcal < BRANCH_SIDE_MENU_MAX_CALORIES &&
+    BRANCH_SIDE_MENU_PATTERN.test(name)
+  );
 }
 
 @Injectable()
@@ -345,7 +369,7 @@ export class RestaurantService {
     }
 
     const candidates = menus.filter(
-      (menu) => !isBranchNonMealMenuName(menu.name),
+      (menu) => !isBranchNonMealMenu(menu.name, menu.calories),
     );
     if (candidates.length === 0) {
       return { restaurant_name: branch.placeName, menu_list: [] };
