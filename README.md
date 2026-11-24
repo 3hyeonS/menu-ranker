@@ -224,7 +224,7 @@ import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 �
 
 ## Kakao place → branch · menu import
 
-`POST /restaurant/brands`(카카오 장소 ID로 등록 브랜드 조회)와 `POST /restaurant/place`(카카오 장소 ID로 지점 메뉴 조회)가 쓰는
+`POST /restaurant/brands`(카카오 장소 ID로 수집 식당 조회, 개인 식당은 `restaurant_id: null`)와 `POST /restaurant/place`(카카오 장소 ID로 지점 메뉴 조회)가 쓰는
 `restaurant_branch`·`restaurant_branch_menu` 테이블을 메인 체크아웃의 구 폴더로 채운다.
 음식점 폴더(`kakao-map/<구>/`의 `places.jsonl`·`restaurants.csv`·`menus.csv`·`menu-done.txt`)와
 카페 폴더(`kakao-map/cafe/<구>/places.jsonl`, 브랜드 매핑만)를 함께 넘긴다. 적재 대상·매칭 규칙·한계는 `docs/kakao-restaurant-branch-import.md`.

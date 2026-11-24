@@ -465,6 +465,24 @@ describe('API response contract', () => {
       );
     });
 
+    it('POST /restaurant/brands (개인 식당)', async () => {
+      // 개인 식당은 restaurant_id가 null이다(#39). shapeOf는 배열 첫 항목만 보므로 따로 고정한다.
+      const brands: RestaurantBrandsResponseDto = {
+        restaurants: [
+          {
+            place_id: 1765423970,
+            restaurant_id: null,
+            restaurant_name: '논현 김밥천국',
+          },
+        ],
+      };
+      restaurantService.findRegisteredBrands.mockResolvedValue(brands);
+      const res = await post('/restaurant/brands').send({
+        place_ids: ['1765423970'],
+      });
+      expect(describeSuccess(res)).toMatchSnapshot();
+    });
+
     it('POST /restaurant/place', async () => {
       const place: RestaurantPlaceResponseDto = {
         place_id: 27531028,

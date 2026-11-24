@@ -113,16 +113,25 @@ export class RestaurantService {
     };
   }
 
+  // 수집한 카카오 장소 전부(개인 식당 포함)를 요청 순서대로 돌려준다(#39 결정).
+  // 개인 식당은 restaurant_id가 null이고 카카오 장소명을 이름으로 쓴다.
+  // restaurant_id만 NULL이고 match_source가 남은 행은 restaurant:import가 브랜드를 지워
+  // 매핑이 끊긴 프랜차이즈 지점이다. 개인 식당으로 내보내지 않고 예전처럼 뺀다.
   async findRegisteredBrands(
     dto: RestaurantBrandsRequestDto,
   ): Promise<RestaurantBrandsResponseDto> {
     const placeIds = [...new Set(dto.place_ids)];
+    const kakaoPlaceId = In(placeIds);
     const branches = await this.restaurantBranchRepository.find({
-      where: { kakaoPlaceId: In(placeIds), restaurantId: Not(IsNull()) },
+      where: [
+        { kakaoPlaceId, restaurantId: Not(IsNull()) },
+        { kakaoPlaceId, restaurantId: IsNull(), matchSource: IsNull() },
+      ],
       relations: { restaurant: true },
       select: {
         id: true,
         kakaoPlaceId: true,
+        placeName: true,
         restaurant: { id: true, name: true },
       },
     });
@@ -132,16 +141,16 @@ export class RestaurantService {
 
     const restaurants = placeIds.flatMap(
       (placeId): RestaurantBrandPlaceResponseDto[] => {
-        const restaurant = branchByPlaceId.get(placeId)?.restaurant;
-        return restaurant
-          ? [
-              {
-                place_id: Number(placeId),
-                restaurant_id: restaurant.id,
-                restaurant_name: restaurant.name,
-              },
-            ]
-          : [];
+        const branch = branchByPlaceId.get(placeId);
+        if (!branch) return [];
+        const restaurant = branch.restaurant;
+        return [
+          {
+            place_id: Number(placeId),
+            restaurant_id: restaurant?.id ?? null,
+            restaurant_name: restaurant?.name ?? branch.placeName,
+          },
+        ];
       },
     );
 

@@ -555,6 +555,24 @@ exports[`API response contract success responses POST /menstrual/records 1`] = `
 }
 `;
 
+exports[`API response contract success responses POST /restaurant/brands (개인 식당) 1`] = `
+{
+  "data": {
+    "restaurants": [
+      {
+        "place_id": "number",
+        "restaurant_id": "null",
+        "restaurant_name": "string",
+      },
+    ],
+  },
+  "extraKeys": [],
+  "httpStatus": 201,
+  "message": "Registered brands returned successfully",
+  "statusCode": 201,
+}
+`;
+
 exports[`API response contract success responses POST /restaurant/brands 1`] = `
 {
   "data": {

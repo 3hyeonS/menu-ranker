@@ -1,3 +1,4 @@
+import { IsNull, Not } from 'typeorm';
 import { RestaurantService } from './restaurant.service';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 
@@ -547,19 +548,27 @@ describe('RestaurantService', () => {
     const branches = [
       {
         kakaoPlaceId: '200',
+        placeName: '롯데리아 잠실새내점',
         restaurantId: 2,
         restaurant: { id: 2, name: '롯데리아' },
       },
       {
+        kakaoPlaceId: '300',
+        placeName: '논현 김밥천국',
+        restaurantId: null,
+        restaurant: null,
+      },
+      {
         kakaoPlaceId: '100',
+        placeName: '맘스터치 문정점',
         restaurantId: 1,
         restaurant: { id: 1, name: '맘스터치' },
       },
     ];
 
-    it('returns only mapped places in request order without duplicates', async () => {
+    function createService(rows: unknown[]) {
       const restaurantBranchRepository = {
-        find: jest.fn().mockResolvedValue(branches),
+        find: jest.fn().mockResolvedValue(rows),
       };
       const service = new RestaurantService(
         null,
@@ -568,32 +577,48 @@ describe('RestaurantService', () => {
         restaurantBranchRepository as never,
         null,
       );
+      return { service, restaurantBranchRepository };
+    }
+
+    it('returns franchise and independent places in request order without duplicates', async () => {
+      const { service, restaurantBranchRepository } = createService(branches);
 
       const response = await service.findRegisteredBrands({
-        place_ids: ['100', '999', '200', '100'],
+        place_ids: ['100', '999', '300', '200', '100'],
       });
 
       expect(response).toEqual({
         restaurants: [
           { place_id: 100, restaurant_id: 1, restaurant_name: '맘스터치' },
+          {
+            place_id: 300,
+            restaurant_id: null,
+            restaurant_name: '논현 김밥천국',
+          },
           { place_id: 200, restaurant_id: 2, restaurant_name: '롯데리아' },
         ],
       });
       const [options] = restaurantBranchRepository.find.mock.calls[0];
-      expect(options.where.kakaoPlaceId.value).toEqual(['100', '999', '200']);
+      // 브랜드 매핑 지점 OR 개인 식당(match_source도 NULL). 매핑이 끊긴 지점은 뺀다.
+      const [mapped, independent] = options.where;
+      expect(mapped.kakaoPlaceId.value).toEqual(['100', '999', '300', '200']);
+      expect(mapped.restaurantId).toEqual(Not(IsNull()));
+      expect(independent.kakaoPlaceId.value).toEqual([
+        '100',
+        '999',
+        '300',
+        '200',
+      ]);
+      expect(independent.restaurantId).toEqual(IsNull());
+      expect(independent.matchSource).toEqual(IsNull());
       expect(options.relations).toEqual({ restaurant: true });
+      expect(options.select).toEqual(
+        expect.objectContaining({ placeName: true }),
+      );
     });
 
-    it('returns an empty list when nothing is registered', async () => {
-      const service = new RestaurantService(
-        null,
-        null,
-        null,
-        {
-          find: jest.fn().mockResolvedValue([]),
-        } as never,
-        null,
-      );
+    it('returns an empty list when no place is collected', async () => {
+      const { service } = createService([]);
 
       await expect(
         service.findRegisteredBrands({ place_ids: ['1'] }),

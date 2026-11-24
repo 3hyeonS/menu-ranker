@@ -84,13 +84,13 @@ export class RestaurantController {
   }
 
   @ApiOperation({
-    summary: '카카오 장소 ID로 브랜드 등록 여부 조회',
+    summary: '카카오 장소 ID로 등록 식당 조회',
     description:
-      '수집한 카카오 장소(한강 이남 11개 구) 중 등록된 브랜드에 매핑된 장소만 반환합니다. 수집 지역 밖이나 새로 생긴 지점, 카페는 아직 나오지 않습니다.',
+      '요청한 장소 중 적재된 카카오 장소를 개인 식당까지 모두 요청 순서대로 반환합니다. 프랜차이즈 지점은 브랜드 restaurant_id·브랜드명을, 개인 식당은 restaurant_id null·카카오 장소명을 줍니다. 수집 지역 밖이나 수집 후 새로 생긴 장소는 나오지 않습니다.',
   })
   @GenericApiResponse({
     status: 201,
-    description: '브랜드 등록 여부 조회 성공',
+    description: '등록 식당 조회 성공',
     message: 'Registered brands returned successfully',
     model: RestaurantBrandsResponseDto,
   })
