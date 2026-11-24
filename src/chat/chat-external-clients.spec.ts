@@ -176,19 +176,25 @@ describe('ChatService restaurant menu rankings', () => {
     const prompt = 'text' in part ? part.text : '';
     expect(prompt).toContain('"goal":"감량"');
     expect(prompt).not.toContain('recent_messages');
+    // 소스·토핑 단독 금지는 저칼로리만이 아니라 세 기준 공통 규칙이다(#43).
+    const rulesStart = prompt.indexOf('규칙:');
+    const rulesEnd = prompt.indexOf('식당:');
+    expect(rulesStart).toBeGreaterThanOrEqual(0);
+    expect(rulesEnd).toBeGreaterThan(rulesStart);
+    const rules = prompt.slice(rulesStart, rulesEnd);
+    expect(rules).toContain('세 기준 모두 한 끼로 주문할 메뉴만 골라');
+    expect(rules).toContain('소스·시즈닝·토핑·재료만 따로 고르지 마');
   });
 
   it('sorts meal record menus so the recommendation cache key stays stable', async () => {
     const service = Object.create(ChatService.prototype) as any;
     service.getRequiredUserInfo = jest.fn().mockResolvedValue({ goal: 0 });
-    service.getRecentMealRecordContext = jest
-      .fn()
-      .mockResolvedValue([
-        {
-          date: '2026-11-01',
-          menus: [{ name: '현미밥' }, { name: '닭가슴살' }],
-        },
-      ]);
+    service.getRecentMealRecordContext = jest.fn().mockResolvedValue([
+      {
+        date: '2026-11-01',
+        menus: [{ name: '현미밥' }, { name: '닭가슴살' }],
+      },
+    ]);
     service.chatUserMemoryRepository = {
       findOneBy: jest.fn().mockResolvedValue(null),
     };
