@@ -1,9 +1,14 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { GeminiClient, GeminiGenerateRequest } from './gemini-client';
+import {
+  GeminiClient,
+  GeminiGenerateRequest,
+  GeminiJsonResult,
+  GeminiUsage,
+} from './gemini-client';
 
 type FakeGeminiResponse =
-  | { kind: 'text'; text: string }
-  | { kind: 'json'; value: unknown }
+  | { kind: 'text'; text: string; usage: GeminiUsage | null }
+  | { kind: 'json'; value: unknown; usage: GeminiUsage | null }
   | { kind: 'error'; error: unknown }
   | { kind: 'unavailable' };
 
@@ -14,14 +19,24 @@ export class FakeGeminiClient extends GeminiClient {
   readonly requests: GeminiGenerateRequest[] = [];
   private readonly responses: FakeGeminiResponse[] = [];
 
-  respondText(text: string): this {
-    this.responses.push({ kind: 'text', text });
+  // generateJsonWithUsage가 돌려주는 모델 이름.
+  constructor(readonly model = 'fake-gemini') {
+    super();
+  }
+
+  respondText(text: string, usage: GeminiUsage | null = null): this {
+    this.responses.push({ kind: 'text', text, usage });
     return this;
   }
 
-  respondJson(value: unknown): this {
-    this.responses.push({ kind: 'json', value });
+  respondJson(value: unknown, usage: GeminiUsage | null = null): this {
+    this.responses.push({ kind: 'json', value, usage });
     return this;
+  }
+
+  // 남은 응답 수. 테스트가 넣은 응답을 모두 썼는지 확인할 때 쓴다.
+  get pendingResponseCount(): number {
+    return this.responses.length;
   }
 
   failWith(error: unknown): this {
@@ -43,11 +58,18 @@ export class FakeGeminiClient extends GeminiClient {
   }
 
   async generateJson<T = any>(request: GeminiGenerateRequest): Promise<T> {
-    const response = this.next(request);
+    return (await this.generateJsonWithUsage<T>(request)).value;
+  }
 
-    return (
+  async generateJsonWithUsage<T = any>(
+    request: GeminiGenerateRequest,
+  ): Promise<GeminiJsonResult<T>> {
+    const response = this.next(request);
+    const value = (
       response.kind === 'text' ? JSON.parse(response.text) : response.value
     ) as T;
+
+    return { value, model: this.model, usage: response.usage };
   }
 
   private next(

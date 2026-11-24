@@ -133,6 +133,56 @@ describe('HttpGeminiClient', () => {
     });
   });
 
+  it('returns the responding model and token usage with generateJsonWithUsage', async () => {
+    process.env.GEMINI_MODEL = 'primary-model';
+    process.env.GEMINI_FALLBACK_MODELS = 'fallback-model';
+    const http = createFakeHttp(
+      () => httpError(429),
+      () =>
+        of({
+          data: {
+            candidates: [{ content: { parts: [{ text: '[{"id":"1"}]' }] } }],
+            usageMetadata: {
+              promptTokenCount: 120,
+              candidatesTokenCount: 30,
+              totalTokenCount: 150,
+            },
+          },
+        }),
+    );
+    const client = new HttpGeminiClient(http as never);
+
+    await expect(client.generateJsonWithUsage(baseRequest())).resolves.toEqual({
+      value: [{ id: '1' }],
+      model: 'fallback-model',
+      usage: {
+        promptTokenCount: 120,
+        candidatesTokenCount: 30,
+        totalTokenCount: 150,
+      },
+    });
+  });
+
+  it('tries only the requested models without the high-demand fallback', async () => {
+    process.env.GEMINI_MODEL = 'env-model';
+    const http = createFakeHttp(() => httpError(429));
+    const client = new HttpGeminiClient(http as never);
+
+    await expect(
+      client.generateJsonWithUsage(baseRequest({ models: ['pinned-model'] })),
+    ).rejects.toThrow(new ServiceUnavailableException('unavailable for test'));
+    expect(calledModels(http.post)).toEqual(['pinned-model']);
+  });
+
+  it('returns null usage when usageMetadata is missing', async () => {
+    const http = createFakeHttp(() => textResponse('{"ok":true}'));
+    const client = new HttpGeminiClient(http as never);
+
+    await expect(
+      client.generateJsonWithUsage(baseRequest()),
+    ).resolves.toMatchObject({ value: { ok: true }, usage: null });
+  });
+
   it.each([
     ['429', () => httpError(429)],
     ['503', () => httpError(503)],

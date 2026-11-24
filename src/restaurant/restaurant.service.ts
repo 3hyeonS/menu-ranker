@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Not, Repository } from 'typeorm';
+import { In, IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import {
   ChatService,
   RestaurantMenuRankings,
@@ -32,6 +32,13 @@ import { RestaurantBranchEntity } from './entity/restaurant-branch.entity';
 import { RestaurantBranchMenuEntity } from './entity/restaurant-branch-menu.entity';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 import { RestaurantEntity } from './entity/restaurant.entity';
+import { RestaurantMenuNutritionEstimateEntity } from './entity/restaurant-menu-nutrition-estimate.entity';
+import {
+  BRANCH_MENU_ID_OFFSET,
+  INDEPENDENT_RESTAURANT_ID_OFFSET,
+  MIN_DISPLAY_ESTIMATE_CONFIDENCE,
+} from './branch-menu-estimate.constants';
+import { normalizeBranchMenuName } from '../utils/branch-menu-name.util';
 import { KeyedTtlCache } from '../utils/keyed-ttl-cache.util';
 import {
   getRequestAbortSignal,
@@ -48,6 +55,33 @@ const RECOMMENDATION_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const RECOMMENDATION_CACHE_MAX_ENTRIES = 10_000;
 
 type FilterRecommendations = Record<RestaurantMenuFilter, number[]>;
+
+// 추천·응답에 쓰는 메뉴 필드. 브랜드 공식 메뉴(RestaurantMenuEntity)와 개인 식당 추정 메뉴(#41)가 같이 쓴다.
+type DetailMenu = Pick<
+  RestaurantMenuEntity,
+  | 'id'
+  | 'name'
+  | 'menuCategory'
+  | 'calories'
+  | 'carbs'
+  | 'sugars'
+  | 'dietaryFiber'
+  | 'protein'
+  | 'fat'
+  | 'satFat'
+  | 'sodium'
+  | 'unit'
+  | 'weight'
+  | 'unitQuantity'
+>;
+type DetailRestaurant = Pick<RestaurantEntity, 'id' | 'name' | 'category'>;
+
+// IN 목록 한 번에 넣는 정규화 메뉴명 수.
+const ESTIMATE_LOOKUP_CHUNK_SIZE = 1_000;
+// 개인 식당 메뉴는 메뉴 카테고리가 없어 이름 끝으로 음료·주류·사이드·추가 옵션을 추천에서 뺀다.
+// 정규화 이름(소문자, 공백·기호 없음) 기준이고 뒤에 붙은 용량 표기(500cc 등)는 허용한다.
+const BRANCH_NON_MEAL_MENU_PATTERN =
+  /(콜라|사이다|환타|스프라이트|음료|주스|쥬스|에이드|아메리카노|라떼|커피|소주|맥주|막걸리|하이볼|와인|사케|청하|생수|탄산수|식혜|아이스티|밀크티|홍차|녹차|보리차|유자차|스무디|쉐이크|셰이크|소다|우유|두유|공기밥|곱빼기|추가|사리|포장|배달)(\d+[a-z]*)?$/;
 
 @Injectable()
 export class RestaurantService {
@@ -73,6 +107,8 @@ export class RestaurantService {
     private readonly restaurantBranchRepository: Repository<RestaurantBranchEntity>,
     @InjectRepository(RestaurantBranchMenuEntity)
     private readonly restaurantBranchMenuRepository: Repository<RestaurantBranchMenuEntity>,
+    @InjectRepository(RestaurantMenuNutritionEstimateEntity)
+    private readonly menuNutritionEstimateRepository: Repository<RestaurantMenuNutritionEstimateEntity>,
   ) {}
 
   async searchRestaurants(
@@ -114,7 +150,8 @@ export class RestaurantService {
   }
 
   // 수집한 카카오 장소 전부(개인 식당 포함)를 요청 순서대로 돌려준다(#39 결정).
-  // 개인 식당은 restaurant_id가 null이고 카카오 장소명을 이름으로 쓴다.
+  // 개인 식당은 카카오 장소명을 이름으로 쓴다. 표시할 영양 추정 메뉴가 있으면 가상 restaurant_id
+  // (INDEPENDENT_RESTAURANT_ID_OFFSET + branch.id)로 /restaurant/detail을 열고, 없으면 null이다(#41 결정).
   // restaurant_id만 NULL이고 match_source가 남은 행은 restaurant:import가 브랜드를 지워
   // 매핑이 끊긴 프랜차이즈 지점이다. 개인 식당으로 내보내지 않고 예전처럼 뺀다.
   async findRegisteredBrands(
@@ -138,6 +175,11 @@ export class RestaurantService {
     const branchByPlaceId = new Map(
       branches.map((branch) => [branch.kakaoPlaceId, branch]),
     );
+    const estimatedBranchIds = await this.findBranchIdsWithDisplayableEstimates(
+      branches
+        .filter((branch) => !branch.restaurant)
+        .map((branch) => branch.id),
+    );
 
     const restaurants = placeIds.flatMap(
       (placeId): RestaurantBrandPlaceResponseDto[] => {
@@ -147,7 +189,11 @@ export class RestaurantService {
         return [
           {
             place_id: Number(placeId),
-            restaurant_id: restaurant?.id ?? null,
+            restaurant_id:
+              restaurant?.id ??
+              (estimatedBranchIds.has(branch.id)
+                ? INDEPENDENT_RESTAURANT_ID_OFFSET + branch.id
+                : null),
             restaurant_name: restaurant?.name ?? branch.placeName,
           },
         ];
@@ -200,6 +246,10 @@ export class RestaurantService {
     dto: RestaurantDetailRequestDto,
     userId: number,
   ): Promise<RestaurantDetailResponseDto> {
+    if (dto.restaurant_id >= INDEPENDENT_RESTAURANT_ID_OFFSET) {
+      return await this.getIndependentRestaurantDetail(dto, userId);
+    }
+
     const restaurant = await this.restaurantRepository.findOne({
       where: { id: dto.restaurant_id },
     });
@@ -249,11 +299,178 @@ export class RestaurantService {
     };
   }
 
+  // 개인 식당(가상 restaurant_id) 상세: 카카오 지점 메뉴 중 표시할 추정값이 있는 메뉴만 기존 응답 형식으로 준다.
+  // 추정값이 없거나 confidence가 기준 미만인 메뉴는 filter와 관계없이 뺀다(#41 결정 1).
+  private async getIndependentRestaurantDetail(
+    dto: RestaurantDetailRequestDto,
+    userId: number,
+  ): Promise<RestaurantDetailResponseDto> {
+    const restaurantId = dto.restaurant_id;
+    const branch = await this.restaurantBranchRepository.findOne({
+      where: {
+        id: restaurantId - INDEPENDENT_RESTAURANT_ID_OFFSET,
+        restaurantId: IsNull(),
+        matchSource: IsNull(),
+      },
+      select: { id: true, placeName: true, kakaoCategory: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Restaurant not found');
+    }
+
+    const branchMenus = await this.restaurantBranchMenuRepository.find({
+      where: { branchId: branch.id },
+      order: { sortOrder: 'ASC' },
+      select: { id: true, name: true },
+    });
+    const estimates = await this.findDisplayableEstimates(
+      branchMenus.map((menu) => menu.name),
+    );
+    const menus = branchMenus.flatMap((menu): DetailMenu[] => {
+      const estimate = estimates.get(normalizeBranchMenuName(menu.name));
+      return estimate ? [this.toEstimatedMenu(menu, estimate)] : [];
+    });
+    if (menus.length === 0 || dto.filter == null) {
+      return {
+        restaurant_name: branch.placeName,
+        menu_list: menus.map((menu) => this.toResponse(menu)),
+      };
+    }
+
+    const candidates = menus.filter(
+      (menu) =>
+        !BRANCH_NON_MEAL_MENU_PATTERN.test(normalizeBranchMenuName(menu.name)),
+    );
+    if (candidates.length === 0) {
+      return { restaurant_name: branch.placeName, menu_list: [] };
+    }
+    const restaurant: DetailRestaurant = {
+      id: restaurantId,
+      name: branch.placeName,
+      category:
+        (branch.kakaoCategory ?? '').replace(/^음식점\s*>\s*/, '').trim() ||
+        null,
+    };
+    const recommendations = await this.getFilterRecommendations(
+      restaurant,
+      candidates,
+      userId,
+      this.recommendationLimit,
+    );
+    const menuById = new Map(candidates.map((menu) => [menu.id, menu]));
+
+    return {
+      restaurant_name: branch.placeName,
+      menu_list: recommendations[dto.filter].map((menuId) =>
+        this.toResponse(menuById.get(menuId)),
+      ),
+    };
+  }
+
+  // 표시할 추정 메뉴가 하나 이상 있는 개인 식당 지점 id. 조회가 실패하면(예: 추정 테이블 마이그레이션 전)
+  // 가상 id 없이 지금처럼 null로 내보내도록 빈 집합을 돌려준다(/restaurant/brands를 깨지 않기 위해).
+  private async findBranchIdsWithDisplayableEstimates(
+    branchIds: number[],
+  ): Promise<Set<number>> {
+    if (branchIds.length === 0) {
+      return new Set();
+    }
+    try {
+      const menus = await this.restaurantBranchMenuRepository.find({
+        where: { branchId: In(branchIds) },
+        select: { id: true, branchId: true, name: true },
+      });
+      const estimates = await this.findDisplayableEstimates(
+        menus.map((menu) => menu.name),
+      );
+      return new Set(
+        menus
+          .filter((menu) => estimates.has(normalizeBranchMenuName(menu.name)))
+          .map((menu) => menu.branchId),
+      );
+    } catch (error) {
+      if (isRequestCancellationError(error)) {
+        throw error;
+      }
+      console.error(
+        '[RESTAURANT] Branch menu estimate lookup failed; independent places returned without restaurant_id',
+        {
+          branchCount: branchIds.length,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+      return new Set();
+    }
+  }
+
+  // 정규화 메뉴명 → 앱에 내보낼 수 있는 추정값(칼로리가 있고 confidence가 기준 이상).
+  private async findDisplayableEstimates(
+    menuNames: string[],
+  ): Promise<Map<string, RestaurantMenuNutritionEstimateEntity>> {
+    const keys = [
+      ...new Set(menuNames.map(normalizeBranchMenuName).filter(Boolean)),
+    ];
+    const estimates = new Map<string, RestaurantMenuNutritionEstimateEntity>();
+    for (
+      let start = 0;
+      start < keys.length;
+      start += ESTIMATE_LOOKUP_CHUNK_SIZE
+    ) {
+      const rows = await this.menuNutritionEstimateRepository.find({
+        where: {
+          normalizedName: In(
+            keys.slice(start, start + ESTIMATE_LOOKUP_CHUNK_SIZE),
+          ),
+          calories: Not(IsNull()),
+          confidence: MoreThanOrEqual(MIN_DISPLAY_ESTIMATE_CONFIDENCE),
+        },
+        select: {
+          id: true,
+          normalizedName: true,
+          calories: true,
+          carbs: true,
+          protein: true,
+          fat: true,
+          sugars: true,
+          satFat: true,
+          unit: true,
+          weight: true,
+          unitQuantity: true,
+        },
+      });
+      rows.forEach((row) => estimates.set(row.normalizedName, row));
+    }
+    return estimates;
+  }
+
+  // 가상 menu_id(BRANCH_MENU_ID_OFFSET + restaurant_branch_menu.id)는 표시·추천용이고 식사 기록과 잇지 않는다.
+  private toEstimatedMenu(
+    menu: Pick<RestaurantBranchMenuEntity, 'id' | 'name'>,
+    estimate: RestaurantMenuNutritionEstimateEntity,
+  ): DetailMenu {
+    return {
+      id: BRANCH_MENU_ID_OFFSET + menu.id,
+      name: menu.name,
+      menuCategory: null,
+      calories: estimate.calories,
+      carbs: estimate.carbs,
+      sugars: estimate.sugars,
+      dietaryFiber: null,
+      protein: estimate.protein,
+      fat: estimate.fat,
+      satFat: estimate.satFat,
+      sodium: null,
+      unit: estimate.unit,
+      weight: estimate.weight,
+      unitQuantity: estimate.unitQuantity,
+    };
+  }
+
   // 세 필터 추천을 한 번에 계산해 필터 간 중복을 빼고, 입력이 같으면 같은 결과를 내도록 캐시한다.
   // 캐시 키에는 프로필·최근 3일 식사 기록·후보 메뉴가 들어가므로 식사를 기록하면 새로 계산한다.
   private async getFilterRecommendations(
-    restaurant: RestaurantEntity,
-    candidates: RestaurantMenuEntity[],
+    restaurant: DetailRestaurant,
+    candidates: DetailMenu[],
     userId: number,
     limit: number,
   ): Promise<FilterRecommendations> {
@@ -338,8 +555,8 @@ export class RestaurantService {
   }
 
   private async computeFilterRecommendations(
-    restaurant: RestaurantEntity,
-    candidates: RestaurantMenuEntity[],
+    restaurant: DetailRestaurant,
+    candidates: DetailMenu[],
     menus: RestaurantRecommendationMenuInput[],
     userContext: RestaurantRecommendationUserContext,
     userId: number,
@@ -436,9 +653,7 @@ export class RestaurantService {
     return recommendations;
   }
 
-  private fallbackRankings(
-    menus: RestaurantMenuEntity[],
-  ): RestaurantMenuRankings {
+  private fallbackRankings(menus: DetailMenu[]): RestaurantMenuRankings {
     return Object.fromEntries(
       RESTAURANT_FILTER_PRIORITY.map((filter) => [
         filter,
@@ -449,7 +664,7 @@ export class RestaurantService {
 
   private logRecommendationFallback(
     reason: string,
-    restaurant: RestaurantEntity,
+    restaurant: DetailRestaurant,
     userId: number,
     error: unknown,
   ): void {
@@ -466,9 +681,9 @@ export class RestaurantService {
   }
 
   private fallbackRecommendations(
-    menus: RestaurantMenuEntity[],
+    menus: DetailMenu[],
     filter: RestaurantMenuFilter,
-  ): RestaurantMenuEntity[] {
+  ): DetailMenu[] {
     const sorted = [...menus];
 
     if (filter === RestaurantMenuFilter.LOW_CALORIE) {
@@ -496,7 +711,7 @@ export class RestaurantService {
     });
   }
 
-  private balanceDistance(menu: RestaurantMenuEntity): number {
+  private balanceDistance(menu: DetailMenu): number {
     const carbsCalories = this.numberValue(menu.carbs) * 4;
     const proteinCalories = this.numberValue(menu.protein) * 4;
     const fatCalories = this.numberValue(menu.fat) * 9;
@@ -512,7 +727,9 @@ export class RestaurantService {
     );
   }
 
-  private toRecommendationInput(menu: RestaurantMenuEntity) {
+  private toRecommendationInput(
+    menu: DetailMenu,
+  ): RestaurantRecommendationMenuInput {
     return {
       menu_id: menu.id,
       menu_name: menu.name,
@@ -531,7 +748,7 @@ export class RestaurantService {
     };
   }
 
-  private toResponse(menu: RestaurantMenuEntity): RestaurantMenuResponseDto {
+  private toResponse(menu: DetailMenu): RestaurantMenuResponseDto {
     return {
       menu_id: menu.id,
       menu_name: menu.name,

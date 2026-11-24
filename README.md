@@ -224,7 +224,7 @@ import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 �
 
 ## Kakao place → branch · menu import
 
-`POST /restaurant/brands`(카카오 장소 ID로 수집 식당 조회, 개인 식당은 `restaurant_id: null`)와 `POST /restaurant/place`(카카오 장소 ID로 지점 메뉴 조회)가 쓰는
+`POST /restaurant/brands`(카카오 장소 ID로 수집 식당 조회, 개인 식당은 추정 메뉴가 있으면 가상 `restaurant_id`, 없으면 `null`)와 `POST /restaurant/place`(카카오 장소 ID로 지점 메뉴 조회)가 쓰는
 `restaurant_branch`·`restaurant_branch_menu` 테이블을 메인 체크아웃의 구 폴더로 채운다.
 음식점 폴더(`kakao-map/<구>/`의 `places.jsonl`·`restaurants.csv`·`menus.csv`·`menu-done.txt`)와
 카페 폴더(`kakao-map/cafe/<구>/places.jsonl`, 브랜드 매핑만)를 함께 넘긴다. 적재 대상·매칭 규칙·한계는 `docs/kakao-restaurant-branch-import.md`.
@@ -237,6 +237,26 @@ $ npm run restaurant:branch-import -- kakao-map/*구/ kakao-map/cafe/*구/ --val
 
 # 장소 upsert + 지점 메뉴 교체. 명시적으로 결정한 뒤에만 실행한다.
 $ npm run restaurant:branch-import -- kakao-map/*구/ kakao-map/cafe/*구/
+```
+
+## Kakao branch menu nutrition estimate
+
+개인 식당 카카오 메뉴를 정규화 메뉴명 단위로 영양 추정해 `restaurant_menu_nutrition_estimate`에 적재한다(#41).
+식약처 음식명과 같으면 식약처 값, 나머지는 Gemini(`gemini-2.5-flash-lite`, 공식 브랜드 메뉴 RAG → 낮은 confidence면 순수 LLM)로 추정한다.
+`/restaurant/brands`·`/restaurant/detail`이 이 값으로 개인 식당 메뉴를 기존 응답 형식으로 준다(가상 ID 100000000 이상).
+방식·옵션·비용·한계는 `docs/kakao-menu-nutrition-estimate.md`. Gemini 호출·적재는 허락받은 뒤에만 실행한다.
+
+```bash
+# 대상 수·예상 토큰·비용만 확인 (호출·DB 쓰기 없음, 식약처 메뉴는 DB 읽기 또는 --mfds-file)
+$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*구/ --references=brand-nutrition/all-menus.csv --limit=20000 --dry-run
+
+# 시범 평가 / 추정 (Gemini 호출, 결과는 kakao-map/nutrition-estimate/*.jsonl)
+$ npm run restaurant:menu-nutrition:evaluate -- kakao-map/*구/ --references=brand-nutrition/all-menus.csv --sample=200
+$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*구/ --references=brand-nutrition/all-menus.csv --limit=20000
+
+# 적재 계획 확인 → 적재 (restaurant_menu_nutrition_estimate 마이그레이션 후)
+$ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estimates.jsonl --validate-only
+$ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estimates.jsonl
 ```
 
 ## Naver map menu crawl (internal analysis)

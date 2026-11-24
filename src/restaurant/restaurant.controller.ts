@@ -61,6 +61,8 @@ export class RestaurantController {
 
   @ApiOperation({
     summary: '식당별 개인화 메뉴 추천',
+    description:
+      '브랜드 식당은 공식 영양정보 메뉴를, 개인 식당 가상 ID(/restaurant/brands가 준 100000000 이상)는 카카오 메뉴 중 영양 추정값이 있는 메뉴만 반환합니다. 개인 식당 메뉴의 영양값은 메뉴명 기반 추정이고 menu_category는 null입니다. 개인 식당 menu_id는 지점 메뉴를 다시 적재하면 바뀝니다.',
   })
   @GenericApiResponse({
     status: 201,
@@ -86,7 +88,7 @@ export class RestaurantController {
   @ApiOperation({
     summary: '카카오 장소 ID로 등록 식당 조회',
     description:
-      '요청한 장소 중 적재된 카카오 장소를 개인 식당까지 모두 요청 순서대로 반환합니다. 프랜차이즈 지점은 브랜드 restaurant_id·브랜드명을, 개인 식당은 restaurant_id null·카카오 장소명을 줍니다. 수집 지역 밖이나 수집 후 새로 생긴 장소는 나오지 않습니다.',
+      '요청한 장소 중 적재된 카카오 장소를 개인 식당까지 모두 요청 순서대로 반환합니다. 프랜차이즈 지점은 브랜드 restaurant_id·브랜드명을, 개인 식당은 카카오 장소명과 함께 영양 추정 메뉴가 있으면 가상 restaurant_id(100000000 이상), 없으면 null을 줍니다. 수집 지역 밖이나 수집 후 새로 생긴 장소는 나오지 않습니다.',
   })
   @GenericApiResponse({
     status: 201,

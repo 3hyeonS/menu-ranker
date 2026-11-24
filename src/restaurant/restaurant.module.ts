@@ -5,6 +5,7 @@ import { RestaurantBranchEntity } from './entity/restaurant-branch.entity';
 import { RestaurantBranchMenuEntity } from './entity/restaurant-branch-menu.entity';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
 import { RestaurantEntity } from './entity/restaurant.entity';
+import { RestaurantMenuNutritionEstimateEntity } from './entity/restaurant-menu-nutrition-estimate.entity';
 import { RestaurantController } from './restaurant.controller';
 import { RestaurantService } from './restaurant.service';
 
@@ -15,6 +16,7 @@ import { RestaurantService } from './restaurant.service';
       RestaurantMenuEntity,
       RestaurantBranchEntity,
       RestaurantBranchMenuEntity,
+      RestaurantMenuNutritionEstimateEntity,
     ]),
     ChatModule,
   ],

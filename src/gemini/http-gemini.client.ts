@@ -10,8 +10,28 @@ import {
 import {
   GeminiClient,
   GeminiGenerateRequest,
+  GeminiJsonResult,
   GeminiModelGroup,
+  GeminiUsage,
 } from './gemini-client';
+
+type GeminiResponseText = { text: string; usage: GeminiUsage | null };
+
+function usageNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseGeminiUsage(value: unknown): GeminiUsage | null {
+  if (value == null || typeof value !== 'object') {
+    return null;
+  }
+  const usage = value as Record<string, unknown>;
+  return {
+    promptTokenCount: usageNumber(usage.promptTokenCount),
+    candidatesTokenCount: usageNumber(usage.candidatesTokenCount),
+    totalTokenCount: usageNumber(usage.totalTokenCount),
+  };
+}
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GEMINI_FALLBACK_MODELS = ['gemini-2.5-flash-lite'];
@@ -116,26 +136,35 @@ export class HttpGeminiClient extends GeminiClient {
   }
 
   async generateText(request: GeminiGenerateRequest): Promise<string> {
-    return await this.generateWithFallback(request, (text) => text);
+    return (await this.generateWithFallback(request, (text) => text)).value;
   }
 
   async generateJson<T = any>(request: GeminiGenerateRequest): Promise<T> {
-    return await this.generateWithFallback(request, (text) =>
-      JSON.parse(stripGeminiCodeFence(text)),
+    return (await this.generateJsonWithUsage<T>(request)).value;
+  }
+
+  async generateJsonWithUsage<T = any>(
+    request: GeminiGenerateRequest,
+  ): Promise<GeminiJsonResult<T>> {
+    return await this.generateWithFallback(
+      request,
+      (text) => JSON.parse(stripGeminiCodeFence(text)) as T,
     );
   }
 
   private async generateWithFallback<T>(
     request: GeminiGenerateRequest,
     parse: (text: string) => T,
-  ): Promise<T> {
+  ): Promise<GeminiJsonResult<T>> {
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
-    const attempts = resolveGeminiModelAttempts(request.modelGroup);
+    const attempts = request.models?.length
+      ? [...new Set(request.models)]
+      : resolveGeminiModelAttempts(request.modelGroup);
     const baseUrlOverride = resolveGeminiBaseUrlOverride(request.modelGroup);
 
     for (const [index, model] of attempts.entries()) {
@@ -143,13 +172,13 @@ export class HttpGeminiClient extends GeminiClient {
 
       try {
         throwIfRequestAborted();
-        const text = await this.postGenerateContent(
+        const { text, usage } = await this.postGenerateContent(
           `${baseUrl}?key=${apiKey}`,
           request,
         );
 
         // 파싱 실패도 이 모델의 실패로 보고 아래 catch에서 처리한다.
-        return parse(text);
+        return { value: parse(text), model, usage };
       } catch (error) {
         if (isRequestCancellationError(error)) {
           throw error;
@@ -171,7 +200,7 @@ export class HttpGeminiClient extends GeminiClient {
   private async postGenerateContent(
     url: string,
     request: GeminiGenerateRequest,
-  ): Promise<string> {
+  ): Promise<GeminiResponseText> {
     const response = await firstValueFrom(
       this.httpService.post(
         url,
@@ -207,6 +236,6 @@ export class HttpGeminiClient extends GeminiClient {
       throw new Error('Gemini returned empty content');
     }
 
-    return text;
+    return { text, usage: parseGeminiUsage(response.data?.usageMetadata) };
   }
 }

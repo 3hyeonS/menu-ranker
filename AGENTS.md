@@ -48,13 +48,13 @@ npm run db:migration:show                           # 적용 상태 확인 (run/
 | `src/chat` | Gemini 코칭: 일반 대화, 개인화 관리, 30일 패턴 분석, 식단 점수 피드백, 메뉴판·음식 사진·영양성분표 이미지 분석, 자연어 식사 기록, 대화 세션 요약·장기 기억. `chat.service.ts` 하나가 매우 크다(약 11,600줄) |
 | `src/home` | 메뉴 검색, 식사 기록, 폴더·세트, 개인 메뉴, 사진·영양성분표 인식, 운동·체중·걸음·물 기록, 캘린더·30일 분석, CSV import |
 | `src/auth` | Kakao·Apple·관리자 로그인, JWT access/refresh, 구독 코드, 온보딩, 기본 칼로리·탄단지 계산 |
-| `src/restaurant` | 프랜차이즈 식당 검색, 필터별 메뉴 추천(`ChatService.rankRestaurantMenusByFilter`로 세 필터 순위를 한 번에 받아 저칼로리>단백질>균형 순으로 중복 제외, 입력 해시 키로 24시간 메모리 캐시, 실패 시 규칙 기반·캐시 안 함), 카카오 장소 ID → 수집 식당 조회(`/brands`, 개인 식당은 `restaurant_id: null`·장소명)·지점 메뉴 조회(개인 식당 포함 `restaurant_branch` + 영양정보 없는 `restaurant_branch_menu`, `docs/kakao-restaurant-branch-import.md`) |
+| `src/restaurant` | 프랜차이즈 식당 검색, 필터별 메뉴 추천(`ChatService.rankRestaurantMenusByFilter`로 세 필터 순위를 한 번에 받아 저칼로리>단백질>균형 순으로 중복 제외, 입력 해시 키로 24시간 메모리 캐시, 실패 시 규칙 기반·캐시 안 함), 카카오 장소 ID → 수집 식당 조회(`/brands`, 개인 식당은 장소명·추정 메뉴가 있으면 가상 `restaurant_id`, 없으면 null)·지점 메뉴 조회(개인 식당 포함 `restaurant_branch` + 영양정보 없는 `restaurant_branch_menu`, `docs/kakao-restaurant-branch-import.md`), 개인 식당 `/detail`(가상 ID 100000000 이상 → 정규화 메뉴명으로 잇는 `restaurant_menu_nutrition_estimate`, `docs/kakao-menu-nutrition-estimate.md`) |
 | `src/profile`, `src/menstrual` | 프로필 수정(수정마다 `user_goal` 스냅샷 추가), 생리 기록 |
 | `src/gemini` | Gemini generateContent 공용 클라이언트. `GeminiClient`(abstract, DI 토큰) / `HttpGeminiClient` / 테스트용 `FakeGeminiClient` |
 | `src/storage` | 파일 업로드·삭제. `FileStorage`(abstract, DI 토큰) / `S3FileStorage` / 테스트용 `FakeFileStorage`, 업로드 키 util |
 | `src/food-image` | 음식 사진 메뉴 매칭(home·chat 공용). `FoodImageMenuCatalog`(공용 메뉴 TTL 캐시 + 개인 메뉴) / `FoodImageMenuMatcher`(후보 수집 → Gemini rematch → 로컬 보충 → 중복 제거). `FoodImageModule`은 Home·Chat 모듈이 import한다 |
 | `src/vector` | pgvector DataSource(지연 초기화), 임베딩, 메뉴 검색. `VectorModule`은 Chat·FoodImage 모듈이 import한다 |
-| `src/utils` | 메뉴명 정규화·별칭(`menu-name.util`), 음식 사진 후보 점수·우선순위, 자주 먹은 메뉴, 요청 취소, BMR(`bmr.util`, auth·home·chat 공용), TTL 캐시 |
+| `src/utils` | 메뉴명 정규화·별칭(`menu-name.util`), 카카오 지점 메뉴명 → 영양 추정 키(`branch-menu-name.util`, 바꾸면 추정값 재적재 필요), 음식 사진 후보 점수·우선순위, 자주 먹은 메뉴, 요청 취소, BMR(`bmr.util`, auth·home·chat 공용), TTL 캐시 |
 | `src/migrations` | MySQL 마이그레이션(`src/config/typeorm.datasource.ts`로 CLI 실행) |
 | `scripts/` | import, 벤치마크, 부하 테스트, 운동 데이터 처리, `deploy-ec2.sh`, `vector-db/*.sql` |
 
