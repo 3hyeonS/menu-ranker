@@ -1,6 +1,7 @@
 import { IsNull, MoreThanOrEqual, Not } from 'typeorm';
 import { isBranchNonMealMenu, RestaurantService } from './restaurant.service';
 import { RestaurantMenuEntity } from './entity/restaurant-menu.entity';
+import { RestaurantMenuNutritionSource } from './dto/response-dto/restaurant-detail-response-dto';
 
 const userContext = {
   user_profile: { goal: '감량' },
@@ -40,9 +41,12 @@ describe('RestaurantService', () => {
 
     const response = (
       service as unknown as {
-        toResponse(menu: RestaurantMenuEntity): Record<string, unknown>;
+        toResponse(
+          menu: RestaurantMenuEntity,
+          nutritionSource: RestaurantMenuNutritionSource,
+        ): Record<string, unknown>;
       }
-    ).toResponse(menu);
+    ).toResponse(menu, RestaurantMenuNutritionSource.OFFICIAL);
 
     expect(response).toEqual({
       menu_id: 1,
@@ -55,6 +59,7 @@ describe('RestaurantService', () => {
       unit: 0,
       weight: 100,
       unit_quantity: '1인분',
+      nutrition_source: 'official',
     });
     expect(response).not.toHaveProperty('carbs');
     expect(response).not.toHaveProperty('fat');
@@ -74,9 +79,12 @@ describe('RestaurantService', () => {
 
     const response = (
       service as unknown as {
-        toResponse(menu: RestaurantMenuEntity): Record<string, unknown>;
+        toResponse(
+          menu: RestaurantMenuEntity,
+          nutritionSource: RestaurantMenuNutritionSource,
+        ): Record<string, unknown>;
       }
-    ).toResponse(menu);
+    ).toResponse(menu, RestaurantMenuNutritionSource.OFFICIAL);
 
     expect(response.menu_category).toBe('피자');
   });
@@ -97,11 +105,87 @@ describe('RestaurantService', () => {
 
     const response = (
       service as unknown as {
-        toResponse(menu: RestaurantMenuEntity): Record<string, unknown>;
+        toResponse(
+          menu: RestaurantMenuEntity,
+          nutritionSource: RestaurantMenuNutritionSource,
+        ): Record<string, unknown>;
       }
-    ).toResponse(menu);
+    ).toResponse(menu, RestaurantMenuNutritionSource.OFFICIAL);
 
     expect(response.weight).toBeNull();
+  });
+
+  describe('nutrition_source for brand restaurants', () => {
+    const menus = [
+      {
+        id: 1,
+        restaurantId: 1,
+        name: '불고기버거',
+        menuCategory: '버거',
+        calories: 450,
+        protein: 20,
+        unit: 0,
+        weight: 200,
+        unitQuantity: '1개',
+      },
+      {
+        id: 2,
+        restaurantId: 1,
+        name: '새우버거',
+        menuCategory: '버거',
+        calories: 400,
+        protein: 15,
+        unit: 0,
+        weight: 180,
+        unitQuantity: '1개',
+      },
+    ] as unknown as RestaurantMenuEntity[];
+
+    function createService() {
+      const restaurantRepository = {
+        findOne: jest.fn().mockResolvedValue({
+          id: 1,
+          name: '테스트 버거',
+          category: '버거',
+        }),
+      };
+      const restaurantMenuRepository = {
+        find: jest.fn().mockResolvedValue(menus),
+      };
+      return new RestaurantService(
+        restaurantRepository as never,
+        restaurantMenuRepository as never,
+        createChatService({ 균형: [2, 1] }) as never,
+        null,
+        null,
+        null,
+      );
+    }
+
+    it('marks every menu in the full menu list as official', async () => {
+      const response = await createService().getRestaurantDetail(
+        { restaurant_id: 1, filter: null },
+        1,
+      );
+
+      expect(response.menu_list.map((menu) => menu.nutrition_source)).toEqual([
+        'official',
+        'official',
+      ]);
+    });
+
+    it('marks recommended menus as official', async () => {
+      const response = await createService().getRestaurantDetail(
+        { restaurant_id: 1, filter: '균형' as never },
+        1,
+      );
+
+      expect(response.menu_list.map((menu) => menu.menu_id)).toEqual([2, 1]);
+      expect(response.menu_list.map((menu) => menu.nutrition_source)).toEqual([
+        'official',
+        'official',
+      ]);
+    });
   });
 
   it('limits filtered 지코바치킨 recommendations to two menus', async () => {
@@ -938,7 +1022,11 @@ describe('RestaurantService', () => {
             { id: 6, name: '포장비' },
             { id: 7, name: '김치찌개(대)' },
           ],
-          [estimate('김치찌개', '480'), estimate('된장찌개', '420.5')],
+          [
+            { ...estimate('김치찌개', '480'), source: 'mfds' },
+            // source가 비어 있어도 출처 표시는 경로로 정해지므로 항상 estimated다.
+            { ...estimate('된장찌개', '420.5'), source: null },
+          ],
         );
 
       const response = await service.getRestaurantDetail(
@@ -960,11 +1048,14 @@ describe('RestaurantService', () => {
             unit: 0,
             weight: 450,
             unit_quantity: '인분',
+            nutrition_source: 'estimated',
           },
           expect.objectContaining({
             menu_id: 100_000_007,
             menu_name: '김치찌개(대)',
             calories: 480,
+            // 식약처 값을 그대로 쓴 추정(source=mfds)도 식당 공식 값이 아니므로 estimated다(#45 결정).
+            nutrition_source: 'estimated',
           }),
         ],
       });
@@ -1025,6 +1116,11 @@ describe('RestaurantService', () => {
         '순두부찌개',
         '제육볶음',
         '돼지김치',
+      ]);
+      expect(response.menu_list.map((menu) => menu.nutrition_source)).toEqual([
+        'estimated',
+        'estimated',
+        'estimated',
       ]);
       const [params] = chatService.rankRestaurantMenusByFilter.mock.calls[0];
       expect(params.restaurantName).toBe('옥된장 논현점');

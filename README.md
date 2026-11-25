@@ -244,6 +244,7 @@ $ npm run restaurant:branch-import -- kakao-map/*구/ kakao-map/cafe/*구/
 개인 식당 카카오 메뉴를 정규화 메뉴명 단위로 영양 추정해 `restaurant_menu_nutrition_estimate`에 적재한다(#41).
 식약처 음식명과 같으면 식약처 값, 나머지는 Gemini(`gemini-2.5-flash-lite`, 공식 브랜드 메뉴 RAG → 낮은 confidence면 순수 LLM)로 추정한다.
 `/restaurant/brands`·`/restaurant/detail`이 이 값으로 개인 식당 메뉴를 기존 응답 형식으로 준다(가상 ID 100000000 이상).
+`/restaurant/detail`의 메뉴마다 `nutrition_source`(브랜드 공식 `official` / 개인 식당 추정 `estimated`)가 붙는다(#45).
 방식·옵션·비용·한계는 `docs/kakao-menu-nutrition-estimate.md`. Gemini 호출·적재는 허락받은 뒤에만 실행한다.
 
 ```bash

@@ -123,12 +123,15 @@ $ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estim
 | API | 동작 |
 |---|---|
 | `POST /restaurant/brands` | 개인 식당 중 표시할 추정 메뉴(칼로리 있음, confidence 0.6 이상)가 1개 이상인 곳은 `restaurant_id = 100000000 + restaurant_branch.id`, 나머지는 지금처럼 `null`. 추정값 조회가 실패하면(마이그레이션 전 등) 로그만 남기고 `null` |
-| `POST /restaurant/detail` | `restaurant_id >= 100000000`이면 개인 식당 지점(`restaurant_id`·`match_source`가 모두 NULL)을 연다. 지점 메뉴를 카카오 순서로 읽어 표시할 추정값이 있는 메뉴만 기존 응답 형식으로 준다. `menu_id = 100000000 + restaurant_branch_menu.id`, `menu_category: null`, `menu_name`은 카카오 원문. 지점이 없으면 404 `Restaurant not found` |
+| `POST /restaurant/detail` | `restaurant_id >= 100000000`이면 개인 식당 지점(`restaurant_id`·`match_source`가 모두 NULL)을 연다. 지점 메뉴를 카카오 순서로 읽어 표시할 추정값이 있는 메뉴만 기존 응답 형식으로 준다. `menu_id = 100000000 + restaurant_branch_menu.id`, `menu_category: null`, `menu_name`은 카카오 원문. 지점이 없으면 404 `Restaurant not found`. 메뉴마다 `nutrition_source: "estimated"`(#45) |
 
 - 추천(filter 있음)은 브랜드 식당과 같은 `rankRestaurantMenusByFilter` → 규칙 기반 대체 → 24시간 캐시를 쓴다. 식당 카테고리는 카카오 카테고리(`음식점 > ` 제외)다. 메뉴 카테고리가 없으므로 이름 끝이 음료·주류·공기밥·사리·추가 옵션 등인 메뉴는 후보에서 뺀다.
 - 가상 `menu_id`는 표시·추천용이고 식사 기록(`meal_menu`)과 잇지 않는다(#41 결정 2, 기존 브랜드 메뉴 id와 같음).
 - 가상 `menu_id`는 `restaurant:branch-import`가 지점 메뉴를 지우고 다시 넣을 때마다 바뀐다(브랜드 메뉴 id도 `restaurant:import` 때 바뀌는 것과 같다). 앱이 오래 저장할 키로 쓰면 안 된다.
-- 앱이 "추정" 표시를 하려면 가상 ID 범위(100000000 이상)로 구분할 수 있다. 프론트에 공유가 필요하다(#41 결정 5는 "추정" 표시를 전제로 한다).
+- 앱의 "추정" 뱃지(#41 결정 5)는 `menu_list` 항목의 `nutrition_source`로 구분한다(#45). 가상 ID 범위로 판단하면 프론트가 ID 규칙에 묶이고, 브랜드 메뉴에 추정값을 채우거나 추정 메뉴를 식사 기록에 넣게 되면 구분할 수 없다.
+  - `official`: 브랜드 식당 `restaurant_menu`(공식 영양정보)
+  - `estimated`: 개인 식당 추정값. `source`가 `mfds`(식약처 값 그대로)여도 그 식당이 낸 값이 아니므로 `estimated`다.
+  - 항상 값이 있다. filter가 null인 전체 메뉴와 균형·저칼로리·단백질 추천 응답 모두에 들어간다. 값은 문자열 enum이라 출처 종류가 늘어도 계약을 다시 바꾸지 않는다.
 
 ## 한계
 

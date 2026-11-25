@@ -45,7 +45,10 @@ import { MenstrualService } from '../menstrual/menstrual.service';
 import { MenstrualRecordsResponseDto } from '../menstrual/dto/response-dto/menstrual-records-response.dto';
 import { RestaurantController } from '../restaurant/restaurant.controller';
 import { RestaurantService } from '../restaurant/restaurant.service';
-import { RestaurantDetailResponseDto } from '../restaurant/dto/response-dto/restaurant-detail-response-dto';
+import {
+  RestaurantDetailResponseDto,
+  RestaurantMenuNutritionSource,
+} from '../restaurant/dto/response-dto/restaurant-detail-response-dto';
 import { RestaurantBrandsResponseDto } from '../restaurant/dto/response-dto/restaurant-brands-response-dto';
 import { RestaurantPlaceResponseDto } from '../restaurant/dto/response-dto/restaurant-place-response-dto';
 
@@ -437,6 +440,7 @@ describe('API response contract', () => {
             unit: 0,
             weight: 100,
             unit_quantity: '조각',
+            nutrition_source: RestaurantMenuNutritionSource.OFFICIAL,
           },
         ],
       };
@@ -464,6 +468,7 @@ describe('API response contract', () => {
             unit: 0,
             weight: 450,
             unit_quantity: '인분',
+            nutrition_source: RestaurantMenuNutritionSource.ESTIMATED,
           },
         ],
       };
