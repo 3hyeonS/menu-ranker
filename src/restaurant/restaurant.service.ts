@@ -21,6 +21,7 @@ import {
 } from './dto/response-dto/restaurant-brands-response-dto';
 import {
   RestaurantDetailResponseDto,
+  RestaurantMenuNutritionSource,
   RestaurantMenuResponseDto,
 } from './dto/response-dto/restaurant-detail-response-dto';
 import { RestaurantPlaceResponseDto } from './dto/response-dto/restaurant-place-response-dto';
@@ -299,7 +300,9 @@ export class RestaurantService {
     if (dto.filter == null) {
       return {
         restaurant_name: restaurant.name,
-        menu_list: menus.map((menu) => this.toResponse(menu)),
+        menu_list: menus.map((menu) =>
+          this.toResponse(menu, RestaurantMenuNutritionSource.OFFICIAL),
+        ),
       };
     }
 
@@ -325,7 +328,10 @@ export class RestaurantService {
     return {
       restaurant_name: restaurant.name,
       menu_list: recommendations[dto.filter].map((menuId) =>
-        this.toResponse(menuById.get(menuId)),
+        this.toResponse(
+          menuById.get(menuId),
+          RestaurantMenuNutritionSource.OFFICIAL,
+        ),
       ),
     };
   }
@@ -364,7 +370,9 @@ export class RestaurantService {
     if (menus.length === 0 || dto.filter == null) {
       return {
         restaurant_name: branch.placeName,
-        menu_list: menus.map((menu) => this.toResponse(menu)),
+        menu_list: menus.map((menu) =>
+          this.toResponse(menu, RestaurantMenuNutritionSource.ESTIMATED),
+        ),
       };
     }
 
@@ -392,7 +400,10 @@ export class RestaurantService {
     return {
       restaurant_name: branch.placeName,
       menu_list: recommendations[dto.filter].map((menuId) =>
-        this.toResponse(menuById.get(menuId)),
+        this.toResponse(
+          menuById.get(menuId),
+          RestaurantMenuNutritionSource.ESTIMATED,
+        ),
       ),
     };
   }
@@ -778,7 +789,11 @@ export class RestaurantService {
     };
   }
 
-  private toResponse(menu: DetailMenu): RestaurantMenuResponseDto {
+  // 출처는 호출 경로로 정한다: 브랜드 restaurant_menu는 official, 개인 식당 추정 메뉴는 estimated(#45).
+  private toResponse(
+    menu: DetailMenu,
+    nutritionSource: RestaurantMenuNutritionSource,
+  ): RestaurantMenuResponseDto {
     return {
       menu_id: menu.id,
       menu_name: menu.name,
@@ -790,6 +805,7 @@ export class RestaurantService {
       unit: menu.unit,
       weight: this.nullableNumber(menu.weight),
       unit_quantity: menu.unitQuantity,
+      nutrition_source: nutritionSource,
     };
   }
 

@@ -62,7 +62,7 @@ export class RestaurantController {
   @ApiOperation({
     summary: '식당별 개인화 메뉴 추천',
     description:
-      '브랜드 식당은 공식 영양정보 메뉴를, 개인 식당 가상 ID(/restaurant/brands가 준 100000000 이상)는 카카오 메뉴 중 영양 추정값이 있는 메뉴만 반환합니다. 개인 식당 메뉴의 영양값은 메뉴명 기반 추정이고 menu_category는 null입니다. 개인 식당 menu_id는 지점 메뉴를 다시 적재하면 바뀝니다.',
+      '브랜드 식당은 공식 영양정보 메뉴를, 개인 식당 가상 ID(/restaurant/brands가 준 100000000 이상)는 카카오 메뉴 중 영양 추정값이 있는 메뉴만 반환합니다. 개인 식당 메뉴의 영양값은 메뉴명 기반 추정이고 menu_category는 null입니다. 개인 식당 menu_id는 지점 메뉴를 다시 적재하면 바뀝니다. 추정 여부는 ID 범위가 아니라 메뉴의 nutrition_source(official/estimated)로 구분합니다.',
   })
   @GenericApiResponse({
     status: 201,
