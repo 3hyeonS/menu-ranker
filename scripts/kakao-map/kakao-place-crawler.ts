@@ -59,7 +59,11 @@ function isCategorySearch(body: string): boolean {
 export interface KakaoCrawlOptions {
   restApiKey: string;
   categoryGroup: KakaoCategoryGroup;
-  rect: Rect;
+  /**
+   * 검색 사각형들. 순서대로 하나씩 재귀 검색한다. 한 지역을 bbox 하나 대신 경계를 덮는 작은 사각형 여러 개로
+   * 주면 이웃 지역(서울 등)을 덜 훑는다(#47). 사각형끼리 겹치면 겹친 곳은 두 번 검색한다.
+   */
+  rects: Rect[];
   /** 주소에 이 문자열이 있는 식당만 남긴다. 빈 문자열이면 거르지 않는다. */
   district: string;
   /**
@@ -122,6 +126,29 @@ export function panelUrl(placeId: string): string {
 
 export function rectKey(rect: Rect): string {
   return rect.map((value) => value.toFixed(6)).join(',');
+}
+
+/** `x1,y1,x2,y2` 하나. 여러 개면 `;`로 잇는다(지역 목록 파일의 사각형 칸, #47). */
+export function parseRects(raw: string): Rect[] {
+  const rects = raw
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const values = part.split(',').map(Number);
+      if (
+        values.length !== 4 ||
+        values.some((value) => !Number.isFinite(value)) ||
+        values[0] >= values[2] ||
+        values[1] >= values[3]
+      )
+        throw new Error(
+          `--rect는 x1,y1,x2,y2(x1<x2, y1<y2)를 ;로 이은 값이어야 합니다: ${part}`,
+        );
+      return values as Rect;
+    });
+  if (!rects.length) throw new Error(`--rect에 사각형이 없습니다: ${raw}`);
+  return rects;
 }
 
 function quarters([x1, y1, x2, y2]: Rect): Rect[] {
@@ -343,13 +370,9 @@ export class KakaoPlaceCrawler {
     };
     this.store.claimCategoryGroup(this.options.categoryGroup);
     const known = this.store.discoveredPlaces();
-    await this.walk(
-      this.options.rect,
-      0,
-      this.store.completedRects(),
-      known,
-      summary,
-    );
+    const completed = this.store.completedRects();
+    for (const rect of this.options.rects)
+      await this.walk(rect, 0, completed, known, summary);
     // 일부만 받은 사각형은 재시작해도 알 수 있게 진행 파일에서 센다.
     summary.truncatedRects = [...this.store.completedRects()].filter((entry) =>
       entry.startsWith('truncated '),

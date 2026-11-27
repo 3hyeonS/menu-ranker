@@ -12,6 +12,7 @@ import {
   KakaoCrawlStore,
   KakaoPlaceCrawler,
   panelUrl,
+  parseRects,
   Rect,
 } from './kakao-place-crawler';
 import { parseCategorySearch, parsePanelMenus } from './kakao-place-parser';
@@ -32,7 +33,7 @@ const POLICY = {
 const OPTIONS: KakaoCrawlOptions = {
   restApiKey: 'test-key',
   categoryGroup: 'FD6',
-  rect: RECT,
+  rects: [RECT],
   district: '송파구',
   maxDepth: 3,
   excludedCategories: ['술집'],
@@ -186,6 +187,70 @@ describe('KakaoPlaceCrawler', () => {
         Referer: 'https://place.map.kakao.com/',
       },
     ]);
+  });
+
+  it('사각형 여러 개를 차례로 검색하고, 겹쳐 나온 장소와 주소 필터 밖 장소는 한 번만·넣지 않는다', async () => {
+    const second: Rect = [127.2, 37, 127.4, 37.2];
+    const capitalPage = (ids: string[], address: string): HttpResponse => ({
+      status: 200,
+      body: JSON.stringify({
+        meta: { total_count: ids.length, is_end: true },
+        documents: ids.map((id) => ({
+          id,
+          place_name: `식당${id}`,
+          category_name: '음식점 > 한식',
+          road_address_name: address,
+        })),
+      }),
+    });
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(RECT, 1)]: [
+        capitalPage(['1', '2'], '경기 수원시 장안구 가상로 1'),
+      ],
+      [categorySearchUrl(second, 1)]: [
+        {
+          status: 200,
+          body: JSON.stringify({
+            meta: { total_count: 2, is_end: true },
+            documents: [
+              {
+                id: '2',
+                place_name: '식당2',
+                category_name: '음식점 > 한식',
+                road_address_name: '경기 수원시 팔달구 가상로 2',
+              },
+              {
+                id: '3',
+                place_name: '식당3',
+                category_name: '음식점 > 한식',
+                road_address_name: '경기 용인시 수지구 가상로 3',
+              },
+            ],
+          }),
+        },
+      ],
+    });
+
+    const summary = await crawler(fetcher, {
+      rects: [RECT, second],
+      district: '경기 수원시',
+      discoverOnly: true,
+    }).run();
+
+    expect(summary.searchedRects).toBe(2);
+    expect(summary.discoveredPlaces).toBe(2);
+    expect(lines(store.restaurantsPath).slice(1)).toEqual([
+      '1,식당1,경기 수원시 장안구 가상로 1',
+      '2,식당2,경기 수원시 장안구 가상로 1',
+    ]);
+    // 다시 실행하면 두 사각형 모두 끝난 것으로 보고 요청하지 않는다.
+    const again = new FakeFetcher({});
+    await crawler(again, {
+      rects: [RECT, second],
+      district: '경기 수원시',
+      discoverOnly: true,
+    }).run();
+    expect(again.calls).toEqual([]);
   });
 
   it('45곳을 넘는 사각형은 4등분해 검색하고, 다시 실행하면 끝난 사각형을 요청하지 않는다', async () => {
@@ -514,5 +579,26 @@ describe('kakao-place-parser', () => {
     expect(parsePanelMenus(JSON.parse(fixture('panel-no-menu.json')))).toEqual(
       [],
     );
+  });
+});
+
+describe('parseRects', () => {
+  it('사각형 하나 또는 ;로 이은 여러 개를 읽는다', () => {
+    expect(parseRects('127.05,37.455,127.2,37.555')).toEqual([
+      [127.05, 37.455, 127.2, 37.555],
+    ]);
+    expect(
+      parseRects('126.5,37.4,126.51,37.41;126.6,37.4,126.62,37.42;'),
+    ).toEqual([
+      [126.5, 37.4, 126.51, 37.41],
+      [126.6, 37.4, 126.62, 37.42],
+    ]);
+  });
+
+  it('형식이 틀리거나 비었으면 거부한다', () => {
+    expect(() => parseRects('127,37,127.1')).toThrow('x1,y1,x2,y2');
+    expect(() => parseRects('127.1,37,127,37.1')).toThrow('x1,y1,x2,y2');
+    expect(() => parseRects('127,37,127.1,37.1;abc')).toThrow('abc');
+    expect(() => parseRects(';')).toThrow('사각형이 없습니다');
   });
 });

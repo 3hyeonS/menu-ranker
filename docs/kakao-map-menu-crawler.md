@@ -7,6 +7,7 @@
 - 사진은 URL만 저장하고 이미지 파일은 내려받지 않는다. 사진은 카카오에 있는 것만 쓴다(네이버로 보충하지 않음).
 
 - `--category-group=CE7`이면 **카페 장소 목록만** 모은다(#32). 아래 「카페(CE7) 장소 목록」 절을 본다.
+- 서울 25개 구는 수집이 끝났다. 수도권(경기 31개 시·군, 인천 11개 군·구)은 지역 목록 파일과 실행 스크립트로 모은다(#47). 아래 「수도권(경기·인천) 수집」 절을 본다.
 
 ## 동작
 
@@ -38,7 +39,7 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 |---|---|---|
 | `--out-dir=` | (필수) | 결과·진행 상태 파일을 둘 폴더 |
 | `--category-group=` | `FD6` | 카카오 카테고리 그룹. `FD6` 음식점, `CE7` 카페(장소 목록만, 제외 필터 없음) |
-| `--rect=` | `127.05,37.455,127.2,37.555` | 검색 사각형 `x1,y1,x2,y2`(경도·위도). 기본값은 송파구 전체를 덮는다 |
+| `--rect=` | `127.05,37.455,127.2,37.555` | 검색 사각형 `x1,y1,x2,y2`(경도·위도). `;`로 이으면 여러 사각형을 차례로 검색한다(#47). 기본값은 송파구 전체를 덮는다 |
 | `--district=` | `송파구` | 주소 필터. 빈 값이면 거르지 않음 |
 | `--max-depth=` | 12 | 사각형 4등분 최대 깊이(0~14). 이 깊이에서도 45곳을 넘으면 45곳만 받고 `truncatedRects`로 센다(재시작해도 유지). 좌표를 소수 6자리로 보내므로 14보다 깊게 나누면 사각형이 겹친다 |
 | `--exclude-categories=` | 카페, 디저트, 베이커리, 제과, 케이크, 아이스크림, 도넛, 와플, 커피, 주점, 술집, 호프, 이자카야, 바(BAR), 포장마차, 와인, 칵테일, 전통주 | 카테고리에 이 단어가 있으면 제외. 빈 값이면 제외하지 않음. `places.jsonl`에는 남기므로 바꿔도 검색을 다시 하지 않는다 |
@@ -72,6 +73,51 @@ npm run kakao-map:crawl-songpa -- --out-dir=kakao-map/songpa
 npm run kakao-map:crawl-songpa -- --category-group=CE7 --out-dir=kakao-map/cafe/송파구 --district=송파구 --rect=127.05,37.455,127.2,37.555
 ```
 
+## 수도권(경기·인천) 수집
+
+이슈 #47. 범위는 경기도 전 시·군(31개)과 인천광역시 전 군·구(11개)다. 수집 방식·요청 간격은 서울과 같고, 지역 목록 파일과 실행 스크립트만 새로 만들었다.
+
+### 지역 목록 `scripts/kakao-map/regions/capital-area.tsv`
+
+한 줄이 지역 하나다: `폴더<TAB>검색 사각형;사각형…<TAB>주소 필터`. `#`으로 시작하는 줄은 설명이다.
+
+| 칸 | 예 | 설명 |
+|---|---|---|
+| 폴더 | `경기/수원시`, `인천/제물포구` | `kakao-map/` 아래 출력 폴더. 서울 `kakao-map/<구>/`와 겹치지 않는다(인천 중구·동구 같은 이름 충돌도 없음) |
+| 검색 사각형 | `127.01,37.27,127.03,37.29;…` | 지역 경계를 덮는 0.01도 단위 사각형들. 지역마다 3~107개, 모두 875개 |
+| 주소 필터 | `경기 수원시`, `인천 제물포구` | 카카오 주소 앞부분. 카카오는 시·도를 `경기`·`인천`으로 줄여 쓴다 |
+
+- **경기는 시·군 단위**다. 일반구가 있는 시(수원·성남·안양·안산·고양·용인·부천·화성)는 시 하나로 묶는다. 필터가 `경기 수원시`라 다른 시·도의 같은 이름 구와 섞이지 않는다.
+- **인천은 2026-07-01 행정체제 개편 후 이름**(제물포구·영종구·서해구·검단구 + 미추홀·연수·남동·부평·계양구, 강화·옹진군)이다. 2026-11-27 시험 수집에서 옛 중구·동구·서구 지역 1,251곳의 주소가 모두 새 이름이었다.
+- **사각형을 지역마다 여러 개로 나눈 이유**: 시·군은 모양이 불규칙해 bbox 하나로 검색하면 이웃 지역, 특히 서울을 다시 훑는다. 2026-10 경계로 계산하면 bbox 방식은 서울 면적 전체(약 4.5만 회 분량)와 수도권 면적만큼을 한 번 더 검색한다. 경계를 0.005도 격자로 래스터화하고 1칸(약 500m) 넓힌 뒤 0.01도 칸으로 맞춰 합치면 서울 겹침은 61%, 지역 간 겹침은 71% 줄어든다. 루트 사각형마다 첫 요청이 하나씩 늘지만(빈 바다·산은 1회) 전체로는 훨씬 적다.
+- 다시 만들려면 [vuski/admdongkor](https://github.com/vuski/admdongkor)의 `HangJeongDong_ver<날짜>.geojson`(통계청 행정동 경계)을 내려받아 실행한다. 파일 첫 줄에 쓴 경계 파일·격자 설정이 남는다. 행정구역이 바뀌면 다시 만들고, 이미 수집한 폴더의 지역 이름이 바뀌면 그 폴더는 새로 수집한다.
+
+```sh
+npm run --silent kakao-map:build-regions -- --geojson=<내려받은 경로>/HangJeongDong_ver20261001.geojson > scripts/kakao-map/regions/capital-area.tsv
+```
+
+### 실행 `scripts/kakao-map/run-regions.sh`
+
+메인 체크아웃 루트에서 실행한다. 서울 때의 `kakao-map/run-discover.sh`·`run-menus.sh`(메인 체크아웃에만 있음)와 같은 방식이다.
+
+```sh
+# 1) 음식점 장소 목록(공식 로컬 API). 기본 10개 지역 동시
+scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regions/capital-area.tsv
+# 2) 메뉴(panel3, 지역마다 동시 1·1~3초 간격). 기본 3개 지역 동시
+scripts/kakao-map/run-regions.sh menus scripts/kakao-map/regions/capital-area.tsv
+# 3) 카페 장소 목록(CE7). 기본 10개 지역 동시
+scripts/kakao-map/run-regions.sh cafe scripts/kakao-map/regions/capital-area.tsv
+
+# 일부 지역만(폴더 정규식), 동시 실행 수 지정
+ONLY='^인천/' scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regions/capital-area.tsv 5
+```
+
+- 결과는 음식점 `kakao-map/<폴더>/`(예: `kakao-map/경기/수원시/`), 카페 `kakao-map/cafe/<폴더>/`, 로그는 결과 폴더 옆 `<폴더>-<모드>.log`(예: `kakao-map/경기/수원시-discover.log`)다.
+- 음식점 제외 단어는 서울과 같게 `kakao-map/exclude-categories.txt`(기본값 + `간식`)를 읽는다. 없으면 실행하지 않는다.
+- worktree에서 실행하면 결과가 정리 때 지워지므로 거부한다. 시험할 때는 `KAKAO_MAP_DIR=<메인 체크아웃>/kakao-map/<시험 폴더>`를 주고, 그 폴더에 `exclude-categories.txt`를 복사한다.
+- 지역마다 `npm run kakao-map:crawl-songpa`를 한 번씩 부르므로 재시작·실패 처리는 위와 같다. 끝에 지역별 `exit` 줄이 나온다. 0이 아닌 지역은 로그를 보고 같은 명령으로 다시 실행한다.
+- `restaurant:branch-import` 입력 경로는 서울 `kakao-map/*구/`에 `kakao-map/경기/*/ kakao-map/인천/*/`(카페는 `kakao-map/cafe/경기/*/ kakao-map/cafe/인천/*/`)를 더한다(`docs/kakao-restaurant-branch-import.md`).
+
 ## 결과 파일과 재시작
 
 모두 `--out-dir` 안에 생긴다. CSV는 Excel에서 바로 열리도록 UTF-8(BOM) + CRLF다.
@@ -98,6 +144,9 @@ npm run kakao-map:crawl-songpa -- --category-group=CE7 --out-dir=kakao-map/cafe/
 | `scripts/kakao-map/kakao-place-parser.ts` | 로컬 API 응답과 panel3 응답 파싱 |
 | `scripts/kakao-map/kakao-place-crawler.ts` | 사각형 재귀 검색, 메뉴 수집, 결과·진행 상태 파일(`KakaoCrawlStore`) |
 | `scripts/kakao-map/crawl-songpa-kakao.ts` | CLI(옵션 검증, 실제 `fetch`, git ignore 확인). 이름은 #28 때 그대로지만 `--rect`·`--district`·`--category-group`으로 다른 구·카페도 수집한다 |
+| `scripts/kakao-map/region-cover.ts`, `build-region-list.ts` | 행정동 경계 → 지역 목록(래스터화, 덮개 사각형 합치기, 경기 시·군 / 인천 군·구 이름 규칙)과 그 CLI(#47) |
+| `scripts/kakao-map/regions/capital-area.tsv` | 수도권 42개 지역 목록(생성물, 커밋함) |
+| `scripts/kakao-map/run-regions.sh` | 지역 목록대로 지역별 병렬 실행(discover/menus/cafe) |
 | `scripts/crawl-common/` | 네이버·카카오 공용: 지연·재시도·백오프·연속 차단 중단(`PoliteRequester`), CSV·진행 파일 유틸, CLI 옵션·git ignore 확인, 카페·술집 제외 단어 |
 
 ## 테스트
@@ -106,4 +155,4 @@ npm run kakao-map:crawl-songpa -- --category-group=CE7 --out-dir=kakao-map/cafe/
 npm test -- --runInBand scripts/kakao-map
 ```
 
-`scripts/kakao-map/__fixtures__/`의 JSON 픽스처와 Fake fetcher로 파싱, CSV 출력, 지역·카테고리 필터, 사각형 분할, 쪽 넘김, 재시작, 백오프, 키 오류 시 중단, 연속 차단 시 중단을 검증한다. 카페(CE7)는 `cafe-category-search.json`으로 그룹 코드·제외 필터 미적용·메뉴 미수집·폴더 그룹 충돌 거부를 검증한다. 네트워크를 쓰지 않는다. 픽스처는 실제 응답 구조(2026-10-28)를 축약하고 값만 가상으로 바꾼 것이다.
+`scripts/kakao-map/__fixtures__/`의 JSON 픽스처와 Fake fetcher로 파싱, CSV 출력, 지역·카테고리 필터, 사각형 분할, 쪽 넘김, 재시작, 백오프, 키 오류 시 중단, 연속 차단 시 중단을 검증한다. 카페(CE7)는 `cafe-category-search.json`으로 그룹 코드·제외 필터 미적용·메뉴 미수집·폴더 그룹 충돌 거부를 검증한다. 여러 사각형 검색(`--rect` `;`)과 지역 목록 생성(`region-cover.spec.ts`: 경기 시 묶기·인천 이름·래스터화·사각형 합치기)도 검증한다. 네트워크를 쓰지 않는다. 픽스처는 실제 응답 구조(2026-10-28)를 축약하고 값만 가상으로 바꾼 것이다.
