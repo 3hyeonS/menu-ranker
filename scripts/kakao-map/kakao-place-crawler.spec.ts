@@ -9,6 +9,7 @@ import {
 import {
   categorySearchUrl,
   expandSearchRect,
+  splitRect,
   KakaoCrawlOptions,
   KakaoCrawlStore,
   KakaoPlaceCrawler,
@@ -285,19 +286,26 @@ describe('KakaoPlaceCrawler', () => {
     expect(fetcher.calls).toHaveLength(2);
   });
 
-  it('최대 깊이에서도 45곳을 넘으면 받을 수 있는 만큼만 받고 개수를 센다', async () => {
+  it('최대 깊이에서도 45곳을 넘으면 넓히지 않은 사각형으로 받을 수 있는 만큼만 받고 개수를 센다', async () => {
     const fetcher = new FakeFetcher({
-      [categorySearchUrl(RECT, 1)]: [searchPage(50, ['1'], false)],
-      [categorySearchUrl(RECT, 2)]: [searchPage(50, ['2'], false)],
-      [categorySearchUrl(RECT, 3)]: [searchPage(50, ['3'], false)],
+      [categorySearchUrl(RECT, 1)]: [searchPage(55, ['9'], false)],
+      [categorySearchUrl(RECT, 1, 'FD6', false)]: [
+        searchPage(50, ['1'], false),
+      ],
+      [categorySearchUrl(RECT, 2, 'FD6', false)]: [
+        searchPage(50, ['2'], false),
+      ],
+      [categorySearchUrl(RECT, 3, 'FD6', false)]: [
+        searchPage(50, ['3'], false),
+      ],
     });
     const summary = await crawler(fetcher, {
       maxDepth: 0,
       discoverOnly: true,
     }).run();
     expect(summary).toMatchObject({ truncatedRects: 1, discoveredPlaces: 3 });
-    // 4쪽은 카카오가 주지 않으므로 요청하지 않는다
-    expect(fetcher.calls).toHaveLength(3);
+    // 넓힌 첫 쪽 + 넓히지 않은 1~3쪽. 4쪽은 카카오가 주지 않으므로 요청하지 않는다
+    expect(fetcher.calls).toHaveLength(4);
     // 다시 실행해도 일부만 받은 사각형 수가 남는다
     const again = await crawler(new FakeFetcher({}), {
       maxDepth: 0,
@@ -307,12 +315,19 @@ describe('KakaoPlaceCrawler', () => {
   });
 
   it('나누면 폭이 MIN_SPLIT_DEG보다 작아지는 사각형은 최대 깊이 전이라도 나누지 않는다', async () => {
-    // 가로 1.5e-5도: 반으로 나누면 7.5e-6도라 좌표 6자리 반올림에 걸린다.
-    const tiny: Rect = [127.1, 37.1, 127.100015, 37.2];
+    // 1.5e-5도 정사각형: 4등분하면 7.5e-6도라 좌표 6자리 반올림에 걸린다.
+    const tiny: Rect = [127.1, 37.1, 127.100015, 37.100015];
     const fetcher = new FakeFetcher({
-      [categorySearchUrl(tiny, 1)]: [searchPage(50, ['1'], false)],
-      [categorySearchUrl(tiny, 2)]: [searchPage(50, ['2'], false)],
-      [categorySearchUrl(tiny, 3)]: [searchPage(50, ['3'], false)],
+      [categorySearchUrl(tiny, 1)]: [searchPage(50, [], false)],
+      [categorySearchUrl(tiny, 1, 'FD6', false)]: [
+        searchPage(50, ['1'], false),
+      ],
+      [categorySearchUrl(tiny, 2, 'FD6', false)]: [
+        searchPage(50, ['2'], false),
+      ],
+      [categorySearchUrl(tiny, 3, 'FD6', false)]: [
+        searchPage(50, ['3'], false),
+      ],
     });
     const summary = await crawler(fetcher, {
       rects: [tiny],
@@ -320,7 +335,30 @@ describe('KakaoPlaceCrawler', () => {
       discoverOnly: true,
     }).run();
     expect(summary).toMatchObject({ truncatedRects: 1, discoveredPlaces: 3 });
-    expect(fetcher.calls).toHaveLength(3);
+    expect(fetcher.calls).toHaveLength(4);
+  });
+
+  it('가로세로 비가 2를 넘는 사각형은 긴 축으로만 2등분하고 깊이로 세지 않는다', async () => {
+    const strip: Rect = [127, 37, 127.08, 37.01];
+    const halves: Rect[] = [
+      [127, 37, 127.04, 37.01],
+      [127.04, 37, 127.08, 37.01],
+    ];
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(strip, 1)]: [searchPage(60, [])],
+      [categorySearchUrl(halves[0], 1)]: [searchPage(1, ['1'])],
+      [categorySearchUrl(halves[1], 1)]: [searchPage(1, ['2'])],
+    });
+    // 최대 깊이 0이어도 긴 축 2등분은 한다.
+    const summary = await crawler(fetcher, {
+      rects: [strip],
+      maxDepth: 0,
+      discoverOnly: true,
+    }).run();
+    expect(summary).toMatchObject({ searchedRects: 2, truncatedRects: 0 });
+    expect(readFileSync(store.rectsPath, 'utf8').split('\n')[0]).toBe(
+      'split 127.000000,37.000000,127.080000,37.010000',
+    );
   });
 
   it('로컬 API가 401(키 오류)이면 재시도 없이 멈추고 사각형을 완료로 남기지 않는다', async () => {
@@ -621,6 +659,21 @@ describe('expandSearchRect', () => {
       expect(value).toBeCloseTo(values[index], 9),
     );
   }
+});
+
+describe('splitRect', () => {
+  it('비가 2 이하면 4등분(서울 지역 사각형과 같은 진행 기록), 넘으면 긴 축으로 2등분한다', () => {
+    expect(splitRect([127.05, 37.455, 127.2, 37.555])).toHaveLength(4);
+    expect(splitRect([0, 0, 2, 1])).toHaveLength(4);
+    expect(splitRect([0, 0, 3, 1])).toEqual([
+      [0, 0, 1.5, 1],
+      [1.5, 0, 3, 1],
+    ]);
+    expect(splitRect([0, 0, 1, 3])).toEqual([
+      [0, 0, 1, 1.5],
+      [0, 1.5, 1, 3],
+    ]);
+  });
 });
 
 describe('parseRects', () => {

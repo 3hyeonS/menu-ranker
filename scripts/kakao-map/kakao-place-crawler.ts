@@ -130,15 +130,19 @@ export function expandSearchRect([x1, y1, x2, y2]: Rect): Rect {
   return [x1 - margin, y1 - margin, x2 + margin, y2 + margin];
 }
 
-/** `rect`(진행 기록 기준 사각형)를 expandSearchRect로 넓혀 요청하는 URL. */
+/**
+ * `rect`(진행 기록 기준 사각형)를 요청하는 URL. 기본은 expandSearchRect로 넓혀 보낸다.
+ * 더 나눌 수 없어 45곳만 받는 사각형은 넓힌 여백의 이웃 장소가 자리를 차지하지 않도록 넓히지 않는다.
+ */
 export function categorySearchUrl(
   rect: Rect,
   page: number,
   categoryGroup: KakaoCategoryGroup = 'FD6',
+  expand = true,
 ): string {
   const params = new URLSearchParams({
     category_group_code: categoryGroup,
-    rect: rectKey(expandSearchRect(rect)),
+    rect: rectKey(expand ? expandSearchRect(rect) : rect),
     page: String(page),
     size: String(SEARCH_PAGE_SIZE),
   });
@@ -174,6 +178,36 @@ export function parseRects(raw: string): Rect[] {
     });
   if (!rects.length) throw new Error(`--rect에 사각형이 없습니다: ${raw}`);
   return rects;
+}
+
+/** 가로세로 비가 이보다 크면 긴 축으로만 2등분한다. */
+export const SPLIT_ASPECT_LIMIT = 2;
+
+/**
+ * 45곳을 넘는 사각형을 나눈다. 보통은 4등분이고, 가늘고 긴 사각형(#47 지역 목록은 최대 57:1)은
+ * 긴 축으로만 2등분해 정사각형에 가깝게 만든다. 4등분은 비율을 유지하므로, 그대로 두면 짧은 변이
+ * MIN_SPLIT_DEG에 먼저 닿아 긴 변이 100m 넘게 남은 채로 더 나누지 못하고, 긴 변 기준 여백이
+ * 짧은 변 쪽 검색 범위를 몇 배로 키운다. 서울 지역 사각형은 비가 2 미만이라 4등분만 쓴다(기존 진행 기록과 같음).
+ */
+export function splitRect(rect: Rect): Rect[] {
+  const [x1, y1, x2, y2] = rect;
+  const width = x2 - x1;
+  const height = y2 - y1;
+  if (width > height * SPLIT_ASPECT_LIMIT) {
+    const mx = (x1 + x2) / 2;
+    return [
+      [x1, y1, mx, y2],
+      [mx, y1, x2, y2],
+    ];
+  }
+  if (height > width * SPLIT_ASPECT_LIMIT) {
+    const my = (y1 + y2) / 2;
+    return [
+      [x1, y1, x2, my],
+      [x1, my, x2, y2],
+    ];
+  }
+  return quarters(rect);
 }
 
 function quarters([x1, y1, x2, y2]: Rect): Rect[] {
@@ -469,32 +503,42 @@ export class KakaoPlaceCrawler {
     summary: KakaoCrawlSummary,
   ): Promise<void> {
     const key = rectKey(rect);
+    const children = splitRect(rect);
+    // 깊이는 4등분만 센다. 긴 축 2등분은 정사각형으로 맞추는 단계라 --max-depth를 쓰지 않는다.
+    const childDepth = depth + (children.length === 4 ? 1 : 0);
     if (completed.has(`leaf ${key}`)) return;
     if (completed.has(`split ${key}`)) {
-      for (const child of quarters(rect))
-        await this.walk(child, depth + 1, completed, known, summary);
+      for (const child of children)
+        await this.walk(child, childDepth, completed, known, summary);
       return;
     }
 
-    const first = await this.search(rect, 1);
+    let first = await this.search(rect, 1);
     if (!first) {
       summary.failedRects += 1;
       return;
     }
     const splittable =
-      depth < this.options.maxDepth &&
-      Math.min(rect[2] - rect[0], rect[3] - rect[1]) / 2 >= MIN_SPLIT_DEG;
+      childDepth <= this.options.maxDepth &&
+      children.every(
+        ([cx1, cy1, cx2, cy2]) =>
+          Math.min(cx2 - cx1, cy2 - cy1) >= MIN_SPLIT_DEG,
+      );
     if (first.totalCount > SEARCH_RESULT_LIMIT && splittable) {
       this.store.markRect(`split ${key}`);
-      for (const child of quarters(rect))
-        await this.walk(child, depth + 1, completed, known, summary);
+      for (const child of children)
+        await this.walk(child, childDepth, completed, known, summary);
       return;
     }
-    if (first.totalCount > SEARCH_RESULT_LIMIT) {
-      this.store.markRect(`truncated ${key}`);
-      this.deps.log(
-        `  더 나눌 수 없는 사각형(최대 깊이·최소 폭)에서도 ${first.totalCount}곳이라 ${SEARCH_RESULT_LIMIT}곳만 받습니다: ${key}`,
-      );
+    // 더 나눌 수 없으면 넓히지 않은 사각형으로 다시 받아, 여백의 이웃 장소가 45곳 자리를 차지하지 않게 한다.
+    const truncated = first.totalCount > SEARCH_RESULT_LIMIT;
+    const expand = !truncated;
+    if (truncated) {
+      first = await this.search(rect, 1, expand);
+      if (!first) {
+        summary.failedRects += 1;
+        return;
+      }
     }
     const places = [...first.places];
     let isEnd = first.isEnd;
@@ -503,13 +547,20 @@ export class KakaoPlaceCrawler {
       !isEnd && page <= SEARCH_RESULT_LIMIT / SEARCH_PAGE_SIZE;
       page += 1
     ) {
-      const next = await this.search(rect, page);
+      const next = await this.search(rect, page, expand);
       if (!next) {
         summary.failedRects += 1;
         return;
       }
       places.push(...next.places);
       isEnd = next.isEnd;
+    }
+    // 쪽을 모두 받은 뒤에 기록해, 중간에 실패해 다시 검색할 때 truncated가 두 번 세지지 않게 한다.
+    if (truncated) {
+      this.store.markRect(`truncated ${key}`);
+      this.deps.log(
+        `  더 나눌 수 없는 사각형(최대 깊이·최소 폭)에서도 ${first.totalCount}곳이라 ${SEARCH_RESULT_LIMIT}곳만 받습니다: ${key}`,
+      );
     }
 
     const fresh = places
@@ -526,9 +577,9 @@ export class KakaoPlaceCrawler {
   }
 
   /** 카테고리 검색 한 쪽. 재시도를 소진하면 null, 키·권한·요청 오류(4xx)면 실행을 멈춘다. */
-  private async search(rect: Rect, page: number) {
+  private async search(rect: Rect, page: number, expand = true) {
     const response = await this.searchRequester.get(
-      categorySearchUrl(rect, page, this.options.categoryGroup),
+      categorySearchUrl(rect, page, this.options.categoryGroup, expand),
       { Authorization: `KakaoAK ${this.options.restApiKey}` },
     );
     if (this.searchRequester.stopped)

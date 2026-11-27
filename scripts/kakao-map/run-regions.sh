@@ -83,7 +83,8 @@ EX_FILE="$OUT_ROOT/exclude-categories.txt"
 }
 EX=$(tr -d '\r\n' <"$EX_FILE")
 
-LINES=$(grep -v -e '^#' -e '^[[:space:]]*$' "$LIST" | awk -F'\t' -v only="${ONLY:-}" 'only == "" || $1 ~ only')
+# awk -v는 값의 백슬래시를 먼저 풀어 버리므로 ENVIRON으로 읽는다.
+LINES=$(grep -v -e '^#' -e '^[[:space:]]*$' "$LIST" | ONLY="${ONLY:-}" awk -F'\t' 'ENVIRON["ONLY"] == "" || $1 ~ ENVIRON["ONLY"]')
 [[ -n $LINES ]] || {
   echo "실행할 지역이 없습니다(ONLY=${ONLY:-})" >&2
   exit 2
