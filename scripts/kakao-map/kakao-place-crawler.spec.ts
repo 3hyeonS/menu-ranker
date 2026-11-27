@@ -8,10 +8,13 @@ import {
 } from '../crawl-common/polite-requester';
 import {
   categorySearchUrl,
+  expandSearchRect,
+  splitRect,
   KakaoCrawlOptions,
   KakaoCrawlStore,
   KakaoPlaceCrawler,
   panelUrl,
+  parseRects,
   Rect,
 } from './kakao-place-crawler';
 import { parseCategorySearch, parsePanelMenus } from './kakao-place-parser';
@@ -32,7 +35,7 @@ const POLICY = {
 const OPTIONS: KakaoCrawlOptions = {
   restApiKey: 'test-key',
   categoryGroup: 'FD6',
-  rect: RECT,
+  rects: [RECT],
   district: '송파구',
   maxDepth: 3,
   excludedCategories: ['술집'],
@@ -188,6 +191,70 @@ describe('KakaoPlaceCrawler', () => {
     ]);
   });
 
+  it('사각형 여러 개를 차례로 검색하고, 겹쳐 나온 장소와 주소 필터 밖 장소는 한 번만·넣지 않는다', async () => {
+    const second: Rect = [127.2, 37, 127.4, 37.2];
+    const capitalPage = (ids: string[], address: string): HttpResponse => ({
+      status: 200,
+      body: JSON.stringify({
+        meta: { total_count: ids.length, is_end: true },
+        documents: ids.map((id) => ({
+          id,
+          place_name: `식당${id}`,
+          category_name: '음식점 > 한식',
+          road_address_name: address,
+        })),
+      }),
+    });
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(RECT, 1)]: [
+        capitalPage(['1', '2'], '경기 수원시 장안구 가상로 1'),
+      ],
+      [categorySearchUrl(second, 1)]: [
+        {
+          status: 200,
+          body: JSON.stringify({
+            meta: { total_count: 2, is_end: true },
+            documents: [
+              {
+                id: '2',
+                place_name: '식당2',
+                category_name: '음식점 > 한식',
+                road_address_name: '경기 수원시 팔달구 가상로 2',
+              },
+              {
+                id: '3',
+                place_name: '식당3',
+                category_name: '음식점 > 한식',
+                road_address_name: '경기 용인시 수지구 가상로 3',
+              },
+            ],
+          }),
+        },
+      ],
+    });
+
+    const summary = await crawler(fetcher, {
+      rects: [RECT, second],
+      district: '경기 수원시',
+      discoverOnly: true,
+    }).run();
+
+    expect(summary.searchedRects).toBe(2);
+    expect(summary.discoveredPlaces).toBe(2);
+    expect(lines(store.restaurantsPath).slice(1)).toEqual([
+      '1,식당1,경기 수원시 장안구 가상로 1',
+      '2,식당2,경기 수원시 장안구 가상로 1',
+    ]);
+    // 다시 실행하면 두 사각형 모두 끝난 것으로 보고 요청하지 않는다.
+    const again = new FakeFetcher({});
+    await crawler(again, {
+      rects: [RECT, second],
+      district: '경기 수원시',
+      discoverOnly: true,
+    }).run();
+    expect(again.calls).toEqual([]);
+  });
+
   it('45곳을 넘는 사각형은 4등분해 검색하고, 다시 실행하면 끝난 사각형을 요청하지 않는다', async () => {
     const children = quarters(RECT);
     const fetcher = new FakeFetcher({
@@ -219,25 +286,79 @@ describe('KakaoPlaceCrawler', () => {
     expect(fetcher.calls).toHaveLength(2);
   });
 
-  it('최대 깊이에서도 45곳을 넘으면 받을 수 있는 만큼만 받고 개수를 센다', async () => {
+  it('최대 깊이에서도 45곳을 넘으면 넓히지 않은 사각형으로 받을 수 있는 만큼만 받고 개수를 센다', async () => {
     const fetcher = new FakeFetcher({
-      [categorySearchUrl(RECT, 1)]: [searchPage(50, ['1'], false)],
-      [categorySearchUrl(RECT, 2)]: [searchPage(50, ['2'], false)],
-      [categorySearchUrl(RECT, 3)]: [searchPage(50, ['3'], false)],
+      [categorySearchUrl(RECT, 1)]: [searchPage(55, ['9'], false)],
+      [categorySearchUrl(RECT, 1, 'FD6', false)]: [
+        searchPage(50, ['1'], false),
+      ],
+      [categorySearchUrl(RECT, 2, 'FD6', false)]: [
+        searchPage(50, ['2'], false),
+      ],
+      [categorySearchUrl(RECT, 3, 'FD6', false)]: [
+        searchPage(50, ['3'], false),
+      ],
     });
     const summary = await crawler(fetcher, {
       maxDepth: 0,
       discoverOnly: true,
     }).run();
     expect(summary).toMatchObject({ truncatedRects: 1, discoveredPlaces: 3 });
-    // 4쪽은 카카오가 주지 않으므로 요청하지 않는다
-    expect(fetcher.calls).toHaveLength(3);
+    // 넓힌 첫 쪽 + 넓히지 않은 1~3쪽. 4쪽은 카카오가 주지 않으므로 요청하지 않는다
+    expect(fetcher.calls).toHaveLength(4);
     // 다시 실행해도 일부만 받은 사각형 수가 남는다
     const again = await crawler(new FakeFetcher({}), {
       maxDepth: 0,
       discoverOnly: true,
     }).run();
     expect(again.truncatedRects).toBe(1);
+  });
+
+  it('나누면 폭이 MIN_SPLIT_DEG보다 작아지는 사각형은 최대 깊이 전이라도 나누지 않는다', async () => {
+    // 1.5e-5도 정사각형: 4등분하면 7.5e-6도라 좌표 6자리 반올림에 걸린다.
+    const tiny: Rect = [127.1, 37.1, 127.100015, 37.100015];
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(tiny, 1)]: [searchPage(50, [], false)],
+      [categorySearchUrl(tiny, 1, 'FD6', false)]: [
+        searchPage(50, ['1'], false),
+      ],
+      [categorySearchUrl(tiny, 2, 'FD6', false)]: [
+        searchPage(50, ['2'], false),
+      ],
+      [categorySearchUrl(tiny, 3, 'FD6', false)]: [
+        searchPage(50, ['3'], false),
+      ],
+    });
+    const summary = await crawler(fetcher, {
+      rects: [tiny],
+      maxDepth: 12,
+      discoverOnly: true,
+    }).run();
+    expect(summary).toMatchObject({ truncatedRects: 1, discoveredPlaces: 3 });
+    expect(fetcher.calls).toHaveLength(4);
+  });
+
+  it('가로세로 비가 2를 넘는 사각형은 긴 축으로만 2등분하고 깊이로 세지 않는다', async () => {
+    const strip: Rect = [127, 37, 127.08, 37.01];
+    const halves: Rect[] = [
+      [127, 37, 127.04, 37.01],
+      [127.04, 37, 127.08, 37.01],
+    ];
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(strip, 1)]: [searchPage(60, [])],
+      [categorySearchUrl(halves[0], 1)]: [searchPage(1, ['1'])],
+      [categorySearchUrl(halves[1], 1)]: [searchPage(1, ['2'])],
+    });
+    // 최대 깊이 0이어도 긴 축 2등분은 한다.
+    const summary = await crawler(fetcher, {
+      rects: [strip],
+      maxDepth: 0,
+      discoverOnly: true,
+    }).run();
+    expect(summary).toMatchObject({ searchedRects: 2, truncatedRects: 0 });
+    expect(readFileSync(store.rectsPath, 'utf8').split('\n')[0]).toBe(
+      'split 127.000000,37.000000,127.080000,37.010000',
+    );
   });
 
   it('로컬 API가 401(키 오류)이면 재시도 없이 멈추고 사각형을 완료로 남기지 않는다', async () => {
@@ -514,5 +635,64 @@ describe('kakao-place-parser', () => {
     expect(parsePanelMenus(JSON.parse(fixture('panel-no-menu.json')))).toEqual(
       [],
     );
+  });
+});
+
+describe('expandSearchRect', () => {
+  it('요청 사각형을 긴 변의 1%만큼 넓히고 URL에도 넓힌 값을 보낸다', () => {
+    const expanded = expandSearchRect([126.58, 37.455, 126.615, 37.46]);
+    expected(expanded, [126.57965, 37.45465, 126.61535, 37.46035]);
+    expect(categorySearchUrl([126.58, 37.455, 126.615, 37.46], 2)).toContain(
+      `rect=${encodeURIComponent('126.579650,37.454650,126.615350,37.460350')}`,
+    );
+  });
+
+  it('아주 작은 사각형도 최소 1e-5도는 넓힌다', () => {
+    expected(
+      expandSearchRect([127, 37, 127.0001, 37.0001]),
+      [126.99999, 36.99999, 127.00011, 37.00011],
+    );
+  });
+
+  function expected(actual: Rect, values: number[]) {
+    actual.forEach((value, index) =>
+      expect(value).toBeCloseTo(values[index], 9),
+    );
+  }
+});
+
+describe('splitRect', () => {
+  it('비가 2 이하면 4등분(서울 지역 사각형과 같은 진행 기록), 넘으면 긴 축으로 2등분한다', () => {
+    expect(splitRect([127.05, 37.455, 127.2, 37.555])).toHaveLength(4);
+    expect(splitRect([0, 0, 2, 1])).toHaveLength(4);
+    expect(splitRect([0, 0, 3, 1])).toEqual([
+      [0, 0, 1.5, 1],
+      [1.5, 0, 3, 1],
+    ]);
+    expect(splitRect([0, 0, 1, 3])).toEqual([
+      [0, 0, 1, 1.5],
+      [0, 1.5, 1, 3],
+    ]);
+  });
+});
+
+describe('parseRects', () => {
+  it('사각형 하나 또는 ;로 이은 여러 개를 읽는다', () => {
+    expect(parseRects('127.05,37.455,127.2,37.555')).toEqual([
+      [127.05, 37.455, 127.2, 37.555],
+    ]);
+    expect(
+      parseRects('126.5,37.4,126.51,37.41;126.6,37.4,126.62,37.42;'),
+    ).toEqual([
+      [126.5, 37.4, 126.51, 37.41],
+      [126.6, 37.4, 126.62, 37.42],
+    ]);
+  });
+
+  it('형식이 틀리거나 비었으면 거부한다', () => {
+    expect(() => parseRects('127,37,127.1')).toThrow('x1,y1,x2,y2');
+    expect(() => parseRects('127.1,37,127,37.1')).toThrow('x1,y1,x2,y2');
+    expect(() => parseRects('127,37,127.1,37.1;abc')).toThrow('abc');
+    expect(() => parseRects(';')).toThrow('사각형이 없습니다');
   });
 });

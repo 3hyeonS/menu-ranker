@@ -18,6 +18,7 @@ import {
   KakaoCrawlOptions,
   KakaoCrawlStore,
   KakaoPlaceCrawler,
+  parseRects,
   Rect,
 } from './kakao-place-crawler';
 
@@ -45,18 +46,9 @@ class FetchHttpFetcher implements HttpFetcher {
   }
 }
 
-function rectArg(): Rect {
+function rectsArg(): Rect[] {
   const raw = arg('rect');
-  if (raw === undefined) return SONGPA_RECT;
-  const values = raw.split(',').map(Number);
-  if (
-    values.length !== 4 ||
-    values.some((value) => !Number.isFinite(value)) ||
-    values[0] >= values[2] ||
-    values[1] >= values[3]
-  )
-    throw new Error(`--rect는 x1,y1,x2,y2(x1<x2, y1<y2)여야 합니다: ${raw}`);
-  return values as Rect;
+  return raw === undefined ? [SONGPA_RECT] : parseRects(raw);
 }
 
 function categoryGroupArg(): KakaoCategoryGroup {
@@ -98,7 +90,7 @@ export function parseOptions(): {
   const options: KakaoCrawlOptions = {
     restApiKey,
     categoryGroup,
-    rect: rectArg(),
+    rects: rectsArg(),
     district: arg('district') ?? '송파구',
     maxDepth: intArg('max-depth', 12, 0, 14),
     excludedCategories,
@@ -150,7 +142,10 @@ async function main(): Promise<void> {
     log: (message) => console.log(message),
   });
   console.log(
-    `출력: ${outDir}\n카테고리 그룹: ${options.categoryGroup}\n검색 영역: ${options.rect.join(',')}`,
+    `출력: ${outDir}\n카테고리 그룹: ${options.categoryGroup}\n검색 영역: 사각형 ${options.rects.length}개 ${options.rects
+      .slice(0, 3)
+      .map((rect) => rect.join(','))
+      .join(';')}${options.rects.length > 3 ? ';…' : ''}`,
   );
   const summary = await crawler.run();
   console.log(JSON.stringify(summary, null, 2));
