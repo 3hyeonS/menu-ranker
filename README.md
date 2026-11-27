@@ -286,7 +286,6 @@ $ npm run kakao-map:crawl-songpa -- --category-group=CE7 --out-dir=kakao-map/caf
 # 수도권(경기 시·군, 인천 군·구 42개 지역): 지역 목록대로 지역별 병렬 실행(메인 체크아웃 루트에서)
 $ scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regions/capital-area.tsv
 $ scripts/kakao-map/run-regions.sh menus scripts/kakao-map/regions/capital-area.tsv
-$ scripts/kakao-map/run-regions.sh cafe scripts/kakao-map/regions/capital-area.tsv
 ```
 
 ## Compile and run the project

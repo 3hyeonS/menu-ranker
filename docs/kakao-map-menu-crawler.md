@@ -105,18 +105,17 @@ npm run --silent kakao-map:build-regions -- --geojson=<내려받은 경로>/Hang
 scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regions/capital-area.tsv
 # 2) 메뉴(panel3, 지역마다 동시 1·1~3초 간격). 기본 3개 지역 동시
 scripts/kakao-map/run-regions.sh menus scripts/kakao-map/regions/capital-area.tsv
-# 3) 카페 장소 목록(CE7). 기본 10개 지역 동시
-scripts/kakao-map/run-regions.sh cafe scripts/kakao-map/regions/capital-area.tsv
 
 # 일부 지역만(폴더 정규식), 동시 실행 수 지정
 ONLY='^인천/' scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regions/capital-area.tsv 5
 ```
 
-- 결과는 음식점 `kakao-map/<폴더>/`(예: `kakao-map/경기/수원시/`), 카페 `kakao-map/cafe/<폴더>/`, 로그는 결과 폴더 옆 `<폴더>-<모드>.log`(예: `kakao-map/경기/수원시-discover.log`)다.
+- 카페(CE7)는 #47 결정(2026-11-27)으로 수도권·서울 모두 보류해 실행 모드를 두지 않았다.
+- 결과는 `kakao-map/<폴더>/`(예: `kakao-map/경기/수원시/`), 로그는 결과 폴더 옆 `<폴더>-<모드>.log`(예: `kakao-map/경기/수원시-discover.log`)다.
 - 음식점 제외 단어는 서울과 같게 `kakao-map/exclude-categories.txt`(기본값 + `간식`)를 읽는다. 없으면 실행하지 않는다.
 - worktree에서 실행하면 결과가 정리 때 지워지므로 거부한다. 시험할 때는 `KAKAO_MAP_DIR=<메인 체크아웃>/kakao-map/<시험 폴더>`를 주고, 그 폴더에 `exclude-categories.txt`를 복사한다.
 - 지역마다 `npm run kakao-map:crawl-songpa`를 한 번씩 부르므로 재시작·실패 처리는 위와 같다. 끝에 지역별 `exit` 줄이 나온다. 크롤러가 0으로 끝나도 요약의 `failedRects`·`failedPlaces`가 0보다 크면 `exit 3`으로 표시한다. 0이 아닌 지역은 로그를 보고 같은 명령으로 다시 실행한다(끝난 지역은 요청 없이 바로 끝난다). 없는 장소(404·410)도 `failedPlaces`로 세지만 완료로 남으므로 다시 실행하면 0이 된다.
-- `restaurant:branch-import` 입력 경로는 서울 `kakao-map/*구/`에 `kakao-map/경기/*/ kakao-map/인천/*/`(카페는 `kakao-map/cafe/경기/*/ kakao-map/cafe/인천/*/`)를 더한다(`docs/kakao-restaurant-branch-import.md`).
+- `restaurant:branch-import` 입력 경로는 서울 `kakao-map/*구/`에 `kakao-map/경기/*/ kakao-map/인천/*/`를 더한다(`docs/kakao-restaurant-branch-import.md`).
 
 ## 결과 파일과 재시작
 
@@ -146,7 +145,7 @@ ONLY='^인천/' scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regi
 | `scripts/kakao-map/crawl-songpa-kakao.ts` | CLI(옵션 검증, 실제 `fetch`, git ignore 확인). 이름은 #28 때 그대로지만 `--rect`·`--district`·`--category-group`으로 다른 구·카페도 수집한다 |
 | `scripts/kakao-map/region-cover.ts`, `build-region-list.ts` | 행정동 경계 → 지역 목록(래스터화, 덮개 사각형 합치기, 경기 시·군 / 인천 군·구 이름 규칙)과 그 CLI(#47) |
 | `scripts/kakao-map/regions/capital-area.tsv` | 수도권 42개 지역 목록(생성물, 커밋함) |
-| `scripts/kakao-map/run-regions.sh` | 지역 목록대로 지역별 병렬 실행(discover/menus/cafe) |
+| `scripts/kakao-map/run-regions.sh` | 지역 목록대로 지역별 병렬 실행(discover/menus) |
 | `scripts/crawl-common/` | 네이버·카카오 공용: 지연·재시도·백오프·연속 차단 중단(`PoliteRequester`), CSV·진행 파일 유틸, CLI 옵션·git ignore 확인, 카페·술집 제외 단어 |
 
 ## 테스트
