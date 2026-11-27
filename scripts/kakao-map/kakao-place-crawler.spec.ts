@@ -8,6 +8,7 @@ import {
 } from '../crawl-common/polite-requester';
 import {
   categorySearchUrl,
+  expandSearchRect,
   KakaoCrawlOptions,
   KakaoCrawlStore,
   KakaoPlaceCrawler,
@@ -305,6 +306,23 @@ describe('KakaoPlaceCrawler', () => {
     expect(again.truncatedRects).toBe(1);
   });
 
+  it('나누면 폭이 MIN_SPLIT_DEG보다 작아지는 사각형은 최대 깊이 전이라도 나누지 않는다', async () => {
+    // 가로 1.5e-5도: 반으로 나누면 7.5e-6도라 좌표 6자리 반올림에 걸린다.
+    const tiny: Rect = [127.1, 37.1, 127.100015, 37.2];
+    const fetcher = new FakeFetcher({
+      [categorySearchUrl(tiny, 1)]: [searchPage(50, ['1'], false)],
+      [categorySearchUrl(tiny, 2)]: [searchPage(50, ['2'], false)],
+      [categorySearchUrl(tiny, 3)]: [searchPage(50, ['3'], false)],
+    });
+    const summary = await crawler(fetcher, {
+      rects: [tiny],
+      maxDepth: 12,
+      discoverOnly: true,
+    }).run();
+    expect(summary).toMatchObject({ truncatedRects: 1, discoveredPlaces: 3 });
+    expect(fetcher.calls).toHaveLength(3);
+  });
+
   it('로컬 API가 401(키 오류)이면 재시도 없이 멈추고 사각형을 완료로 남기지 않는다', async () => {
     const fetcher = new FakeFetcher({
       [categorySearchUrl(RECT, 1)]: [
@@ -580,6 +598,29 @@ describe('kakao-place-parser', () => {
       [],
     );
   });
+});
+
+describe('expandSearchRect', () => {
+  it('요청 사각형을 긴 변의 1%만큼 넓히고 URL에도 넓힌 값을 보낸다', () => {
+    const expanded = expandSearchRect([126.58, 37.455, 126.615, 37.46]);
+    expected(expanded, [126.57965, 37.45465, 126.61535, 37.46035]);
+    expect(categorySearchUrl([126.58, 37.455, 126.615, 37.46], 2)).toContain(
+      `rect=${encodeURIComponent('126.579650,37.454650,126.615350,37.460350')}`,
+    );
+  });
+
+  it('아주 작은 사각형도 최소 1e-5도는 넓힌다', () => {
+    expected(
+      expandSearchRect([127, 37, 127.0001, 37.0001]),
+      [126.99999, 36.99999, 127.00011, 37.00011],
+    );
+  });
+
+  function expected(actual: Rect, values: number[]) {
+    actual.forEach((value, index) =>
+      expect(value).toBeCloseTo(values[index], 9),
+    );
+  }
 });
 
 describe('parseRects', () => {

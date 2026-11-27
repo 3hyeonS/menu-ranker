@@ -73,6 +73,19 @@ describe('rasterizePolygon', () => {
     rasterizePolygon(square(5.2, 7.2, 5.3, 7.3), 1, cells);
     expect([...cells]).toEqual(['5,7']);
   });
+  it('칸 중심이 하나도 안 걸리는 좁고 긴 땅도 경계선이 지나는 칸을 모두 넣는다', () => {
+    const cells = new Set<string>();
+    // 폭 0.1칸, 길이 5칸. 꼭짓점은 양 끝에만 있다.
+    rasterizePolygon(square(0.2, 3.1, 5.2, 3.2), 1, cells);
+    expect([...cells].sort()).toEqual([
+      '0,3',
+      '1,3',
+      '2,3',
+      '3,3',
+      '4,3',
+      '5,3',
+    ]);
+  });
 });
 
 describe('coverRects', () => {

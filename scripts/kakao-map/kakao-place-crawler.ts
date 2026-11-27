@@ -44,6 +44,12 @@ export type Rect = [number, number, number, number];
 /** 카테고리 검색 한 번에 받을 수 있는 최대 결과 수(15개 × 3쪽). */
 export const SEARCH_RESULT_LIMIT = 45;
 const SEARCH_PAGE_SIZE = 15;
+/**
+ * 4등분한 사각형의 가로·세로가 이보다 작아지면 더 나누지 않는다(약 1m).
+ * 좌표를 소수 6자리로 보내므로 더 작으면 반올림으로 사각형이 겹치거나 폭이 0이 된다.
+ * 루트 사각형이 작으면(#47 지역 목록은 0.01도) --max-depth보다 먼저 이 조건에 걸린다.
+ */
+export const MIN_SPLIT_DEG = 1e-5;
 /** 다시 요청해도 같은 "없는 장소" 응답. */
 const GONE_STATUS = new Set([404, 410]);
 
@@ -90,7 +96,7 @@ export type KakaoCrawlDeps = RequesterDeps;
 
 export interface KakaoCrawlSummary {
   searchedRects: number;
-  /** 최대 깊이에서도 45곳을 넘어 일부만 받은 사각형 수(이전 실행 포함). */
+  /** 더 나눌 수 없는 사각형(최대 깊이·최소 폭 MIN_SPLIT_DEG)에서도 45곳을 넘어 일부만 받은 사각형 수(이전 실행 포함). */
   truncatedRects: number;
   /** 이번 실행에서 재시도를 소진해 실패한 검색 사각형 수. 다음 실행에서 다시 검색한다. */
   failedRects: number;
@@ -106,6 +112,25 @@ export interface KakaoCrawlSummary {
 
 const SEARCH_URL = 'https://dapi.kakao.com/v2/local/search/category.json';
 
+/**
+ * 카카오 rect 검색은 경계 판정 오차가 사각형 크기에 비례한다(2026-11-27 측정: 폭 0.035도 리프에서
+ * 경계 4m 안쪽 장소가 빠지고 경계를 1e-4도 넓히면 나옴, 폭 0.016도 이하에서는 1e-5도까지 정확).
+ * 그래서 리프 경계 근처 장소가 양쪽 리프에서 모두 빠진다(#47 시험 수집에서 약 1%).
+ * 요청할 때만 긴 변의 이 비율(최소 SEARCH_RECT_MIN_MARGIN_DEG)만큼 사방으로 넓혀 이웃과 겹치게 한다.
+ * 진행 기록(search-rects.txt)은 원래 사각형 키로 남겨 기존 폴더의 재시작과 호환된다. 겹쳐 나온 장소는 ID로 거른다.
+ */
+export const SEARCH_RECT_MARGIN_RATIO = 0.01;
+export const SEARCH_RECT_MIN_MARGIN_DEG = 1e-5;
+
+export function expandSearchRect([x1, y1, x2, y2]: Rect): Rect {
+  const margin = Math.max(
+    Math.max(x2 - x1, y2 - y1) * SEARCH_RECT_MARGIN_RATIO,
+    SEARCH_RECT_MIN_MARGIN_DEG,
+  );
+  return [x1 - margin, y1 - margin, x2 + margin, y2 + margin];
+}
+
+/** `rect`(진행 기록 기준 사각형)를 expandSearchRect로 넓혀 요청하는 URL. */
 export function categorySearchUrl(
   rect: Rect,
   page: number,
@@ -113,7 +138,7 @@ export function categorySearchUrl(
 ): string {
   const params = new URLSearchParams({
     category_group_code: categoryGroup,
-    rect: rectKey(rect),
+    rect: rectKey(expandSearchRect(rect)),
     page: String(page),
     size: String(SEARCH_PAGE_SIZE),
   });
@@ -456,10 +481,10 @@ export class KakaoPlaceCrawler {
       summary.failedRects += 1;
       return;
     }
-    if (
-      first.totalCount > SEARCH_RESULT_LIMIT &&
-      depth < this.options.maxDepth
-    ) {
+    const splittable =
+      depth < this.options.maxDepth &&
+      Math.min(rect[2] - rect[0], rect[3] - rect[1]) / 2 >= MIN_SPLIT_DEG;
+    if (first.totalCount > SEARCH_RESULT_LIMIT && splittable) {
       this.store.markRect(`split ${key}`);
       for (const child of quarters(rect))
         await this.walk(child, depth + 1, completed, known, summary);
@@ -468,7 +493,7 @@ export class KakaoPlaceCrawler {
     if (first.totalCount > SEARCH_RESULT_LIMIT) {
       this.store.markRect(`truncated ${key}`);
       this.deps.log(
-        `  최대 깊이에서도 ${first.totalCount}곳이라 ${SEARCH_RESULT_LIMIT}곳만 받습니다: ${key}`,
+        `  더 나눌 수 없는 사각형(최대 깊이·최소 폭)에서도 ${first.totalCount}곳이라 ${SEARCH_RESULT_LIMIT}곳만 받습니다: ${key}`,
       );
     }
     const places = [...first.places];

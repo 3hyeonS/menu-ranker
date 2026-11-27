@@ -34,7 +34,7 @@ export interface CoverOptions {
   coarseCells: number;
 }
 
-/** 0.005도(약 500m) 칸, 1칸 여유, 0.01도 굵은 칸. 2026-10 경계 기준 수도권 루트 사각형 약 870개. */
+/** 0.005도(약 500m) 칸, 1칸 여유, 0.01도 굵은 칸. 2026-10 경계 기준 수도권 루트 사각형 863개. */
 export const DEFAULT_COVER_OPTIONS: CoverOptions = {
   cellDeg: 0.005,
   dilateCells: 1,
@@ -91,7 +91,7 @@ const cellKey = (i: number, j: number) => `${i},${j}`;
 
 /**
  * 폴리곤을 칸 집합(`i,j`, 칸 [i*d, (i+1)*d))에 더한다. 칸 중심이 안에 있는 칸과,
- * 꼭짓점이 든 칸(중심 판정에 걸리지 않는 작은 섬·좁은 땅)을 넣는다.
+ * 바깥 경계선이 지나는 칸(중심 판정에 걸리지 않는 작은 섬·칸보다 좁은 강변 땅)을 넣는다.
  */
 export function rasterizePolygon(
   polygon: Polygon,
@@ -100,14 +100,16 @@ export function rasterizePolygon(
 ): void {
   const [outer, ...holes] = polygon;
   if (!outer?.length) return;
-  const xs = outer.map(([x]) => x);
-  const ys = outer.map(([, y]) => y);
-  const [i1, i2] = [Math.min(...xs), Math.max(...xs)].map((v) =>
-    Math.floor(v / cellDeg),
-  );
-  const [j1, j2] = [Math.min(...ys), Math.max(...ys)].map((v) =>
-    Math.floor(v / cellDeg),
-  );
+  // 꼭짓점이 아주 많은 고리에서 Math.min(...xs)는 인자 수 한도를 넘을 수 있어 반복문으로 구한다.
+  let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, y] of outer) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  const [i1, i2] = [minX, maxX].map((v) => Math.floor(v / cellDeg));
+  const [j1, j2] = [minY, maxY].map((v) => Math.floor(v / cellDeg));
   for (let i = i1; i <= i2; i += 1) {
     for (let j = j1; j <= j2; j += 1) {
       const cx = (i + 0.5) * cellDeg;
@@ -119,8 +121,19 @@ export function rasterizePolygon(
         cells.add(cellKey(i, j));
     }
   }
-  for (const [x, y] of outer)
-    cells.add(cellKey(Math.floor(x / cellDeg), Math.floor(y / cellDeg)));
+  // 경계선을 칸 크기의 절반 간격으로 따라가며 지나는 칸을 넣는다(꼭짓점 칸 포함).
+  // 칸 모서리를 살짝 스치는 경우는 놓칠 수 있지만 coverRects의 여유 칸이 덮는다.
+  const step = cellDeg / 2;
+  for (let k = 0; k < outer.length; k += 1) {
+    const [x1, y1] = outer[k];
+    const [x2, y2] = outer[(k + 1) % outer.length];
+    const n = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / step));
+    for (let t = 0; t <= n; t += 1) {
+      const x = x1 + ((x2 - x1) * t) / n;
+      const y = y1 + ((y2 - y1) * t) / n;
+      cells.add(cellKey(Math.floor(x / cellDeg), Math.floor(y / cellDeg)));
+    }
+  }
 }
 
 /** 소수 오차 없이 칸 경계를 도 단위로 쓴다(0.005 단위 → 소수 3자리). */

@@ -35,8 +35,14 @@ run_one() {
   esac
   mkdir -p "$(dirname "$dir")"
   (cd "$ROOT" && npm run --silent kakao-map:crawl-songpa -- "--out-dir=$dir" "${args[@]}") >"$dir-$MODE.log" 2>&1
-  local code=$?
-  echo "$folder $MODE exit $code $(date +%m-%d\ %H:%M)"
+  local code=$? note=
+  # 크롤러는 재시도를 소진한 사각형·식당이 있어도 경고만 하고 0으로 끝난다. 빠진 데이터가 묻히지 않게 실패로 센다.
+  # 다시 실행하면 그 사각형·식당만 다시 요청한다(없는 장소 404·410은 완료로 남아 다음 실행에서 0이 된다).
+  if [[ $code -eq 0 ]] && grep -qE '"failed(Rects|Places)": [1-9]' "$dir-$MODE.log"; then
+    code=3
+    note=" ($(grep -oE '"failed(Rects|Places)": [0-9]+' "$dir-$MODE.log" | tr -d '"' | paste -sd' '), 같은 명령으로 다시 실행)"
+  fi
+  echo "$folder $MODE exit $code$note $(date +%m-%d\ %H:%M)"
   return "$code"
 }
 
@@ -64,10 +70,18 @@ esac
   exit 2
 }
 
-OUT_ROOT=${KAKAO_MAP_DIR:-$ROOT/kakao-map}
+# 크롤러는 $ROOT에서 돌므로 상대 경로는 지금 폴더 기준 절대 경로로 바꿔 둔다.
+OUT_ROOT=$(realpath -m "${KAKAO_MAP_DIR:-$ROOT/kakao-map}")
 # worktree 안 kakao-map/은 worktree를 정리할 때 함께 지워진다.
-GIT_DIR=$(git -C "$ROOT" rev-parse --path-format=absolute --git-dir)
-GIT_COMMON_DIR=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)
+# 확인에 실패하면(오래된 git 등) 지나치지 않고 멈춘다.
+GIT_DIR=$(cd "$ROOT" && git rev-parse --git-dir 2>/dev/null)
+GIT_COMMON_DIR=$(cd "$ROOT" && git rev-parse --git-common-dir 2>/dev/null)
+if [[ -z $GIT_DIR || -z $GIT_COMMON_DIR ]]; then
+  echo "git 저장소를 확인하지 못했습니다: $ROOT" >&2
+  exit 2
+fi
+GIT_DIR=$(cd "$ROOT" && realpath -m "$GIT_DIR")
+GIT_COMMON_DIR=$(cd "$ROOT" && realpath -m "$GIT_COMMON_DIR")
 if [[ -z ${KAKAO_MAP_DIR:-} && $GIT_DIR != "$GIT_COMMON_DIR" ]]; then
   echo "worktree에서 실행 중입니다. 결과가 정리 때 지워지지 않도록 KAKAO_MAP_DIR=<메인 체크아웃>/kakao-map 을 주세요." >&2
   exit 2
