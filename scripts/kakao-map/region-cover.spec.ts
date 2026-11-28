@@ -1,12 +1,24 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   buildRegionCovers,
-  capitalRegionOf,
+  CAPITAL_AREA,
   CoverOptions,
   coverRects,
   formatRegionLine,
   GeoFeature,
+  METRO_AREA,
+  missingRegions,
   rasterizePolygon,
+  regionOf,
+  REGION_AREAS,
+  SidoRule,
 } from './region-cover';
+
+const capitalRegionOf = (properties: Record<string, unknown>) =>
+  regionOf(CAPITAL_AREA, properties);
+const metroRegionOf = (properties: Record<string, unknown>) =>
+  regionOf(METRO_AREA, properties);
 
 // 테스트는 계산이 쉬운 1도 칸을 쓴다.
 const UNIT: CoverOptions = { cellDeg: 1, dilateCells: 0, coarseCells: 1 };
@@ -30,7 +42,7 @@ const feature = (
   geometry: { type: 'MultiPolygon', coordinates: [polygon] },
 });
 
-describe('capitalRegionOf', () => {
+describe('regionOf: 수도권(#47)', () => {
   it('경기는 시·군 단위(일반구는 시로 묶음), 인천은 군·구 단위로 폴더·주소 필터를 만든다', () => {
     expect(capitalRegionOf({ sido: '41', sggnm: '수원시장안구' })).toEqual({
       folder: '경기/수원시',
@@ -54,6 +66,79 @@ describe('capitalRegionOf', () => {
   it('서울 등 다른 시·도와 이름 없는 행정동은 뺀다', () => {
     expect(capitalRegionOf({ sido: '11', sggnm: '중구' })).toBeNull();
     expect(capitalRegionOf({ sido: '28', sggnm: '' })).toBeNull();
+  });
+});
+
+describe('regionOf: 광역시·세종(#49)', () => {
+  it('광역시는 군·구 단위이고, 카카오 표기 약칭(`부산`·`대구`…)을 주소 필터에 쓴다', () => {
+    expect(metroRegionOf({ sido: '26', sggnm: '해운대구' })).toEqual({
+      folder: '부산/해운대구',
+      filter: '부산 해운대구',
+    });
+    // 군위군은 2023-07 경북에서 대구로 편입. 카카오 주소도 `대구 군위군`(2026-11-28 표본).
+    expect(metroRegionOf({ sido: '27', sggnm: '군위군' })).toEqual({
+      folder: '대구/군위군',
+      filter: '대구 군위군',
+    });
+    expect(metroRegionOf({ sido: '31', sggnm: '울주군' })).toEqual({
+      folder: '울산/울주군',
+      filter: '울산 울주군',
+    });
+  });
+
+  it('광주는 폴더를 `광주/<구>`로 짧게 두고, 필터는 카카오 표기 `전남광주통합특별시 <구>`다. 옛 전남 시·군은 뺀다', () => {
+    expect(metroRegionOf({ sido: '12', sggnm: '광산구' })).toEqual({
+      folder: '광주/광산구',
+      filter: '전남광주통합특별시 광산구',
+    });
+    expect(metroRegionOf({ sido: '12', sggnm: '나주시' })).toBeNull();
+    expect(metroRegionOf({ sido: '12', sggnm: '담양군' })).toBeNull();
+  });
+
+  it('세종은 시 아래 군·구가 없어 지역 하나(`세종/세종시`, 필터 `세종특별자치시`)다', () => {
+    expect(metroRegionOf({ sido: '36', sggnm: '세종시' })).toEqual({
+      folder: '세종/세종시',
+      filter: '세종특별자치시',
+    });
+  });
+
+  it('일반구 묶기는 경기만 한다(광역시 구 이름에 `시`가 들어가도 자르지 않는다)', () => {
+    const rules: SidoRule[] = [{ code: '26', folder: '부산', address: '부산' }];
+    expect(regionOf(rules, { sido: '26', sggnm: '가상시구' })).toEqual({
+      folder: '부산/가상시구',
+      filter: '부산 가상시구',
+    });
+  });
+
+  it('수도권 규칙과 섞이지 않는다', () => {
+    expect(metroRegionOf({ sido: '41', sggnm: '광주시' })).toBeNull();
+    expect(capitalRegionOf({ sido: '26', sggnm: '중구' })).toBeNull();
+    expect([...REGION_AREAS.keys()]).toEqual(['capital', 'metro']);
+  });
+});
+
+describe('missingRegions', () => {
+  const rules: SidoRule[] = [
+    { code: '26', folder: '부산', address: '부산' },
+    {
+      code: '12',
+      folder: '광주',
+      address: '전남광주통합특별시',
+      sggNames: ['동구', '광산구'],
+    },
+  ];
+
+  it('규칙의 시·도나 지정한 구가 결과에 없으면 알려 준다(경계 파일 판이 달라 코드·이름이 바뀐 경우)', () => {
+    expect(
+      missingRegions(rules, [{ folder: '광주/동구', filter: '' }]),
+    ).toEqual(['부산(sido 26)', '광주/광산구(sido 12)']);
+    expect(
+      missingRegions(rules, [
+        { folder: '부산/중구', filter: '' },
+        { folder: '광주/동구', filter: '' },
+        { folder: '광주/광산구', filter: '' },
+      ]),
+    ).toEqual([]);
   });
 });
 
@@ -127,7 +212,7 @@ describe('buildRegionCovers', () => {
         feature('28', '연수구', square(5, 5, 6, 6)),
         feature('11', '종로구', square(9, 9, 10, 10)),
       ],
-      capitalRegionOf,
+      CAPITAL_AREA,
       UNIT,
     );
     expect(regions.map((r) => r.folder)).toEqual([
@@ -139,4 +224,57 @@ describe('buildRegionCovers', () => {
       '경기/수원시\t0,0,3,2\t경기 수원시',
     );
   });
+
+  it('광역시·세종은 규칙 순서(부산 → 대구 → 광주 → 대전 → 울산 → 세종)로 정렬한다', () => {
+    const regions = buildRegionCovers(
+      [
+        feature('36', '세종시', square(0, 0, 1, 1)),
+        feature('12', '서구', square(1, 0, 2, 1)),
+        feature('12', '목포시', square(2, 0, 3, 1)),
+        feature('27', '중구', square(3, 0, 4, 1)),
+        feature('26', '중구', square(4, 0, 5, 1)),
+      ],
+      METRO_AREA,
+      UNIT,
+    );
+    expect(regions.map((r) => [r.folder, r.filter])).toEqual([
+      ['부산/중구', '부산 중구'],
+      ['대구/중구', '대구 중구'],
+      ['광주/서구', '전남광주통합특별시 서구'],
+      ['세종/세종시', '세종특별자치시'],
+    ]);
+  });
+});
+
+// 커밋한 지역 목록(생성물)이 규칙과 맞는지. 생성 자체는 행정동 파일이 필요해 문서의 명령으로 확인한다.
+describe('regions/*.tsv', () => {
+  const read = (name: string) =>
+    readFileSync(join(__dirname, 'regions', name), 'utf8')
+      .split('\n')
+      .filter((line) => line && !line.startsWith('#'))
+      .map((line) => line.split('\t'));
+
+  it.each([
+    ['capital-area.tsv', CAPITAL_AREA, 42],
+    ['metro-area.tsv', METRO_AREA, 41],
+  ] as const)(
+    '%s: 3칸, 폴더·필터가 규칙의 시·도와 맞고, 필터끼리 서로 포함하지 않는다',
+    (name, rules, count) => {
+      const rows = read(name);
+      // missingRegions는 시·도 단위로만 본다. 다른 판의 경계로 다시 만들어 구 하나가 다른 시·도로 가면
+      // (예: 편입 전 경북 군위군) 지역 수가 줄어 여기서 걸린다.
+      expect(rows).toHaveLength(count);
+      for (const [folder, rects, filter, ...rest] of rows) {
+        expect(rest).toEqual([]);
+        expect(rects).toMatch(/^[\d.,;]+$/);
+        const rule = rules.find((r) => folder.startsWith(`${r.folder}/`));
+        expect(rule).toBeDefined();
+        expect(filter.startsWith(rule!.address)).toBe(true);
+      }
+      // 크롤러는 주소에 필터가 들어 있는지(includes)로 거른다. 한 필터가 다른 필터를 포함하면 지역이 섞인다.
+      const filters = rows.map((row) => row[2]);
+      for (const a of filters)
+        expect(filters.filter((b) => b !== a && b.includes(a))).toEqual([]);
+    },
+  );
 });

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 지역 목록 파일(폴더<TAB>사각형;사각형…<TAB>주소 필터)대로 카카오 수집을 지역별로 병렬 실행한다. 이슈 #47.
+# 지역 목록 파일(폴더<TAB>사각형;사각형…<TAB>주소 필터)대로 카카오 수집을 지역별로 병렬 실행한다. 이슈 #47(수도권)·#49(광역시·세종).
+# 지역 목록: scripts/kakao-map/regions/capital-area.tsv, metro-area.tsv
 # 서울 수집(메인 체크아웃 kakao-map/run-discover.sh·run-menus.sh)과 같은 방식이다. 문서: docs/kakao-map-menu-crawler.md
 #
 # 사용: scripts/kakao-map/run-regions.sh <discover|menus> <지역 목록.tsv> [동시 실행 지역 수]
@@ -7,7 +8,7 @@
 #   menus     음식점 목록 + 메뉴(panel3, 지역마다 동시 1·1~3초 간격). 기본 3개 지역 동시
 # 카페(CE7)는 #47 결정(2026-11-27)으로 보류해 모드를 두지 않는다.
 # 환경변수
-#   ONLY=<정규식>      폴더가 이 정규식(awk ERE)에 맞는 지역만. 예: ONLY='^인천/'
+#   ONLY=<정규식>      폴더가 이 정규식(awk ERE)에 맞는 지역만. 예: ONLY='^인천/', ONLY='^(광주|세종)/'
 #   KAKAO_MAP_DIR=<폴더> 결과 루트. 기본은 이 저장소의 kakao-map/. worktree에서는 반드시 메인 체크아웃 경로를 준다.
 # 결과: <루트>/<폴더>/, 로그: 결과 폴더 옆 <폴더>-<모드>.log
 # 같은 명령을 다시 실행하면 지역마다 이어서 한다(끝난 사각형·식당은 건너뜀).

@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   const referencesPath = arg('references');
   if (dirs.length === 0 || !referencesPath) {
     throw new Error(
-      '사용법: npm run restaurant:menu-nutrition:estimate -- kakao-map/*구/ --references=brand-nutrition/all-menus.csv [--mfds-file=<json>] [--limit=20000] [--dry-run]',
+      '사용법: npm run restaurant:menu-nutrition:estimate -- kakao-map/서울/*/ --references=brand-nutrition/all-menus.csv [--mfds-file=<json>] [--limit=20000] [--dry-run]',
     );
   }
   const outputPath = resolve(process.cwd(), arg('output') ?? DEFAULT_OUTPUT);
