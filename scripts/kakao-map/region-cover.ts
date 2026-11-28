@@ -1,4 +1,4 @@
-// 행정동 경계(GeoJSON)로 수집 지역 목록(폴더·검색 사각형들·주소 필터)을 만든다. 이슈 #47.
+// 행정동 경계(GeoJSON)로 수집 지역 목록(폴더·검색 사각형들·주소 필터)을 만든다. 이슈 #47(수도권)·#49(광역시·세종).
 // 지역 하나를 bbox 하나로 검색하면 모양이 불규칙한 시·군에서 이웃 지역(특히 서울)을 다시 훑는다.
 // 그래서 경계를 작은 격자로 래스터화하고, 지역에 걸친 칸만 사각형 몇 개로 합쳐 검색한다.
 // 파일 접근 없음. CLI는 build-region-list.ts, 실행 방법은 docs/kakao-map-menu-crawler.md.
@@ -15,9 +15,9 @@ export interface GeoFeature {
 }
 
 export interface RegionSpec {
-  /** 출력 폴더(`kakao-map/` 아래 상대 경로). 예: `경기/수원시`, `인천/제물포구` */
+  /** 출력 폴더(`kakao-map/` 아래 상대 경로). 예: `경기/수원시`, `광주/서구`, `세종/세종시` */
   folder: string;
-  /** 카카오 주소 앞부분. 예: `경기 수원시`. 카카오는 시·도를 `경기`·`인천`으로 줄여 쓴다. */
+  /** 카카오 주소 앞부분(크롤러는 주소에 이 문자열이 들어 있는지 본다). 예: `경기 수원시`, `전남광주통합특별시 서구`. */
   filter: string;
 }
 
@@ -34,38 +34,106 @@ export interface CoverOptions {
   coarseCells: number;
 }
 
-/** 0.005도(약 500m) 칸, 1칸 여유, 0.01도 굵은 칸. 2026-10 경계 기준 수도권 루트 사각형 863개. */
+/** 0.005도(약 500m) 칸, 1칸 여유, 0.01도 굵은 칸. 2026-10 경계 기준 루트 사각형 수도권 863개·광역시·세종 475개. */
 export const DEFAULT_COVER_OPTIONS: CoverOptions = {
   cellDeg: 0.005,
   dilateCells: 1,
   coarseCells: 2,
 };
 
-/** 카카오 주소의 시·도 약칭. 행정동 데이터의 `sido` 코드 기준. */
-const SIDO_SHORT_NAMES: Record<string, string> = {
-  '28': '인천',
-  '41': '경기',
-};
+/** 시·도 하나를 수집 지역으로 나누는 규칙. */
+export interface SidoRule {
+  /** 행정동 데이터의 `sido` 코드. */
+  code: string;
+  /** 폴더 첫 단계(`kakao-map/<folder>/…`). 카카오 표기와 달라도 된다(광주). */
+  folder: string;
+  /** 카카오 주소의 시·도 표기. 예: `부산`, `전남광주통합특별시`, `세종특별자치시`. */
+  address: string;
+  /**
+   * 시·도 전체를 지역 하나로 묶을 때 폴더 둘째 단계 이름(세종: 시 아래 군·구가 없다).
+   * 이때 주소 필터는 `address` 하나다. 없으면 시·군·구마다 지역 하나다.
+   */
+  wholeName?: string;
+  /** 이 시·군·구만 수집한다(행정동 `sggnm` 이름). 없으면 전부. */
+  sggNames?: readonly string[];
+}
 
-export const CAPITAL_AREA_SIDO_CODES = Object.keys(SIDO_SHORT_NAMES);
+/** 수도권(#47): 인천 군·구, 경기 시·군. */
+export const CAPITAL_AREA: readonly SidoRule[] = [
+  { code: '28', folder: '인천', address: '인천' },
+  { code: '41', folder: '경기', address: '경기' },
+];
 
 /**
- * 행정동 속성 → 수집 지역. 인천은 군·구, 경기는 시·군 단위다.
- * 경기의 일반구(`수원시장안구`)는 시(`수원시`)로 묶는다. 주소 필터가 `경기 수원시`라 구 이름이 바뀌어도 안전하다.
+ * 광역시·세종(#49). 카카오 주소 표기는 2026-11-28 공식 로컬 API 표본으로 확인했다.
+ * 광주는 2026-07 전남과 합쳐 `전남광주통합특별시`(sido 12)가 됐고, 범위는 옛 광주광역시 5개 구다.
  */
-export function capitalRegionOf(
+export const METRO_AREA: readonly SidoRule[] = [
+  { code: '26', folder: '부산', address: '부산' },
+  { code: '27', folder: '대구', address: '대구' },
+  {
+    code: '12',
+    folder: '광주',
+    address: '전남광주통합특별시',
+    sggNames: ['동구', '서구', '남구', '북구', '광산구'],
+  },
+  { code: '30', folder: '대전', address: '대전' },
+  { code: '31', folder: '울산', address: '울산' },
+  {
+    code: '36',
+    folder: '세종',
+    address: '세종특별자치시',
+    wholeName: '세종시',
+  },
+];
+
+/** `build-region-list.ts --area=<이름>`으로 고르는 시·도 묶음. 순서가 TSV 순서다. */
+export const REGION_AREAS: ReadonlyMap<string, readonly SidoRule[]> = new Map([
+  ['capital', CAPITAL_AREA],
+  ['metro', METRO_AREA],
+]);
+
+/**
+ * 행정동 속성 → 수집 지역. 군·구(경기는 시·군) 단위이고, 세종처럼 `wholeName`이 있으면 시·도 하나다.
+ * 일반구(`수원시장안구`)는 시(`수원시`)로 묶는다. 주소 필터가 `경기 수원시`라 구 이름이 바뀌어도 안전하다.
+ */
+export function regionOf(
+  rules: readonly SidoRule[],
   properties: Record<string, unknown>,
 ): RegionSpec | null {
-  const sido = SIDO_SHORT_NAMES[String(properties.sido ?? '')];
+  const rule = rules.find((r) => r.code === String(properties.sido ?? ''));
   const sggName = String(properties.sggnm ?? '').trim();
-  if (!sido || !sggName) return null;
+  if (!rule || !sggName) return null;
+  if (rule.sggNames && !rule.sggNames.includes(sggName)) return null;
+  if (rule.wholeName)
+    return { folder: `${rule.folder}/${rule.wholeName}`, filter: rule.address };
   let name = sggName;
-  if (sido === '경기') {
-    const cityEnd = sggName.indexOf('시');
-    if (cityEnd > 0 && cityEnd < sggName.length - 1)
-      name = sggName.slice(0, cityEnd + 1);
-  }
-  return { folder: `${sido}/${name}`, filter: `${sido} ${name}` };
+  const cityEnd = sggName.indexOf('시');
+  if (cityEnd > 0 && cityEnd < sggName.length - 1)
+    name = sggName.slice(0, cityEnd + 1);
+  return {
+    folder: `${rule.folder}/${name}`,
+    filter: `${rule.address} ${name}`,
+  };
+}
+
+/**
+ * 규칙에 있는데 결과에 없는 시·도·시·군·구. 행정동 파일 판이 달라 코드·이름이 바뀌면
+ * (예: 통합 전 `광주광역시` sido 29) 그 지역이 조용히 빠지므로 CLI가 멈추는 데 쓴다.
+ */
+export function missingRegions(
+  rules: readonly SidoRule[],
+  regions: readonly RegionSpec[],
+): string[] {
+  const folders = new Set(regions.map((r) => r.folder));
+  return rules.flatMap((rule) => {
+    if (rule.sggNames)
+      return rule.sggNames
+        .filter((name) => !folders.has(`${rule.folder}/${name}`))
+        .map((name) => `${rule.folder}/${name}(sido ${rule.code})`);
+    const found = [...folders].some((f) => f.startsWith(`${rule.folder}/`));
+    return found ? [] : [`${rule.folder}(sido ${rule.code})`];
+  });
 }
 
 function polygonsOf(geometry: GeoFeature['geometry']): Polygon[] {
@@ -194,24 +262,23 @@ export function coverRects(cells: Set<string>, options: CoverOptions): Rect[] {
     ]);
 }
 
-/** 행정동 피처들을 지역별로 묶어 검색 사각형을 만든다. 인천 → 경기, 각 이름순. */
+/** 행정동 피처들을 지역별로 묶어 검색 사각형을 만든다. 규칙(시·도) 순서 → 지역 이름순. */
 export function buildRegionCovers(
   features: readonly GeoFeature[],
-  regionOf: (
-    properties: Record<string, unknown>,
-  ) => RegionSpec | null = capitalRegionOf,
+  rules: readonly SidoRule[],
   options: CoverOptions = DEFAULT_COVER_OPTIONS,
 ): RegionCover[] {
   const regions = new Map<string, { spec: RegionSpec; cells: Set<string> }>();
   for (const feature of features) {
-    const spec = regionOf(feature.properties ?? {});
+    const spec = regionOf(rules, feature.properties ?? {});
     if (!spec) continue;
     const region = regions.get(spec.folder) ?? { spec, cells: new Set() };
     regions.set(spec.folder, region);
     for (const polygon of polygonsOf(feature.geometry))
       rasterizePolygon(polygon, options.cellDeg, region.cells);
   }
-  const sidoOrder = (folder: string) => (folder.startsWith('인천/') ? 0 : 1);
+  const sidoOrder = (folder: string) =>
+    rules.findIndex((rule) => folder.startsWith(`${rule.folder}/`));
   return [...regions.values()]
     .sort(
       (a, b) =>

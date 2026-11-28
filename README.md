@@ -233,10 +233,10 @@ import·벤치마크·부하 테스트 스크립트에는 기본 CSV 경로가 �
 ```bash
 # 카페(CE7)를 아직 수집하지 않았으면 kakao-map/cafe/*구/는 뺀다(없는 폴더면 오류로 멈춘다).
 # 적재 계획만 확인 (DB 변경 없음). 구 폴더만 넘긴다(`trial/`·`서울/` 제외).
-$ npm run restaurant:branch-import -- kakao-map/*구/ kakao-map/cafe/*구/ --validate-only
+$ npm run restaurant:branch-import -- kakao-map/*[^대]구/ kakao-map/cafe/*구/ --validate-only
 
 # 장소 upsert + 지점 메뉴 교체. 명시적으로 결정한 뒤에만 실행한다.
-$ npm run restaurant:branch-import -- kakao-map/*구/ kakao-map/cafe/*구/
+$ npm run restaurant:branch-import -- kakao-map/*[^대]구/ kakao-map/cafe/*구/
 ```
 
 ## Kakao branch menu nutrition estimate
@@ -249,11 +249,11 @@ $ npm run restaurant:branch-import -- kakao-map/*구/ kakao-map/cafe/*구/
 
 ```bash
 # 대상 수·예상 토큰·비용만 확인 (호출·DB 쓰기 없음, 식약처 메뉴는 DB 읽기 또는 --mfds-file)
-$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*구/ --references=brand-nutrition/all-menus.csv --limit=20000 --dry-run
+$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*[^대]구/ --references=brand-nutrition/all-menus.csv --limit=20000 --dry-run
 
 # 시범 평가 / 추정 (Gemini 호출, 결과는 kakao-map/nutrition-estimate/*.jsonl)
-$ npm run restaurant:menu-nutrition:evaluate -- kakao-map/*구/ --references=brand-nutrition/all-menus.csv --sample=200
-$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*구/ --references=brand-nutrition/all-menus.csv --limit=20000
+$ npm run restaurant:menu-nutrition:evaluate -- kakao-map/*[^대]구/ --references=brand-nutrition/all-menus.csv --sample=200
+$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*[^대]구/ --references=brand-nutrition/all-menus.csv --limit=20000
 
 # 적재 계획 확인 → 적재 (restaurant_menu_nutrition_estimate 마이그레이션 후)
 $ npm run restaurant:menu-nutrition:import -- kakao-map/nutrition-estimate/estimates.jsonl --validate-only
@@ -286,6 +286,10 @@ $ npm run kakao-map:crawl-songpa -- --category-group=CE7 --out-dir=kakao-map/caf
 # 수도권(경기 시·군, 인천 군·구 42개 지역): 지역 목록대로 지역별 병렬 실행(메인 체크아웃 루트에서)
 $ scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regions/capital-area.tsv
 $ scripts/kakao-map/run-regions.sh menus scripts/kakao-map/regions/capital-area.tsv
+
+# 광역시·세종(부산·대구·광주·대전·울산 구·군, 세종 41개 지역): 같은 스크립트에 다른 지역 목록
+$ scripts/kakao-map/run-regions.sh discover scripts/kakao-map/regions/metro-area.tsv
+$ scripts/kakao-map/run-regions.sh menus scripts/kakao-map/regions/metro-area.tsv
 ```
 
 ## Compile and run the project
