@@ -58,21 +58,21 @@ Gemini는 `GeminiClient`(`generateJsonWithUsage`) 뒤에 있고, 테스트는 `F
 
 ## 실행
 
-입력은 메인 체크아웃의 구 폴더(`kakao-map/*[^대]구/`, `restaurant:branch-import`와 같은 4개 파일)와 브랜드 공식 메뉴 CSV다.
+입력은 메인 체크아웃의 구 폴더(`kakao-map/서울/*/`, `restaurant:branch-import`와 같은 4개 파일)와 브랜드 공식 메뉴 CSV다.
 적재 대상 장소 선택은 `restaurant:branch-import`와 같다(`planBranchImport`). 브랜드 매칭은 근거 CSV의 브랜드명으로 하고, 운영 `restaurant` 이름과 맞추려면 `--brands-file=`(한 줄에 하나)을 넘긴다.
 식약처 메뉴는 DB(`menu`, 읽기 전용 트랜잭션)에서 읽거나 `--mfds-file=<JSON 배열>`(DB SELECT 결과 형식)로 넘긴다.
 
 ```bash
 # 호출 없이 대상 수·예상 토큰·비용만 보기
-$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*[^대]구/ \
+$ npm run restaurant:menu-nutrition:estimate -- kakao-map/서울/*/ \
     --references=brand-nutrition/all-menus.csv --limit=20000 --dry-run
 
 # 시범 평가(허락 후, Gemini 호출). 식약처 표본 200 + 브랜드 표본 200
-$ npm run restaurant:menu-nutrition:evaluate -- kakao-map/*[^대]구/ \
+$ npm run restaurant:menu-nutrition:evaluate -- kakao-map/서울/*/ \
     --references=brand-nutrition/all-menus.csv --sample=200
 
 # 추정(허락 후, Gemini 호출). 결과: kakao-map/nutrition-estimate/estimates.jsonl
-$ npm run restaurant:menu-nutrition:estimate -- kakao-map/*[^대]구/ \
+$ npm run restaurant:menu-nutrition:estimate -- kakao-map/서울/*/ \
     --references=brand-nutrition/all-menus.csv --limit=20000
 
 # 적재 계획만(DB 쓰기 없음) → 적재(허락 후)

@@ -56,12 +56,14 @@ export interface SidoRule {
   wholeName?: string;
   /** 이 시·군·구만 수집한다(행정동 `sggnm` 이름). 없으면 전부. */
   sggNames?: readonly string[];
+  /** 일반구(`수원시장안구`)를 시(`수원시`)로 묶는다. 경기만 쓴다. */
+  foldCityDistricts?: boolean;
 }
 
 /** 수도권(#47): 인천 군·구, 경기 시·군. */
 export const CAPITAL_AREA: readonly SidoRule[] = [
   { code: '28', folder: '인천', address: '인천' },
-  { code: '41', folder: '경기', address: '경기' },
+  { code: '41', folder: '경기', address: '경기', foldCityDistricts: true },
 ];
 
 /**
@@ -95,7 +97,7 @@ export const REGION_AREAS: ReadonlyMap<string, readonly SidoRule[]> = new Map([
 
 /**
  * 행정동 속성 → 수집 지역. 군·구(경기는 시·군) 단위이고, 세종처럼 `wholeName`이 있으면 시·도 하나다.
- * 일반구(`수원시장안구`)는 시(`수원시`)로 묶는다. 주소 필터가 `경기 수원시`라 구 이름이 바뀌어도 안전하다.
+ * `foldCityDistricts`면 일반구(`수원시장안구`)를 시(`수원시`)로 묶는다. 주소 필터가 `경기 수원시`라 구 이름이 바뀌어도 안전하다.
  */
 export function regionOf(
   rules: readonly SidoRule[],
@@ -109,7 +111,7 @@ export function regionOf(
     return { folder: `${rule.folder}/${rule.wholeName}`, filter: rule.address };
   let name = sggName;
   const cityEnd = sggName.indexOf('시');
-  if (cityEnd > 0 && cityEnd < sggName.length - 1)
+  if (rule.foldCityDistricts && cityEnd > 0 && cityEnd < sggName.length - 1)
     name = sggName.slice(0, cityEnd + 1);
   return {
     folder: `${rule.folder}/${name}`,

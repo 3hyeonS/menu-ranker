@@ -102,6 +102,14 @@ describe('regionOf: 광역시·세종(#49)', () => {
     });
   });
 
+  it('일반구 묶기는 경기만 한다(광역시 구 이름에 `시`가 들어가도 자르지 않는다)', () => {
+    const rules: SidoRule[] = [{ code: '26', folder: '부산', address: '부산' }];
+    expect(regionOf(rules, { sido: '26', sggnm: '가상시구' })).toEqual({
+      folder: '부산/가상시구',
+      filter: '부산 가상시구',
+    });
+  });
+
   it('수도권 규칙과 섞이지 않는다', () => {
     expect(metroRegionOf({ sido: '41', sggnm: '광주시' })).toBeNull();
     expect(capitalRegionOf({ sido: '26', sggnm: '중구' })).toBeNull();
@@ -253,6 +261,8 @@ describe('regions/*.tsv', () => {
     '%s: 3칸, 폴더·필터가 규칙의 시·도와 맞고, 필터끼리 서로 포함하지 않는다',
     (name, rules, count) => {
       const rows = read(name);
+      // missingRegions는 시·도 단위로만 본다. 다른 판의 경계로 다시 만들어 구 하나가 다른 시·도로 가면
+      // (예: 편입 전 경북 군위군) 지역 수가 줄어 여기서 걸린다.
       expect(rows).toHaveLength(count);
       for (const [folder, rects, filter, ...rest] of rows) {
         expect(rest).toEqual([]);
@@ -267,20 +277,4 @@ describe('regions/*.tsv', () => {
         expect(filters.filter((b) => b !== a && b.includes(a))).toEqual([]);
     },
   );
-
-  it('광역시 폴더는 서울 구 폴더 glob `kakao-map/*[^대]구/`에 걸리지 않는다', () => {
-    const seoulGlob = /^[^/]*[^대]구$/;
-    const sidoFolders = new Set(
-      read('metro-area.tsv').map(([folder]) => folder.split('/')[0]),
-    );
-    expect([...sidoFolders]).toEqual([
-      '부산',
-      '대구',
-      '광주',
-      '대전',
-      '울산',
-      '세종',
-    ]);
-    expect([...sidoFolders].filter((f) => seoulGlob.test(f))).toEqual([]);
-  });
 });

@@ -72,24 +72,24 @@ import는 매칭되지 않은 장소의 3단계 이후 카테고리 세그먼트
 
 입력은 메인 체크아웃의 **구 폴더**(git 미추적)다.
 
-- 음식점 폴더 `kakao-map/<구>/`: `places.jsonl`·`restaurants.csv`·`menus.csv`·`menu-done.txt`가 모두 있어야 하고, 하나라도 없으면 중단한다.
+- 음식점 폴더 `kakao-map/<시·도>/<구·군>/`(서울 `kakao-map/서울/<구>/`): `places.jsonl`·`restaurants.csv`·`menus.csv`·`menu-done.txt`가 모두 있어야 하고, 하나라도 없으면 중단한다.
 - 카페 폴더 `kakao-map/cafe/<구>/`: 수집기가 남긴 `category-group.txt`가 `CE7`인 폴더다. `places.jsonl`만 있으면 되고, 브랜드에 매칭된 장소만 메뉴 없이 들어간다(그 밖의 카페는 넣지 않는다).
 - 카페를 아직 수집하지 않았으면 카페 경로는 뺀다(펼쳐지지 않은 glob은 없는 폴더로 오류가 난다).
-- 서울 구 폴더는 `kakao-map/*[^대]구/`로 넘긴다. 예전 `kakao-map/*구/`는 광역시 폴더 `kakao-map/대구/`도 잡아 입력 파일이 없다며 멈춘다(#49).
-- `kakao-map/trial/`·`kakao-map/trial-47/` 같은 시험 수집 폴더는 넘기지 않는다(`kakao-map/*[^대]구/`로 넘기면 빠진다).
-- 수도권 폴더(#47, `docs/kakao-map-menu-crawler.md` 「수도권(경기·인천) 수집」)는 `kakao-map/경기/<시·군>/`, `kakao-map/인천/<군·구>/`다(카페는 #47 결정으로 보류). 서울과 함께 넘기려면 `kakao-map/*[^대]구/ kakao-map/경기/*/ kakao-map/인천/*/`처럼 경로를 더한다.
+- 서울 구 폴더는 `kakao-map/서울/*/`로 넘긴다. #49에서 `kakao-map/<구>/`를 `kakao-map/서울/<구>/`로 옮겼다(예전 `kakao-map/*구/`는 광역시 폴더 `kakao-map/대구/`도 잡아 입력 파일이 없다며 멈춘다).
+- `kakao-map/trial/`·`kakao-map/trial-47/` 같은 시험 수집 폴더는 넘기지 않는다(`kakao-map/서울/*/`로 넘기면 빠진다).
+- 수도권 폴더(#47, `docs/kakao-map-menu-crawler.md` 「수도권(경기·인천) 수집」)는 `kakao-map/경기/<시·군>/`, `kakao-map/인천/<군·구>/`다(카페는 #47 결정으로 보류). 서울과 함께 넘기려면 `kakao-map/서울/*/ kakao-map/경기/*/ kakao-map/인천/*/`처럼 경로를 더한다.
 - 광역시·세종 폴더(#49, 같은 문서 「광역시·세종 수집」)는 `kakao-map/<부산|대구|광주|대전|울산>/<구·군>/`, `kakao-map/세종/세종시/`다. 더할 경로는 `kakao-map/부산/*/ kakao-map/대구/*/ kakao-map/광주/*/ kakao-map/대전/*/ kakao-map/울산/*/ kakao-map/세종/*/`다. 광주 폴더 이름은 짧게 `광주`지만 카카오 주소는 `전남광주통합특별시 <구>`다.
 - 시·군 경계 근처 장소는 이웃 지역 폴더에도 있을 수 있으나 주소 필터로 지역마다 한 곳에만 남고, 남더라도 처음 폴더의 것을 쓴다.
 
 ```bash
 # DB 없이 적재 계획만 보기(브랜드명 목록 파일: 한 줄에 하나, id는 가짜)
-$ npm run restaurant:branch-import -- kakao-map/*[^대]구/ kakao-map/cafe/*구/ --validate-only --brands-file=<브랜드목록.txt>
+$ npm run restaurant:branch-import -- kakao-map/서울/*/ kakao-map/cafe/*구/ --validate-only --brands-file=<브랜드목록.txt>
 
 # DB의 restaurant로 계획만 확인(쓰기 없음)
-$ npm run restaurant:branch-import -- kakao-map/*[^대]구/ kakao-map/cafe/*구/ --validate-only
+$ npm run restaurant:branch-import -- kakao-map/서울/*/ kakao-map/cafe/*구/ --validate-only
 
 # 적재(허락 후). 입력에 있는 장소만 upsert하고 그 지점 메뉴를 지운 뒤 다시 넣는다.
-$ npm run restaurant:branch-import -- kakao-map/*[^대]구/ kakao-map/cafe/*구/
+$ npm run restaurant:branch-import -- kakao-map/서울/*/ kakao-map/cafe/*구/
 ```
 
 - 먼저 대상이 아닌 장소의 브랜드 매핑을 해제한 뒤, 장소 1,000곳씩 한 트랜잭션(장소 upsert → 지점 메뉴 삭제 → 메뉴 1,000행씩 INSERT)으로 쓴다. 중간에 끊겨도 같은 명령을 다시 실행하면 같은 결과가 된다.
